@@ -43,7 +43,7 @@ Lo que NO está cubierto:
 ### Configurar la firma (una sola vez)
 
 1. Genera la clave en tu ordenador (hace falta Java): `keytool -genkeypair -alias reinos -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 -keystore reinos-release.p12 -storetype PKCS12`
-2. GitHub → repositorio → Settings → Secrets and variables → Actions → New repository secret: `ANDROID_KEYSTORE_PASSWORD` (la contraseña) y `ANDROID_KEYSTORE_B64` (`base64 -w0 reinos-release.p12`).
+2. GitHub → repositorio → Settings → Secrets and variables → Actions → New repository secret: `ANDROID_KEYSTORE_PASSWORD` (la contraseña, sin espacios) y `ANDROID_KEYSTORE_B64` (`base64 -w0 reinos-release.p12`). Pega solo el valor: el flujo usa únicamente la primera palabra de la primera línea de cada secreto y, si la clave no abre, falla con un mensaje claro (no cae en la clave desechable).
 3. Escribe la huella (`keytool -list -v -keystore reinos-release.p12`, la línea SHA256, en minúsculas y sin dos puntos) en `.github/signing-cert.sha256`.
 4. Guarda el `.p12` y la contraseña en un gestor de contraseñas; nunca en el repositorio.
 

@@ -89,11 +89,23 @@ jobs:
         run: |
           ks="$RUNNER_TEMP/reinos-release.p12"
           if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
-            printf '%s' "$KS_B64" | base64 -d > "$ks"
+            # Tolerante a errores de pegado (saltos de línea, texto de más a continuación):
+            # se usa solo la primera palabra de la primera línea no vacía de cada secreto.
+            b64="$(printf '%s' "$KS_B64" | tr -d '\r' | awk 'NF { print $1; exit }')"
+            pass="$(printf '%s' "$KS_PASS" | tr -d '\r' | awk 'NF { print $1; exit }')"
+            echo "::add-mask::$pass"
+            echo "::add-mask::$b64"
+            if ! printf '%s' "$b64" | grep -Eq '^[A-Za-z0-9+/]+=*$' || ! printf '%s' "$b64" | base64 -d > "$ks" 2>/dev/null; then
+              echo "::error title=Clave de firma::ANDROID_KEYSTORE_B64 no es base64 valido: debe ser solo la linea larga del archivo de secretos."
+              exit 1
+            fi
             chmod 600 "$ks"
-            pass="$KS_PASS"
+            if ! keytool -list -keystore "$ks" -storepass "$pass" -alias reinos > /dev/null 2>&1; then
+              echo "::error title=Clave de firma::no se puede abrir el keystore: revisa ANDROID_KEYSTORE_PASSWORD (solo la contrasena, sin espacios) y que ANDROID_KEYSTORE_B64 sea la linea larga completa."
+              exit 1
+            fi
             echo "fixed=true" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Firma::clave fija de los secretos de GitHub"
+            echo "::notice title=Firma::clave fija de los secretos de GitHub (se abre correctamente)"
           else
             pass="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
             echo "::add-mask::$pass"
