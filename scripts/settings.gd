@@ -62,6 +62,15 @@ static func profile_name(i: int = -1) -> String:
 	ensure_loaded()
 	return Lang.t("perf_" + String(PROFILES[profile if i < 0 else i]["id"]))
 
+## Identificador de la compilación (lo escribe el flujo de GitHub en data/build.json).
+static func build_label() -> String:
+	var path := "res://data/build.json"
+	if FileAccess.file_exists(path):
+		var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if d is Dictionary and (d as Dictionary).has("build"):
+			return "build %s" % str((d as Dictionary)["build"])
+	return "build local"
+
 ## Resolución interna: en perfiles de ahorro se dibuja a ~720p y se escala a la pantalla
 ## (la GPU pinta 2-4 veces menos píxeles). Las posiciones táctiles no cambian.
 static func apply_display(win: Window = null) -> void:

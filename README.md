@@ -15,7 +15,7 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 | Cosa | Estado |
 |---|---|
 | Juego completo | Probado en un PC sin tarjeta gráfica (renderizado por software) con toques simulados. **No probado en un móvil real.** |
-| APK | **No se ha podido compilar aquí** (sin acceso al SDK de Android). Abajo tienes dos formas de generarlo. |
+| APK | Se compila en GitHub Actions (no aquí). Desde el build con clave fija (`.github/reinos-debug.p12`, pública a propósito: es de depuración) cada APK se instala encima del anterior; el menú muestra el número de build abajo a la izquierda. **Al pasar de un APK antiguo a uno con clave fija hay que desinstalar el juego una vez.** |
 | Sonido | Sintetizado por código; **nadie lo ha escuchado**. Puede sonar mal. Se regenera con `tools/gen_audio.py`. |
 | Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. Los shaders de terreno/nubes/lluvia duplican el coste por fotograma en ese entorno; el perfil Ahorro usa una variante más ligera del terreno. Cuenta con **menos autonomía** que antes. |
 | Islas | Son decorativas: no hay barcos, así que no se puede llegar a ellas. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. |

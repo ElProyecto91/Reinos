@@ -152,6 +152,7 @@ class MenuBg extends Control:
 		draw_string(font, Vector2(3, 103), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(0, 0, 0, 0.5))
 		draw_string(font, Vector2(0, 100), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(1, 0.9, 0.5))
 		draw_string(font, Vector2(0, 140), Lang.t("subtitle"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(0.85, 0.92, 1.0))
+		draw_string(font, Vector2(14, size.y - 12), Settings.build_label(), HORIZONTAL_ALIGNMENT_LEFT, size.x, 18, Color(1, 1, 1, 0.55))
 		if menu != null:
 			var w := 760.0
 			var x := (size.x - w) * 0.5

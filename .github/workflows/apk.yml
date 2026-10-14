@@ -1,8 +1,9 @@
 # Genera un APK de Reinos en los servidores de GitHub (gratis para repositorios públicos
 # y con cuota mensual gratuita para privados). SIN PROBAR: se escribió sin poder ejecutarlo.
 # Uso: sube el proyecto a un repositorio de GitHub -> pestaña Actions -> "APK Android" -> Run workflow.
-# El APK aparece al final como "artifact" (reinos-apk). Es un APK de depuración firmado con una
-# clave de depuración creada en el propio flujo: sirve para instalar en tu móvil, no para Google Play.
+# El APK aparece al final como "artifact" (reinos-apk). Es un APK de depuración firmado con la clave
+# de depuración fija de .github/reinos-debug.p12 (contraseña "android", pública a propósito): así cada
+# APK nuevo se instala ENCIMA del anterior sin desinstalar. No sirve para Google Play.
 name: APK Android
 
 on:
@@ -47,9 +48,7 @@ jobs:
       - name: Configurar Godot para Android
         run: |
           mkdir -p ~/.config/godot
-          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
-            -keystore "$HOME/debug.keystore" -storepass android \
-            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          cp .github/reinos-debug.p12 "$HOME/debug.keystore"
           cat > ~/.config/godot/editor_settings-4.tres <<EOT
           [gd_resource type="EditorSettings" format=3]
 
@@ -60,6 +59,13 @@ jobs:
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
           EOT
+
+      - name: Número de versión (cada APK sube de versión y lo muestra el menú)
+        run: |
+          sed -i "s/^version\/code=.*/version\/code=${GITHUB_RUN_NUMBER}/" export_presets.cfg
+          sed -i "s/^version\/name=.*/version\/name=\"1.${GITHUB_RUN_NUMBER}\"/" export_presets.cfg
+          printf '{"build": "%s · %s"}\n' "${GITHUB_RUN_NUMBER}" "${GITHUB_SHA::7}" > data/build.json
+          grep -n "^version" export_presets.cfg; cat data/build.json
 
       - name: Importar recursos y exportar
         run: |
