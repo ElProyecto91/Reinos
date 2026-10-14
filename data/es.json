@@ -174,5 +174,7 @@
  "pause_auto_on": "Auto-pausa: sí",
  "pause_auto_off": "Auto-pausa: no",
  "toast_wall_gap": "Una pieza de muralla quedó encerrada y se ha cancelado (coste devuelto)",
- "toast_built_f": "%s terminada"
+ "toast_built_f": "%s terminada",
+ "toast_gather": "Recolectando %s",
+ "toast_rally_res": "Los nuevos aldeanos recolectarán %s"
 }

@@ -148,19 +148,35 @@ static func _draw_farm(c: CanvasItem, r: Rect2, frac: float, mine: bool) -> void
 		c.draw_line(Vector2(r.position.x + 4, y), Vector2(r.end.x - 4, y), crop, 3.5)
 	c.draw_rect(r.grow(-1), Color(0.2, 0.12, 0.05), false, 1.5)
 
+## Icono de lo que lleva un aldeano (madera, oro, comida) con borde oscuro para que se lea sobre el terreno.
+static func _draw_carry(c: CanvasItem, o: Vector2, kind: String, fill: float) -> void:
+	var k := 0.8 + 0.4 * fill
+	c.draw_circle(o, 8.0 * k, Color(0, 0, 0, 0.45))
+	match kind:
+		"gold":
+			var pts := PackedVector2Array([o + Vector2(-6, 3) * k, o + Vector2(-3, -4) * k, o + Vector2(2, -5) * k, o + Vector2(6, 1) * k, o + Vector2(4, 4) * k])
+			c.draw_colored_polygon(pts, Color(1.0, 0.84, 0.18))
+			c.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[0]]), Color(0.45, 0.3, 0.0), 1.5)
+			c.draw_line(o + Vector2(-3, -1) * k, o + Vector2(0, -3) * k, Color(1, 1, 0.8), 1.5)
+		"food":
+			c.draw_circle(o + Vector2(0, 1), 5.5 * k, Color(0.3, 0.05, 0.05))
+			c.draw_circle(o + Vector2(0, 1), 4.3 * k, Color(0.88, 0.15, 0.15))
+			c.draw_circle(o + Vector2(-1.5, -0.5), 1.3, Color(1, 0.7, 0.65))
+			c.draw_line(o + Vector2(0, -3) * k, o + Vector2(2, -6) * k, Color(0.2, 0.5, 0.15), 1.8)
+		_:
+			for dy in [-2.5, 2.5]:
+				var r := Rect2(o + Vector2(-6.5, dy - 2.2) * k, Vector2(13, 4.4) * k)
+				c.draw_rect(r.grow(1.0), Color(0.2, 0.1, 0.03), true)
+				c.draw_rect(r, Color(0.62, 0.4, 0.18), true)
+				c.draw_circle(Vector2(r.end.x - 1.5, r.get_center().y), 1.6 * k, Color(0.85, 0.65, 0.4))
+
 static func _draw_unit(g: Game, c: CanvasItem, u: Ent) -> void:
 	var p: Vector2 = u.ppos.lerp(u.pos, g.interp)
 	var tex: Texture2D = g.art.unit_tex[u.type][u.owner % 4]
 	var sz := 36.0 if u.type != "jinete" else 42.0
 	c.draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz * 0.72, sz, sz), false)
 	if u.carry_amt >= 1.0 and u.type == "aldeano":
-		var col := Color(0.55, 0.36, 0.16)
-		if u.carry_kind == "gold":
-			col = Color(1.0, 0.84, 0.2)
-		elif u.carry_kind == "food":
-			col = Color(0.9, 0.2, 0.2)
-		c.draw_circle(p + Vector2(10, -16), 4.0, Color(0, 0, 0, 0.7))
-		c.draw_circle(p + Vector2(10, -16), 3.0, col)
+		_draw_carry(c, p + Vector2(11, -22), u.carry_kind, clampf(u.carry_amt / 10.0, 0.0, 1.0))
 	if u.hp < u.max_hp or g.sel_set.has(u.id):
 		var w := 24.0
 		var f := clampf(u.hp / u.max_hp, 0.0, 1.0)
@@ -327,6 +343,14 @@ static func _draw_fx(c: CanvasItem, f: Dictionary) -> void:
 		"flash":
 			var p: Vector2 = f["p"]
 			c.draw_arc(p, 10.0 + 22.0 * k, 0.0, TAU, 24, Color(1, 1, 1, 0.8 * (1.0 - k)), 3.0)
+		"text":
+			var tp: Vector2 = f["p"]
+			var tcol: Color = f["col"]
+			var fnt := ThemeDB.fallback_font
+			var fa := 1.0 - maxf(0.0, (k - 0.6) / 0.4)
+			var q := tp + Vector2(0, -34.0 * k)
+			c.draw_string(fnt, q + Vector2(-17, 2), str(f["s"]), HORIZONTAL_ALIGNMENT_CENTER, 40.0, 22, Color(0, 0, 0, 0.8 * fa))
+			c.draw_string(fnt, q + Vector2(-18, 0), str(f["s"]), HORIZONTAL_ALIGNMENT_CENTER, 40.0, 22, Color(tcol.r, tcol.g, tcol.b, fa))
 		"ping":
 			var p: Vector2 = f["p"]
 			c.draw_arc(p, 10.0 + 70.0 * k, 0.0, TAU, 32, Color(1, 0.2, 0.2, 0.9 * (1.0 - k)), 4.0)

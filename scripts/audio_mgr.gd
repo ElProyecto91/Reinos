@@ -2,9 +2,9 @@ class_name AudioMgr
 extends Node
 ## Efectos y ambiente sonoro. Todo está sintetizado (tools/gen_audio.py), sin música.
 
-const SFX := ["click", "order", "place", "built", "hit", "arrow", "death", "crash", "trained", "alarm", "age", "victory", "defeat", "error"]
+const SFX := ["click", "order", "place", "built", "hit", "arrow", "death", "crash", "trained", "alarm", "age", "victory", "defeat", "error", "deposit"]
 const AMB := ["wind", "sea", "forest"]
-const COOLDOWN := {"hit": 70, "arrow": 90, "death": 80, "click": 40, "order": 60, "crash": 150, "built": 350}
+const COOLDOWN := {"hit": 70, "arrow": 90, "death": 80, "click": 40, "order": 60, "crash": 150, "built": 350, "deposit": 250}
 
 var game: Game
 var muted := false

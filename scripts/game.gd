@@ -393,6 +393,13 @@ func _consume_events() -> void:
 					if ev["type"] != "muralla":
 						var fem: bool = str(ev["type"]) in ["casa", "arqueria", "torre", "granja", "puerta", "muralla"]
 						hud.toast(Lang.t("toast_built_f" if fem else "toast_built", [Lang.t("b_" + str(ev["type"]))]), Color(0.7, 1, 0.7))
+			"deposit":
+				if ev["owner"] == human:
+					var dp: Vector2 = ev["pos"]
+					var dk: String = ev["kind"]
+					var dcol := Color(0.95, 0.72, 0.42) if dk == "wood" else (Color(1.0, 0.86, 0.25) if dk == "gold" else Color(1.0, 0.45, 0.4))
+					_fx({"t": "text", "p": dp + Vector2(randf_range(-10, 10), -26), "s": "+%d" % int(ev["n"]), "col": dcol, "life": 1.2})
+					sfx("deposit", dp)
 			"wall_gap":
 				if ev["owner"] == human:
 					hud.toast(Lang.t("toast_wall_gap"), Color(1, 0.8, 0.45))
@@ -739,8 +746,14 @@ func _tap(sp: Vector2) -> void:
 	if rally_mode:
 		var b := sel_building()
 		if b != null:
-			sim.cmd_set_rally(human, b.id, sim.tile_of(wp))
-			add_marker(sim.tile_center(sim.tile_of(wp)), Color(1, 1, 1))
+			# si se toca junto a un árbol, mina o granja, el punto de reunión se pega al recurso
+			# (los aldeanos nuevos irán a recolectarlo solos)
+			var rtile := _res_at(wp)
+			var rl := rtile if rtile.x >= 0 else sim.tile_of(wp)
+			sim.cmd_set_rally(human, b.id, rl)
+			add_marker(sim.tile_center(rl), Color(0.5, 1, 0.5) if rtile.x >= 0 else Color(1, 1, 1))
+			if rtile.x >= 0:
+				hud.toast(Lang.t("toast_rally_res", [_res_name(rtile)]), Color(0.7, 1, 0.7))
 			sfx("order")
 		rally_mode = false
 		sel_changed.emit()
@@ -802,6 +815,7 @@ func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
 		if rt.x >= 0 and _count_type(mine, "aldeano") > 0:
 			sim.cmd_gather(human, _ids_of(mine, "aldeano"), rt)
 			add_marker(sim.tile_center(rt), Color(0.5, 1, 0.5))
+			hud.toast(Lang.t("toast_gather", [_res_name(rt)]), Color(0.7, 1, 0.7))
 			sfx("order")
 			return
 		if not fog.explored_at(tile) and sim.terrain[tile.y * sim.W + tile.x] == Defs.T_WATER:
@@ -811,6 +825,12 @@ func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
 		sfx("order")
 	elif not right_click and not sel.is_empty():
 		clear_selection()
+
+func _res_name(t: Vector2i) -> String:
+	var rt: int = sim.rtype[t.y * sim.W + t.x]
+	if rt == 0:
+		return ""
+	return Lang.t("res_" + String(Defs.RES_INFO[rt]["kind"]))
 
 func _res_at(wp: Vector2) -> Vector2i:
 	var t := sim.tile_of(wp)

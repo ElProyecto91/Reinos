@@ -1388,6 +1388,8 @@ func _u_return(e: Ent, step_px: float) -> void:
 		var n := int(e.carry_amt)
 		p.res[e.carry_kind] = int(p.res.get(e.carry_kind, 0)) + n
 		p.gathered[e.carry_kind] = int(p.gathered.get(e.carry_kind, 0)) + n
+		if n > 0:
+			_ev({"t": "deposit", "pos": d.center(), "owner": e.owner, "kind": e.carry_kind, "n": n})
 		e.carry_amt = 0.0
 		e.target_id = 0
 		if e.target_tile.x >= 0:

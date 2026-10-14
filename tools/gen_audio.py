@@ -173,6 +173,13 @@ def s_error():
     sq = np.sign(np.sin(2 * np.pi * 150 * t)) * 0.5 + np.sin(2 * np.pi * 150 * t) * 0.5
     return lowpass(sq, 1200) * env_exp(int(d * SR), 12)
 
+def s_deposit():
+    # dos «clinks» agudos y un golpe sordo: monedas/madera cayendo en el almacén
+    a = bell(1318.5, 0.22, 16, (1.0, 0.5, 0.2))
+    b = bell(1760.0, 0.26, 15, (1.0, 0.4, 0.15))
+    thud = sine(150, 0.1) * env_exp(int(0.1 * SR), 40)
+    return mix([(0, thud, 0.5), (0.0, a, 0.9), (0.07, b, 0.8)], 0.34)
+
 # ---------------------------------------------------------------- ambientes (periódicos)
 def amb_wind(dur=10.0):
     n = int(dur * SR)
@@ -214,7 +221,13 @@ def make_loop(x, name, peak=0.6):
     # el ruido filtrado por FFT y las modulaciones con ciclos enteros son periódicos: sin costura
     save(name, x - np.mean(x), peak, loop=True)
 
-if __name__ == "__main__":
+if __name__ == "__main__" and len(sys.argv) > 1:
+    # python3 tools/gen_audio.py deposit  -> solo regenera esos sonidos, sin tocar el resto
+    only = {"deposit": lambda: save("deposit", s_deposit(), 0.7)}
+    for a in sys.argv[1:]:
+        only[a]()
+elif __name__ == "__main__":
+    save("deposit", s_deposit(), 0.7)
     save("click", s_click(), 0.7)
     save("order", s_order(), 0.7)
     save("place", s_place(), 0.8)
