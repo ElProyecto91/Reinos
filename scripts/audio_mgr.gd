@@ -3,7 +3,7 @@ extends Node
 ## Efectos y ambiente sonoro. Todo está sintetizado (tools/gen_audio.py), sin música.
 
 const SFX := ["click", "order", "place", "built", "hit", "arrow", "death", "crash", "trained", "alarm", "age", "victory", "defeat", "error", "deposit"]
-const AMB := ["wind", "sea", "forest"]
+const AMB := ["wind", "sea", "forest", "rain"]
 const COOLDOWN := {"hit": 70, "arrow": 90, "death": 80, "click": 40, "order": 60, "crash": 150, "built": 350, "deposit": 250}
 
 var game: Game
@@ -11,8 +11,8 @@ var muted := false
 var _streams: Dictionary = {}
 var _pool: Array[AudioStreamPlayer] = []
 var _amb: Dictionary = {}
-var _amb_vol: Dictionary = {"wind": 0.0, "sea": 0.0, "forest": 0.0}
-var _amb_target: Dictionary = {"wind": 0.3, "sea": 0.0, "forest": 0.0}
+var _amb_vol: Dictionary = {"wind": 0.0, "sea": 0.0, "forest": 0.0, "rain": 0.0}
+var _amb_target: Dictionary = {"wind": 0.3, "sea": 0.0, "forest": 0.0, "rain": 0.0}
 var _amb_t := 0.0
 var _last: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
@@ -121,4 +121,5 @@ func _sample_surroundings() -> void:
 	var far := clampf((game.zoom - 0.35) / 0.8, 0.3, 1.0)
 	_amb_target["sea"] = clampf(wf * 1.8, 0.0, 1.0) * 0.7 * far
 	_amb_target["forest"] = clampf(tf * 4.0, 0.0, 1.0) * 0.6 * far
-	_amb_target["wind"] = (0.28 + 0.2 * (1.0 - wf)) * far
+	_amb_target["wind"] = (0.28 + 0.2 * (1.0 - wf) + 0.15 * game.rain) * far
+	_amb_target["rain"] = clampf(game.rain, 0.0, 1.0) * 0.55

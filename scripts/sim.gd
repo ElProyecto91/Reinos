@@ -66,6 +66,8 @@ var bfs_stamp: int = 0
 var bad_res: Dictionary = {}
 var comp := PackedInt32Array()
 var dl := PackedInt32Array()
+var dw := PackedInt32Array()
+var heat := PackedByteArray()          # 0 frío .. 255 calor (aspecto y vegetación)
 var chunk_cnt: Array = []
 var cw: int = 0
 var wall_tile := PackedByteArray()      # 1 = casilla con muralla o puerta
@@ -92,7 +94,9 @@ func setup(cfg: Dictionary) -> bool:
 	ramt = m["ramt"]
 	comp = m["comp"]
 	dl = m["dl"]
-	map_info = {"main_size": m["main_size"], "islands": m["islands"], "land_count": m["land_count"]}
+	dw = m["dw"]
+	heat = m["heat"]
+	map_info = {"main_size": m["main_size"], "islands": m["islands"], "land_count": m["land_count"], "rock_count": m["rock_count"]}
 	var total := W * H
 	rowner.resize(total)
 	rowner.fill(255)
@@ -118,7 +122,7 @@ func setup(cfg: Dictionary) -> bool:
 	gate_tile.resize(total)
 	for i in total:
 		var rt := rtype[i]
-		if terrain[i] == Defs.T_WATER or rt == Defs.R_TREE or rt == Defs.R_GOLD or rt == Defs.R_BERRY:
+		if terrain[i] == Defs.T_WATER or terrain[i] == Defs.T_ROCK or rt == Defs.R_TREE or rt == Defs.R_GOLD or rt == Defs.R_BERRY:
 			solid[i] = 1
 			astar.set_point_solid(Vector2i(i % W, i / W), true)
 			astar2.set_point_solid(Vector2i(i % W, i / W), true)
@@ -1310,7 +1314,7 @@ func _deplete(idx: int) -> void:
 	farm_slots.erase(idx)
 	if rt != Defs.R_FARM:
 		var t := Vector2i(idx % W, idx / W)
-		if terrain[idx] != Defs.T_WATER and occ[idx] == 0:
+		if terrain[idx] != Defs.T_WATER and terrain[idx] != Defs.T_ROCK and occ[idx] == 0:
 			set_solid(t, false)
 	_ev({"t": "depleted", "tile": Vector2i(idx % W, idx / W), "rt": rt})
 
@@ -1422,6 +1426,13 @@ func _u_build_go(e: Ent, step_px: float) -> void:
 		e.path_pending = false
 		return
 	var r := _follow(e, step_px)
+	if r != 0 and b.dist_to(e.pos) <= Defs.TILE * 1.4:
+		# La ruta termina en una casilla en diagonal al edificio: desde ahí ya se puede construir
+		# (_u_build admite hasta 1,4 casillas), así que no se queda dando vueltas.
+		e.state = S_BUILD
+		e.path = []
+		e.path_pending = false
+		return
 	if r != 0:
 		e.fails += 1
 		if e.fails > 4:
@@ -1604,7 +1615,7 @@ func _kill(e: Ent, killer: Ent) -> void:
 					gate_tile[t.y * W + t.x] = 0
 					wall_count -= 1
 					astar2.set_point_weight_scale(t, 1.0)
-				if rtype[t.y * W + t.x] == 0 and terrain[t.y * W + t.x] != Defs.T_WATER:
+				if rtype[t.y * W + t.x] == 0 and terrain[t.y * W + t.x] != Defs.T_WATER and terrain[t.y * W + t.x] != Defs.T_ROCK:
 					set_solid(t, false)
 		if e.producing:
 			p.reserved -= 1

@@ -159,6 +159,9 @@ static func _try(size: int, sd: int, n: int, attempt: int) -> Dictionary:
 			terrain[i] = Defs.T_SAND
 		else:
 			terrain[i] = Defs.T_GRASS
+	# Clima (sólo estético y algo de vegetación) y montañas sólidas
+	var heat := _make_heat(size, sd, starts)
+	var rock_count := _make_mountains(terrain, dw, size, sd, starts)
 	var rtype := PackedByteArray()
 	rtype.resize(total)
 	var ramt := PackedInt32Array()
@@ -180,10 +183,12 @@ static func _try(size: int, sd: int, n: int, attempt: int) -> Dictionary:
 		var ang := rng.randf() * TAU
 		var dir := Vector2(cos(ang), sin(ang))
 		var perp := Vector2(-dir.y, dir.x)
-		_place_cluster(rtype, ramt, terrain, reserved, size, Vector2(s) + dir * 8.5, 6, Defs.R_BERRY, rng, 2.2)
-		_place_cluster(rtype, ramt, terrain, reserved, size, Vector2(s) + perp * 9.5, 4, Defs.R_GOLD, rng, 1.8)
-		_place_cluster(rtype, ramt, terrain, reserved, size, Vector2(s) - dir * 10.0, 32, Defs.R_TREE, rng, 3.4)
-		_place_cluster(rtype, ramt, terrain, reserved, size, Vector2(s) - perp * 11.0, 18, Defs.R_TREE, rng, 2.8)
+		# Si un grupo cae en arena, agua o roca (costa, cordillera) se vuelve a intentar girando
+		# alrededor de la base: toda civilización parte con bayas, oro y madera a mano.
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, dir * 8.5, 6, 4, Defs.R_BERRY, rng, 2.2)
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, perp * 9.5, 4, 3, Defs.R_GOLD, rng, 1.8)
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, -dir * 10.0, 32, 16, Defs.R_TREE, rng, 3.4)
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, -perp * 11.0, 18, 8, Defs.R_TREE, rng, 2.8)
 	# Bosques globales
 	var fnoise := FastNoiseLite.new()
 	fnoise.seed = sd + 101
@@ -204,7 +209,8 @@ static func _try(size: int, sd: int, n: int, attempt: int) -> Dictionary:
 			if near_start:
 				continue
 			var f := fnoise.get_noise_2d(x, y)
-			if (f > 0.13 and rng.randf() < 0.82) or rng.randf() < 0.008:
+			var hot := float(heat[i]) > 178.0   # desierto: vegetación escasa
+			if (f > (0.34 if hot else 0.13) and rng.randf() < 0.82) or rng.randf() < (0.002 if hot else 0.008):
 				rtype[i] = Defs.R_TREE
 				ramt[i] = Defs.RES_INFO[Defs.R_TREE]["amount"]
 	# Oro y bayas neutrales repartidos por todas las tierras
@@ -255,7 +261,138 @@ static func _try(size: int, sd: int, n: int, attempt: int) -> Dictionary:
 		"ok": true, "size": size, "terrain": terrain, "rtype": rtype, "ramt": ramt,
 		"starts": starts, "comp": comp, "main_comp": main_comp, "main_size": main_size,
 		"land_count": land_count, "islands": islands, "dw": dw, "dl": dl,
+		"heat": heat, "rock_count": rock_count,
 	}
+
+## Temperatura 0 (frío) .. 255 (calor): más fría hacia los polos (arriba y abajo), con manchas de
+## ruido, y siempre templada alrededor de las bases para que el inicio sea igual de justo.
+static func _make_heat(size: int, sd: int, starts: Array[Vector2i]) -> PackedByteArray:
+	var n := FastNoiseLite.new()
+	n.seed = sd + 303
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.fractal_type = FastNoiseLite.FRACTAL_FBM
+	n.fractal_octaves = 3
+	n.frequency = 2.4 / float(size)
+	var out := PackedByteArray()
+	out.resize(size * size)
+	for y in size:
+		var pole := absf((y + 0.5) / float(size) - 0.5) * 2.0
+		var base := 0.62 - 0.60 * pow(pole, 1.6)
+		for x in size:
+			var h := base + n.get_noise_2d(x, y) * 0.45
+			var dmin := 1e9
+			for s in starts:
+				dmin = minf(dmin, Vector2(s).distance_to(Vector2(x, y)))
+			h = lerpf(0.5, h, smoothstep(10.0, 26.0, dmin))
+			out[y * size + x] = int(clampf(h, 0.0, 1.0) * 255.0)
+	return out
+
+## Cordilleras: cadenas de roca sólida lejos de la costa y de las bases. Se comprueba que no
+## separen unas bases de otras (flood fill); si lo hacen se prueba con menos montaña.
+static func _make_mountains(terrain: PackedByteArray, dw: PackedInt32Array, size: int, sd: int, starts: Array[Vector2i]) -> int:
+	var rn := FastNoiseLite.new()
+	rn.seed = sd + 4242
+	rn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	rn.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	rn.fractal_octaves = 3
+	rn.frequency = 4.0 / float(size)
+	var mask := FastNoiseLite.new()
+	mask.seed = sd + 777
+	mask.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	mask.fractal_octaves = 2
+	mask.frequency = 2.2 / float(size)
+	var cand := PackedInt32Array()
+	var vals := PackedFloat32Array()
+	for y in size:
+		for x in size:
+			var i := y * size + x
+			if terrain[i] != Defs.T_GRASS or dw[i] < 4:
+				continue
+			var near := false
+			for s in starts:
+				if absi(s.x - x) < 22 and absi(s.y - y) < 22:
+					near = true
+					break
+			if near:
+				continue
+			cand.append(i)
+			vals.append(rn.get_noise_2d(x, y) + 0.7 * mask.get_noise_2d(x, y))
+	if cand.size() < 300:
+		return 0
+	var sorted := vals.duplicate()
+	sorted.sort()
+	for pct in [0.91, 0.95, 0.975]:
+		var thr: float = sorted[int(sorted.size() * pct)]
+		var rock := PackedByteArray()
+		rock.resize(size * size)
+		for k in cand.size():
+			if vals[k] >= thr:
+				rock[cand[k]] = 1
+		# quita piedras sueltas (sin vecinos de roca) y ensancha un poco las cadenas
+		var grown := rock.duplicate()
+		for k in cand.size():
+			var i := cand[k]
+			var x := i % size
+			var y := i / size
+			var nb := 0
+			if x > 0 and rock[i - 1] == 1:
+				nb += 1
+			if x < size - 1 and rock[i + 1] == 1:
+				nb += 1
+			if y > 0 and rock[i - size] == 1:
+				nb += 1
+			if y < size - 1 and rock[i + size] == 1:
+				nb += 1
+			if rock[i] == 1 and nb == 0:
+				grown[i] = 0
+			elif rock[i] == 0 and nb >= 2:
+				grown[i] = 1
+		if not _starts_connected(terrain, grown, size, starts):
+			continue
+		var cnt := 0
+		for k in cand.size():
+			if grown[cand[k]] == 1:
+				terrain[cand[k]] = Defs.T_ROCK
+				cnt += 1
+		return cnt
+	return 0
+
+static func _starts_connected(terrain: PackedByteArray, rock: PackedByteArray, size: int, starts: Array[Vector2i]) -> bool:
+	var total := size * size
+	var seen := PackedByteArray()
+	seen.resize(total)
+	var q := PackedInt32Array()
+	var s0 := starts[0].y * size + starts[0].x
+	seen[s0] = 1
+	q.append(s0)
+	var head := 0
+	var land_total := 0
+	for i in total:
+		if terrain[i] != Defs.T_WATER and rock[i] == 0:
+			land_total += 1
+	while head < q.size():
+		var cur: int = q[head]
+		head += 1
+		var cx := cur % size
+		var cy := cur / size
+		for d in [[-1, 0], [1, 0], [0, -1], [0, 1]]:
+			var nx: int = cx + d[0]
+			var ny: int = cy + d[1]
+			if nx < 0 or ny < 0 or nx >= size or ny >= size:
+				continue
+			var ni := ny * size + nx
+			if seen[ni] == 0 and terrain[ni] != Defs.T_WATER and rock[ni] == 0:
+				seen[ni] = 1
+				q.append(ni)
+	for s in starts:
+		if seen[s.y * size + s.x] == 0:
+			return false
+	# la red principal no debe quedar partida en pedazos grandes
+	var main_land := 0
+	for i in total:
+		if terrain[i] != Defs.T_WATER and rock[i] == 0 and seen[i] == 1:
+			main_land += 1
+	return float(main_land) >= 0.9 * float(land_total) or land_total - main_land < 60
 
 static func _pick_starts(cands: Array[Vector2i], n: int) -> Array[Vector2i]:
 	var cx := 0.0
@@ -331,6 +468,14 @@ static func _tile_ok_for(kind: int, terrain: PackedByteArray, rtype: PackedByteA
 	if reserved[i] == 1 and kind != Defs.R_BERRY and kind != Defs.R_GOLD and kind != Defs.R_TREE:
 		return false
 	return terrain[i] == Defs.T_GRASS
+
+static func _start_cluster(rtype: PackedByteArray, ramt: PackedInt32Array, terrain: PackedByteArray, reserved: PackedByteArray, size: int, s: Vector2i, offset: Vector2, count: int, need: int, kind: int, rng: RandomNumberGenerator, spread: float) -> void:
+	var got := 0
+	for k in 6:
+		var off := offset.rotated(float(k) * 1.2566)
+		got += _place_cluster(rtype, ramt, terrain, reserved, size, Vector2(s) + off, count - got if k > 0 else count, kind, rng, spread)
+		if got >= need:
+			return
 
 static func _place_cluster(rtype: PackedByteArray, ramt: PackedInt32Array, terrain: PackedByteArray, reserved: PackedByteArray, size: int, center: Vector2, count: int, kind: int, rng: RandomNumberGenerator, spread: float) -> int:
 	var placed := 0

@@ -18,6 +18,7 @@ var radius: float = 8.0
 var last_hit: float = -100.0
 var qmark: int = 0
 var off: Vector2 = Vector2.ZERO       # desvío de formación
+var face: int = 1                      # hacia dónde mira (+1 derecha, -1 izquierda); sólo dibujo
 
 # --- unidad ---
 var state: int = 0

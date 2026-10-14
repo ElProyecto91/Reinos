@@ -12,6 +12,7 @@ const KINDS := ["food", "wood", "gold"]
 const T_WATER := 0
 const T_SAND := 1
 const T_GRASS := 2
+const T_ROCK := 3      # montaña: sólida, no se puede construir ni cruzar
 
 # Recursos de casilla
 const R_NONE := 0

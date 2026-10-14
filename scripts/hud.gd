@@ -673,8 +673,19 @@ class Minimap extends Control:
 						c = Color(0.16, 0.38, 0.62) if sim.dl[i] > 2 else Color(0.28, 0.58, 0.78)
 					Defs.T_SAND:
 						c = Color(0.85, 0.79, 0.55)
+					Defs.T_ROCK:
+						c = Color(0.52, 0.50, 0.48)
 					_:
 						c = Color(0.36, 0.6, 0.3)
+				# clima: nieve en el frío extremo y desierto en el calor (como en el mapa)
+				if sim.terrain[i] != Defs.T_WATER and sim.heat.size() > i:
+					var hv := float(sim.heat[i]) / 255.0
+					var snow := 1.0 - smoothstep(0.20, 0.34, hv)
+					var desert := smoothstep(0.66, 0.78, hv)
+					if sim.terrain[i] == Defs.T_ROCK:
+						c = c.lerp(Color(0.92, 0.95, 0.99), maxf(snow * 0.6, 0.0))
+					else:
+						c = c.lerp(Color(0.80, 0.68, 0.42), desert).lerp(Color(0.88, 0.92, 0.97), snow)
 				match sim.rtype[i]:
 					Defs.R_TREE:
 						c = Color(0.12, 0.38, 0.16)

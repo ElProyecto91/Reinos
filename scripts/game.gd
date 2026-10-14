@@ -17,7 +17,7 @@ var fog: Fog
 var hud: Hud
 var audio: AudioMgr
 var human: int = 0
-var terrain_tex: ImageTexture
+var terrain_mat: ShaderMaterial
 var farm_tiles: Dictionary = {}
 var res_layer: TileMapLayer
 var l_terrain: WorldLayer
@@ -43,6 +43,17 @@ var _run_mode := -1          # -1 sin definir, 0 reposo (pausa/fin), 1 en marcha
 var _last_input_ms := 0
 var _cam_sig := Vector3.ZERO
 var _dirty := 2
+var anim_t := 0.0             # reloj de animación (se detiene en pausa)
+var night := 0.0              # 0 día .. 1 noche cerrada (ver atmósfera)
+var rain := 0.0               # 0 despejado .. 1 lluvia
+var overcast := 0.0
+var l_sky: WorldLayer
+var canvas_mod: CanvasModulate
+var _sky_mat: ShaderMaterial
+var _rain_rect: ColorRect
+var _rain_layer: CanvasLayer
+var _wx: FastNoiseLite
+var _atmo_t := 0.0
 
 # cámara
 var cam_pos := Vector2.ZERO
@@ -128,12 +139,16 @@ func _prepare() -> void:
 	await get_tree().process_frame
 	hud.set_loading(Lang.t("loading_terrain"))
 	await get_tree().process_frame
-	terrain_tex = Renderer.make_terrain(sim)
+	terrain_mat = TerrainFx.make_material(sim)
 	await get_tree().process_frame
 	human = sim.human_index
 	l_terrain = _make_layer(0)
+	l_terrain.material = terrain_mat
 	_build_tilemap()
 	l_ents = _make_layer(1)
+	l_ents.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	res_layer.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_build_atmosphere()
 	l_fog = _make_layer(2)
 	fog = Fog.new(sim.W, sim.H)
 	# granjas existentes (ninguna al inicio, pero por si se carga una partida)
@@ -150,6 +165,61 @@ func _prepare() -> void:
 	_apply_camera()
 	hud.toast(Lang.t("toast_start"), Color(1, 1, 1))
 
+func _build_atmosphere() -> void:
+	l_sky = _make_layer(3)
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = load("res://shaders/clouds.gdshader")
+	_sky_mat.set_shader_parameter("nz1", terrain_mat.get_shader_parameter("nz1"))
+	_sky_mat.set_shader_parameter("tile_px", float(T))
+	l_sky.material = _sky_mat
+	canvas_mod = CanvasModulate.new()
+	add_child(canvas_mod)
+	_rain_layer = CanvasLayer.new()
+	_rain_layer.layer = 5            # por encima del mundo y por debajo de la interfaz (10)
+	add_child(_rain_layer)
+	_rain_rect = ColorRect.new()
+	_rain_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_rain_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rm := ShaderMaterial.new()
+	rm.shader = load("res://shaders/rain.gdshader")
+	_rain_rect.material = rm
+	_rain_rect.visible = false
+	_rain_layer.add_child(_rain_rect)
+	_wx = FastNoiseLite.new()
+	_wx.seed = sim.seed_used + 5
+	_wx.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_wx.frequency = 1.0
+	_atmosphere()
+
+const DAY_LEN := 540.0     # segundos de partida por día completo
+const TOD_KEYS := [0.0, 0.20, 0.27, 0.35, 0.50, 0.65, 0.73, 0.80, 0.88, 1.0]
+const TOD_COLS := [Color(0.50, 0.56, 0.80), Color(0.52, 0.58, 0.82), Color(0.96, 0.76, 0.64), Color(1.0, 0.97, 0.90), Color(1, 1, 1),
+		Color(1.0, 0.98, 0.92), Color(1.0, 0.72, 0.55), Color(0.70, 0.66, 0.86), Color(0.50, 0.56, 0.80), Color(0.50, 0.56, 0.80)]
+const TOD_NIGHT := [1.0, 0.95, 0.35, 0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0]
+
+## Ciclo día/noche (tinte global), cielo cubierto, sombras de nubes y lluvia. 4 veces por segundo.
+func _atmosphere() -> void:
+	var tod := fposmod(0.30 + sim.time / DAY_LEN, 1.0)
+	var k := 0
+	while k < TOD_KEYS.size() - 2 and tod > float(TOD_KEYS[k + 1]):
+		k += 1
+	var f := clampf((tod - float(TOD_KEYS[k])) / (float(TOD_KEYS[k + 1]) - float(TOD_KEYS[k])), 0.0, 1.0)
+	var col: Color = (TOD_COLS[k] as Color).lerp(TOD_COLS[k + 1], f)
+	night = lerpf(float(TOD_NIGHT[k]), float(TOD_NIGHT[k + 1]), f)
+	# clima: ruido lento; los primeros minutos siempre despejados
+	var v := _wx.get_noise_1d(sim.time / 140.0)
+	var warm := smoothstep(60.0, 200.0, sim.time)
+	rain = smoothstep(0.28, 0.50, v) * warm
+	overcast = maxf(smoothstep(0.0, 0.35, v), rain) * warm
+	col = col.lerp(Color(0.72, 0.76, 0.84), overcast * 0.40)
+	var dim := 1.0 - 0.12 * rain
+	canvas_mod.color = Color(col.r * dim, col.g * dim, col.b * dim, 1.0)
+	_sky_mat.set_shader_parameter("cover", overcast)
+	terrain_mat.set_shader_parameter("full", 0.0 if Settings.profile == 0 else 1.0)
+	_rain_rect.visible = rain > 0.03
+	if _rain_rect.visible:
+		(_rain_rect.material as ShaderMaterial).set_shader_parameter("amount", rain)
+
 func _make_layer(mode: int) -> WorldLayer:
 	var l := WorldLayer.new()
 	l.game = self
@@ -162,8 +232,8 @@ func _build_tilemap() -> void:
 	ts.tile_size = Vector2i(T, T)
 	var src := TileSetAtlasSource.new()
 	src.texture = art.res_atlas
-	src.texture_region_size = Vector2i(T, T)
-	for i in 7:
+	src.texture_region_size = Vector2i(Art.RES_CELL, Art.RES_CELL)
+	for i in Art.ATLAS_N:
 		src.create_tile(Vector2i(i, 0))
 	ts.add_source(src, 0)
 	res_layer = TileMapLayer.new()
@@ -186,13 +256,22 @@ func _atlas_index(rt: int, x: int, y: int) -> int:
 	var h := ((x * 73856093) ^ (y * 19349663)) & 0x7fffffff
 	match rt:
 		Defs.R_TREE:
-			return h % 3
+			# especie según el clima de la casilla
+			var heat := float(sim.heat[y * sim.W + x]) / 255.0
+			var k := (h >> 4) % 100
+			if heat < 0.28:
+				return Art.TREE_SNOW if k < 72 else Art.TREE_PINE_B
+			elif heat < 0.42:
+				return Art.TREE_PINE if k < 34 else (Art.TREE_PINE_B if k < 58 else (Art.TREE_OAK_A if k < 82 else Art.TREE_OAK_B))
+			elif heat < 0.66:
+				return Art.TREE_OAK_A if k < 40 else (Art.TREE_OAK_B if k < 72 else (Art.TREE_PINE if k < 85 else (Art.TREE_PINE_B if k < 95 else Art.TREE_AUTUMN)))
+			return Art.TREE_PALM if k < 52 else (Art.TREE_DRY if k < 88 else Art.TREE_OAK_B)
 		Defs.R_GOLD:
-			return 3
+			return Art.RES_GOLD
 		Defs.R_BERRY:
-			return 4
+			return Art.RES_BERRY
 		Defs.R_FISH:
-			return 5 + (h % 2)
+			return Art.RES_FISH0 + (h % 2)
 	return -1
 
 func _exit_tree() -> void:
@@ -214,6 +293,11 @@ func _process(delta: float) -> void:
 	_keys(delta)
 	_long_press_check()
 	if not paused:
+		anim_t += delta
+		_atmo_t -= delta
+		if _atmo_t <= 0.0:
+			_atmo_t = 0.25
+			_atmosphere()
 		_step_sim(delta)
 		_check_idle()
 	_update_fx(delta)

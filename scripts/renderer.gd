@@ -4,59 +4,9 @@ extends RefCounted
 
 const T := Defs.TILE
 
-static func make_terrain(sim: Sim) -> ImageTexture:
-	var S := 2
-	var w := sim.W * S
-	var bytes := PackedByteArray()
-	bytes.resize(w * w * 3)
-	var nz := FastNoiseLite.new()
-	nz.seed = sim.seed_used
-	nz.frequency = 0.07
-	var nz2 := FastNoiseLite.new()
-	nz2.seed = sim.seed_used + 7
-	nz2.frequency = 0.35
-	var shallow := Color(0.24, 0.62, 0.80)
-	var deep := Color(0.09, 0.28, 0.52)
-	var foam := Color(0.62, 0.86, 0.92)
-	var sand := Color(0.89, 0.83, 0.57)
-	var grass := Color(0.33, 0.60, 0.27)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = sim.seed_used
-	for ty in sim.H:
-		for tx in sim.W:
-			var ti := ty * sim.W + tx
-			var t: int = sim.terrain[ti]
-			var col: Color
-			if t == Defs.T_WATER:
-				var dl: int = sim.dl[ti]
-				var f := clampf(float(dl - 1) / 8.0, 0.0, 1.0)
-				col = shallow.lerp(deep, f)
-				if dl <= 1:
-					col = col.lerp(foam, 0.55)
-				col = Painter.shade(col, 1.0 + nz2.get_noise_2d(tx, ty) * 0.06)
-			elif t == Defs.T_SAND:
-				col = Painter.shade(sand, 1.0 + nz2.get_noise_2d(tx, ty) * 0.04)
-			else:
-				var n := nz.get_noise_2d(tx, ty)
-				col = Painter.shade(grass, 1.0 + n * 0.28 + nz2.get_noise_2d(tx, ty) * 0.05)
-				col.g = clampf(col.g + n * 0.04, 0.0, 1.0)
-			var r8 := int(clampf(col.r, 0.0, 1.0) * 255.0)
-			var g8 := int(clampf(col.g, 0.0, 1.0) * 255.0)
-			var b8 := int(clampf(col.b, 0.0, 1.0) * 255.0)
-			for sy in S:
-				var row := ((ty * S + sy) * w + tx * S) * 3
-				for sx in S:
-					var o := row + sx * 3
-					var jit := (rng.randi() & 3) - 1
-					bytes[o] = clampi(r8 + jit, 0, 255)
-					bytes[o + 1] = clampi(g8 + jit, 0, 255)
-					bytes[o + 2] = clampi(b8 + jit, 0, 255)
-	var img := Image.create_from_data(w, w, false, Image.FORMAT_RGB8, bytes)
-	return ImageTexture.create_from_image(img)
-
 static func draw_terrain(g: Game, c: CanvasItem) -> void:
-	if g.terrain_tex != null:
-		c.draw_texture_rect(g.terrain_tex, Rect2(0, 0, g.sim.W * T, g.sim.H * T), false)
+	# el color lo calcula el shader del material de la capa (shaders/terrain.gdshader)
+	c.draw_rect(Rect2(0, 0, g.sim.W * T, g.sim.H * T), Color.WHITE, true)
 
 static func draw_fog(g: Game, c: CanvasItem) -> void:
 	if g.fog != null:
@@ -170,11 +120,53 @@ static func _draw_carry(c: CanvasItem, o: Vector2, kind: String, fill: float) ->
 				c.draw_rect(r, Color(0.62, 0.4, 0.18), true)
 				c.draw_circle(Vector2(r.end.x - 1.5, r.get_center().y), 1.6 * k, Color(0.85, 0.65, 0.4))
 
+static func _unit_target_pos(g: Game, u: Ent) -> Vector2:
+	if u.state == Sim.S_GATHER and u.target_tile.x >= 0:
+		return g.sim.tile_center(u.target_tile)
+	if u.state == Sim.S_ATTACK or u.state == Sim.S_BUILD:
+		var t := g.sim.get_ent(u.target_id)
+		if t != null:
+			return t.center() if t.is_building else t.pos
+	return Vector2.INF
+
 static func _draw_unit(g: Game, c: CanvasItem, u: Ent) -> void:
 	var p: Vector2 = u.ppos.lerp(u.pos, g.interp)
 	var tex: Texture2D = g.art.unit_tex[u.type][u.owner % 4]
 	var sz := 36.0 if u.type != "jinete" else 42.0
-	c.draw_texture_rect(tex, Rect2(p.x - sz * 0.5, p.y - sz * 0.72, sz, sz), false)
+	# orientación: hacia donde anda o hacia lo que trabaja/ataca
+	var moving := u.ppos.distance_to(u.pos) > 0.12
+	if moving:
+		if absf(u.pos.x - u.ppos.x) > 0.04:
+			u.face = 1 if u.pos.x > u.ppos.x else -1
+	else:
+		var tp := _unit_target_pos(g, u)
+		if tp != Vector2.INF and absf(tp.x - p.x) > 3.0:
+			u.face = 1 if tp.x > p.x else -1
+	# animación según lo que hace
+	var ph := g.anim_t * (14.0 if u.type == "jinete" else 11.0) + float(u.id) * 1.7
+	var bob := 0.0
+	var rot := 0.0
+	var lunge := 0.0
+	if moving:
+		bob = absf(sin(ph)) * (3.0 if u.type == "jinete" else 2.3)
+		rot = sin(ph) * 0.07
+	elif u.state == Sim.S_GATHER:
+		var a := sin(ph * 0.55)
+		rot = a * 0.30 * float(u.face)
+		bob = absf(a) * 1.2
+	elif u.state == Sim.S_BUILD:
+		var a2 := absf(sin(ph * 0.7))
+		bob = a2 * 3.0
+		rot = sin(ph * 0.7) * 0.10 * float(u.face)
+	elif u.state == Sim.S_ATTACK:
+		var a3 := maxf(0.0, sin(ph * 0.6))
+		rot = a3 * 0.30 * float(u.face)
+		lunge = a3 * 4.0 * float(u.face)
+	# sombra propia (no oscila con el paso)
+	c.draw_texture_rect(g.art.shadow_tex, Rect2(p.x - 11.0 + lunge * 0.5 + 1.5, p.y - 1.0, 22.0, 9.0), false)
+	c.draw_set_transform(p + Vector2(lunge, 0.0), rot, Vector2(float(u.face), 1.0))
+	c.draw_texture_rect(tex, Rect2(-sz * 0.5, -sz * 0.72 - bob, sz, sz), false)
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if u.carry_amt >= 1.0 and u.type == "aldeano":
 		_draw_carry(c, p + Vector2(11, -22), u.carry_kind, clampf(u.carry_amt / 10.0, 0.0, 1.0))
 	if u.hp < u.max_hp or g.sel_set.has(u.id):
@@ -263,6 +255,32 @@ static func _draw_wall(g: Game, c: CanvasItem, b: Ent) -> void:
 		c.draw_rect(Rect2(r.position.x + 2, r.position.y - 9, 28, 5), Color(0, 0, 0, 0.75), true)
 		c.draw_rect(Rect2(r.position.x + 3, r.position.y - 8, 26 * f, 3), Color(0.9 - 0.7 * f, 0.25 + 0.65 * f, 0.15), true)
 
+const SMOKE := {"casa": Vector2(0.34, 0.09), "centro": Vector2(0.755, 0.27), "cuartel": Vector2(0.67, 0.20)}
+# ventanas (x, y, ancho, alto) en píxeles del sprite lógico, para el brillo nocturno
+const WINDOWS := {
+	"casa": [[14, 41, 6, 6], [40, 41, 6, 6]],
+	"centro": [[18, 68, 8, 8], [66, 68, 8, 8]],
+	"cuartel": [[16, 70, 8, 8], [60, 70, 8, 8]],
+}
+
+static func _draw_smoke(g: Game, c: CanvasItem, b: Ent, r: Rect2) -> void:
+	var f: Vector2 = SMOKE[b.type]
+	var base := r.position + Vector2(r.size.x * f.x, r.size.y * f.y)
+	for k in 3:
+		var ph := fposmod(g.anim_t * 0.30 + float(k) / 3.0 + float(b.id) * 0.137, 1.0)
+		var p := base + Vector2(ph * 10.0 + sin(ph * 6.0 + float(b.id)) * 2.0, -ph * 32.0)
+		var a := 0.42 * (1.0 - ph) * minf(1.0, ph * 6.0)
+		c.draw_circle(p, 2.2 + ph * 6.5, Color(0.86, 0.86, 0.88, a))
+
+static func _draw_night_lights(g: Game, c: CanvasItem, b: Ent, r: Rect2) -> void:
+	var sc := r.size.x / (96.0 if b.size == 3 else 64.0)
+	for w: Array in WINDOWS[b.type]:
+		var wr := Rect2(r.position + Vector2(float(w[0]), float(w[1])) * sc, Vector2(float(w[2]), float(w[3])) * sc)
+		c.draw_circle(wr.get_center(), wr.size.x * 1.5, Color(1.0, 0.78, 0.38, 0.10 * g.night))
+		c.draw_rect(wr, Color(1.0, 0.84, 0.45, 0.88 * g.night), true)
+		c.draw_rect(Rect2(wr.position.x + wr.size.x * 0.5 - 0.5, wr.position.y, 1.0, wr.size.y), Color(0.35, 0.22, 0.08, 0.7 * g.night), true)
+		c.draw_rect(Rect2(wr.position.x, wr.position.y + wr.size.y * 0.5 - 0.5, wr.size.x, 1.0), Color(0.35, 0.22, 0.08, 0.7 * g.night), true)
+
 static func _draw_building(g: Game, c: CanvasItem, b: Ent) -> void:
 	if b.def.get("wall", false):
 		_draw_wall(g, c, b)
@@ -285,6 +303,11 @@ static func _draw_building(g: Game, c: CanvasItem, b: Ent) -> void:
 		for i in range(1, 4):
 			var yy := r.position.y + r.size.y * i / 4.0
 			c.draw_line(Vector2(r.position.x + 4, yy), Vector2(r.end.x - 4, yy), col, 1.5)
+	if b.progress >= 1.0:
+		if SMOKE.has(b.type):
+			_draw_smoke(g, c, b, r)
+		if g.night > 0.12 and WINDOWS.has(b.type):
+			_draw_night_lights(g, c, b, r)
 	var show_bar := b.hp < b.max_hp or g.sel_set.has(b.id) or b.progress < 1.0
 	if show_bar:
 		var w := r.size.x * 0.8

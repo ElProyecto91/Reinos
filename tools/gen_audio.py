@@ -217,13 +217,31 @@ def amb_forest(dur=14.0):
                 out[s: s + len(chirp)] += chirp * 0.22
     return out
 
+def amb_rain(dur=12.0):
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    hiss = bandpass(noise(dur), 1400, 7500)
+    bed = lowpass(noise(dur), 650) * 0.35
+    mod = 0.80 + 0.20 * np.sin(2 * np.pi * (round(dur / 3.0) / dur) * t + 0.7)
+    out = (hiss * 0.8 + bed) * mod
+    # gotas sueltas sobre superficies
+    for _ in range(int(dur * 14)):
+        s0 = int(rng.uniform(0, n - 600))
+        d = rng.uniform(0.012, 0.03)
+        k = int(d * SR)
+        tt = np.arange(k) / SR
+        f = rng.uniform(1800, 4200)
+        out[s0:s0 + k] += np.sin(2 * np.pi * f * tt) * np.exp(-tt * 260) * rng.uniform(0.05, 0.16)
+    return out
+
 def make_loop(x, name, peak=0.6):
     # el ruido filtrado por FFT y las modulaciones con ciclos enteros son periódicos: sin costura
     save(name, x - np.mean(x), peak, loop=True)
 
 if __name__ == "__main__" and len(sys.argv) > 1:
     # python3 tools/gen_audio.py deposit  -> solo regenera esos sonidos, sin tocar el resto
-    only = {"deposit": lambda: save("deposit", s_deposit(), 0.7)}
+    only = {"deposit": lambda: save("deposit", s_deposit(), 0.7),
+            "rain": lambda: make_loop(amb_rain(), "rain", 0.5)}
     for a in sys.argv[1:]:
         only[a]()
 elif __name__ == "__main__":
@@ -245,5 +263,6 @@ elif __name__ == "__main__":
     make_loop(amb_wind(), "wind", 0.5)
     make_loop(amb_sea(), "sea", 0.6)
     make_loop(amb_forest(), "forest", 0.6)
+    make_loop(amb_rain(), "rain", 0.5)
     tot = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
     print("total KB:", tot // 1024)

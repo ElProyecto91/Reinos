@@ -4,7 +4,8 @@ Estrategia en tiempo real para Android, estilo Age of Empires, **100 % en españ
 Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por código: no hay ficheros de imagen ni de música.
 
 - 1 jugador contra 1–3 IAs (aliadas entre sí por defecto, o todos contra todos).
-- Mapa plano de 128×128, 192×192 o 256×256 casillas con continentes, islas y mar.
+- Mapa plano de 128×128, 192×192 o 256×256 casillas con continentes, islas y mar, cordilleras infranqueables y climas (nieve, templado, desierto).
+- Aspecto: terreno dibujado por shader (agua con olas y espuma, relieve, montañas), ciclo día/noche, nubes, lluvia ocasional, árboles por bioma, aldeanos animados y poblados a escala del mapa (el centro urbano es un ayuntamiento con campanario, no un castillo).
 - Edades Oscura y Feudal, economía (comida, madera, oro), granjas, cuartel, arquería, establo, murallas, puertas y torres.
 - Sin campaña, sin música. Solo sonidos de acción y ambiente.
 - Perfiles de batería: Ahorro (20 fps), Normal (30 fps), Alta (60 fps, resolución nativa).
@@ -16,8 +17,8 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 | Juego completo | Probado en un PC sin tarjeta gráfica (renderizado por software) con toques simulados. **No probado en un móvil real.** |
 | APK | **No se ha podido compilar aquí** (sin acceso al SDK de Android). Abajo tienes dos formas de generarlo. |
 | Sonido | Sintetizado por código; **nadie lo ha escuchado**. Puede sonar mal. Se regenera con `tools/gen_audio.py`. |
-| Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. |
-| Islas | Son decorativas: no hay barcos, así que no se puede llegar a ellas. |
+| Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. Los shaders de terreno/nubes/lluvia duplican el coste por fotograma en ese entorno; el perfil Ahorro usa una variante más ligera del terreno. Cuenta con **menos autonomía** que antes. |
+| Islas | Son decorativas: no hay barcos, así que no se puede llegar a ellas. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. |
 | Guardar/cargar partida | No existe. |
 | IA | Sube de edad, construye economía, ejército y torres, y ataca. **No usa murallas ni puertas.** |
 
@@ -64,6 +65,7 @@ Lo que hace el juego para gastar poco (los números son decisiones de diseño, n
 - Auto-pausa tras 90 s (Ahorro), 180 s (Normal) o 300 s (Alta) sin tocar la pantalla; se puede desactivar.
 - Panel de recursos, niebla de guerra y minimapa se refrescan menos veces por segundo en los perfiles de ahorro.
 - La simulación va a 10 pasos por segundo con interpolación; los sonidos van a 22 kHz mono.
+- El realismo visual (shaders, día/noche, lluvia) se mantiene en todos los perfiles; Ahorro sólo simplifica el relieve del terreno. El agua se queda quieta en pausa.
 
 Lo que no se puede controlar desde el juego: el brillo y el tiempo de pantalla del móvil. Es, con diferencia, lo que más gasta.
 
@@ -92,7 +94,10 @@ $GODOT --headless --path . --script res://tools/wall_test.gd
 
 # interfaz con toques simulados (necesita xvfb o pantalla)
 xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test2.tscn --rendering-driver opengl3
-# también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), battery_test
+# también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), ui_test6 (recolectar oro), battery_test
+
+# utilidades: capturas del mundo (world_shot, en el minimapa con at=minimap), estadísticas de mapa (map_stats),
+# alcance de recursos desde cada base (reach_dbg), depuración de la economía de la IA (ai_food_dbg)
 ```
 
 ## Licencias

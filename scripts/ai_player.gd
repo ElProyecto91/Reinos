@@ -156,6 +156,21 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 			if v.state == Sim.S_GATHER and v.carry_kind == over and v.carry_amt < 3.0:
 				_assign(p, v, under, base)
 				break
+	# Comida lejana: los aldeanos que siguen bayas a decenas de casillas del centro (la
+	# recolección automática salta de arbusto en arbusto) pasan a granjas junto a la base.
+	if int(p.res.wood) >= int(Defs.FARM_COST["wood"]):
+		for v in vills:
+			if v.carry_kind != "food" or v.carry_amt >= 3.0 or v.target_tile.x < 0:
+				continue
+			if v.state != Sim.S_GATHER and v.state != Sim.S_GATHER_GO:
+				continue
+			if sim.rtype[v.target_tile.y * sim.W + v.target_tile.x] != Defs.R_BERRY:
+				continue
+			if Vector2(v.target_tile - base).length() > 20.0:
+				var ft := _farm_spot(base)
+				if ft.x >= 0:
+					sim.cmd_build(pi, [v.id], "granja", ft)
+				break
 
 func _assign(p: Player, v: Ent, kind: String, base: Vector2i) -> bool:
 	var mask := sim.res_mask_for(kind)
@@ -163,13 +178,19 @@ func _assign(p: Player, v: Ent, kind: String, base: Vector2i) -> bool:
 	var t := sim.find_resource(from, mask, pi, v.id, 18)
 	if t.x < 0 and from.distance_to(base) > 14.0:
 		t = sim.find_resource(base, mask, pi, v.id, 18)
-	if t.x >= 0:
+	# Comida: si lo más cercano está lejos de la base (bayas a decenas de casillas, caminata
+	# larga y expuesta), es mejor una granja junto al centro urbano.
+	var far_food := kind == "food" and t.x >= 0 and Vector2(t - base).length() > 20.0
+	if t.x >= 0 and not far_food:
 		sim.cmd_gather(pi, [v.id], t)
 		return true
 	if kind == "food" and int(p.res.wood) >= int(Defs.FARM_COST["wood"]):
 		var ft := _farm_spot(base)
-		if ft.x >= 0:
-			return sim.cmd_build(pi, [v.id], "granja", ft) == Sim.OK
+		if ft.x >= 0 and sim.cmd_build(pi, [v.id], "granja", ft) == Sim.OK:
+			return true
+	if t.x >= 0:
+		sim.cmd_gather(pi, [v.id], t)
+		return true
 	return false
 
 func _farm_spot(base: Vector2i) -> Vector2i:
@@ -221,6 +242,9 @@ func _try_build(p: Player, type: String, base: Vector2i, vills: Array, rmin: int
 		return false
 	for attempt in 4:
 		var t := _spot(type, base, rmin, rmax)
+		if t.x < 0:
+			# Corona llena (granjas, bosque, costa): se amplía el anillo antes de rendirse.
+			t = _spot(type, base, rmax, rmax + 8)
 		if t.x < 0:
 			return false
 		var ids := _builder_for(p, t, vills, nb)
