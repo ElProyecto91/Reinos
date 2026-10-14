@@ -15,12 +15,37 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 | Cosa | Estado |
 |---|---|
 | Juego completo | Probado en un PC sin tarjeta gráfica (renderizado por software) con toques simulados. **No probado en un móvil real.** |
-| APK | Se compila en GitHub Actions (no aquí). Desde el build con clave fija (`.github/reinos-debug.p12`, pública a propósito: es de depuración) cada APK se instala encima del anterior; el menú muestra el número de build abajo a la izquierda. **Al pasar de un APK antiguo a uno con clave fija hay que desinstalar el juego una vez.** |
+| APK | Se compila en GitHub Actions (no aquí) y, con la clave de firma configurada, se publica en *Releases*. **Sin probar en un móvil real.** Ver «Seguridad». |
 | Sonido | Sintetizado por código; **nadie lo ha escuchado**. Puede sonar mal. Se regenera con `tools/gen_audio.py`. |
 | Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. Los shaders de terreno/nubes/lluvia duplican el coste por fotograma en ese entorno; el perfil Ahorro usa una variante más ligera del terreno. Cuenta con **menos autonomía** que antes. |
 | Islas | Son decorativas: no hay barcos, así que no se puede llegar a ellas. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. |
 | Guardar/cargar partida | No existe. |
 | IA | Sube de edad, construye economía, ejército y torres, y ataca. **No usa murallas ni puertas.** |
+
+## Seguridad
+
+Qué se ha hecho y qué NO se puede prometer («100 % segura» no existe):
+
+- **Permisos del APK:** solo `VIBRATE` e `INTERNET`. Internet se usa únicamente para el aviso de versión nueva (se desactiva en el menú, «Actualizaciones: No») y no envía ningún dato tuyo. No pide ubicación, contactos, cámara, micrófono ni almacenamiento. El flujo de GitHub **falla** si el APK pide cualquier otro permiso o es depurable.
+- **Datos:** solo `ajustes.cfg` en el almacenamiento privado de la app (perfil, auto-pausa, avisos). No hay cuentas, ni publicidad, ni estadísticas. El juego no ejecuta nada que venga de fuera.
+- **Firma:** el APK es *release* (no depurable) y va firmado con una clave privada que **solo existe en los secretos de GitHub** (`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`). Su huella SHA-256 está en `.github/signing-cert.sha256` y en las notas de cada release; el flujo se niega a publicar si la huella no coincide.
+- **Actualizaciones:** el juego consulta (HTTPS) la última release; si hay una nueva, avisa en el menú. Al tocar el aviso abre en el navegador una dirección fija del código. La instala Android, que **solo acepta un APK firmado con la misma clave** que el instalado: uno manipulado no puede sustituirlo. Android no permite instalar sin que toques «Instalar»; esto no se puede automatizar más sin permisos peores.
+- **Cadena de compilación:** Godot y sus plantillas se verifican con SHA-512 fijados, las acciones de terceros van fijadas por commit y el token del flujo es de solo lectura salvo para publicar la release.
+- **Verificar tú mismo un APK:** `sha256sum -c reinos.apk.sha256` y `apksigner verify --print-certs reinos.apk` (la huella debe ser la de `.github/signing-cert.sha256`).
+
+Lo que NO está cubierto:
+
+- **Play Protect** seguirá avisando de «app desconocida» mientras no esté en Google Play (cuesta 25 USD una vez; fuera del objetivo de coste 0).
+- Todo depende de **tu cuenta de GitHub**: activa la verificación en dos pasos y no compartas tokens. Quien controle el repositorio controla las actualizaciones.
+- Si pierdes los secretos de firma habrá que crear una clave nueva y **desinstalar el juego una vez** (sin pérdida de partidas: no existen).
+- El historial de git contiene una clave de depuración antigua, ya descartada y sin uso.
+
+### Configurar la firma (una sola vez)
+
+1. Genera la clave en tu ordenador (hace falta Java): `keytool -genkeypair -alias reinos -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 -keystore reinos-release.p12 -storetype PKCS12`
+2. GitHub → repositorio → Settings → Secrets and variables → Actions → New repository secret: `ANDROID_KEYSTORE_PASSWORD` (la contraseña) y `ANDROID_KEYSTORE_B64` (`base64 -w0 reinos-release.p12`).
+3. Escribe la huella (`keytool -list -v -keystore reinos-release.p12`, la línea SHA256, en minúsculas y sin dos puntos) en `.github/signing-cert.sha256`.
+4. Guarda el `.p12` y la contraseña en un gestor de contraseñas; nunca en el repositorio.
 
 ## Abrirlo en el PC
 
@@ -29,13 +54,13 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 
 ## Generar el APK
 
-### Opción A: GitHub Actions (no instalas nada) — flujo sin probar
+### Opción A: GitHub Actions (no instalas nada)
 
-1. Crea un repositorio en GitHub y sube esta carpeta (incluye `.github/workflows/apk.yml`).
-2. Pestaña **Actions → APK Android → Run workflow**.
-3. Al terminar, descarga el *artifact* `reinos-apk`, descomprímelo y copia `reinos.apk` al móvil.
+1. Sube esta carpeta a GitHub (incluye `.github/workflows/apk.yml`) y configura la firma (ver «Seguridad»).
+2. Cada subida a `main` compila y, si todo está correcto, publica una *Release* `build-N` con `reinos.apk` y `reinos.apk.sha256`. También puedes lanzarlo a mano: **Actions → APK Android → Run workflow**.
+3. Descarga `reinos.apk` de **Releases → Latest** (si el repositorio es público, desde el navegador del móvil sin iniciar sesión) e instálalo. Las actualizaciones se instalan encima sin desinstalar.
 
-El flujo instala Godot, las plantillas de exportación y los componentes del SDK, crea una clave de depuración y exporta. Está escrito sin poder ejecutarlo: si falla, el error del paso que se pone en rojo dice qué falta.
+Sin los secretos de firma el flujo compila igualmente, pero con una clave desechable: el artefacto se llama `reinos-apk-SIN-CLAVE-FIJA`, no se publica y no se podrá actualizar encima de otro.
 
 ### Opción B: en tu ordenador
 
@@ -95,6 +120,10 @@ $GODOT --headless --path . --script res://tools/wall_test.gd
 # interfaz con toques simulados (necesita xvfb o pantalla)
 xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test2.tscn --rendering-driver opengl3
 # también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), ui_test6 (recolectar oro), battery_test
+
+# aviso de actualización (necesita el servidor de pruebas en marcha)
+python3 tools/mock_release_server.py 18765 &
+$GODOT --headless --path . --script res://tools/updater_test.gd -- port=18765
 
 # utilidades: capturas del mundo (world_shot, en el minimapa con at=minimap), estadísticas de mapa (map_stats),
 # alcance de recursos desde cada base (reach_dbg), depuración de la economía de la IA (ai_food_dbg)

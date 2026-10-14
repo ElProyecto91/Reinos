@@ -1,9 +1,12 @@
-# Genera un APK de Reinos en los servidores de GitHub (gratis para repositorios públicos
-# y con cuota mensual gratuita para privados). SIN PROBAR: se escribió sin poder ejecutarlo.
-# Uso: sube el proyecto a un repositorio de GitHub -> pestaña Actions -> "APK Android" -> Run workflow.
-# El APK aparece al final como "artifact" (reinos-apk). Es un APK de depuración firmado con la clave
-# de depuración fija de .github/reinos-debug.p12 (contraseña "android", pública a propósito): así cada
-# APK nuevo se instala ENCIMA del anterior sin desinstalar. No sirve para Google Play.
+# Compila el APK de Reinos en los servidores de GitHub y, si la clave de firma está configurada,
+# lo publica en "Releases" con su suma SHA-256.
+#
+# Seguridad (resumen; detalle en README.md):
+#  - La clave de firma privada vive SOLO en los secretos de GitHub (ANDROID_KEYSTORE_B64 y
+#    ANDROID_KEYSTORE_PASSWORD). Si faltan, se compila con una clave desechable y NO se publica nada.
+#  - Build "release" (no depurable), con los permisos comprobados contra una lista cerrada.
+#  - Godot y sus plantillas se verifican con SHA-512 fijados; las acciones de terceros van fijadas
+#    por commit; el token del flujo es de solo lectura salvo para publicar la release.
 name: APK Android
 
 on:
@@ -11,17 +14,36 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   GODOT_VERSION: "4.4.1"
+  GODOT_ZIP_SHA512: ef4e76880a514257175544952c61191106fdef3095b909bafed9fcbeb230c3e5533920a0f3012882dd4bbde83028a67549825794e2d2c3cf76eba7918b71370e
+  GODOT_TPZ_SHA512: 8f461c7d6e91a0fbabfc95b1e4ca70ff1732c6f2920956a16b086ec2a85b5f7e238baf4dbce60dcc5630fae3bcb9a1fa2ae2027b92cb495c02d082705715e441
+  # Lista cerrada de permisos que puede pedir el APK (el flujo falla si aparece otro).
+  ALLOWED_PERMISSIONS: "android.permission.VIBRATE android.permission.INTERNET"
 
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # solo se usa en el paso de publicar la release
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: "17"
@@ -33,48 +55,131 @@ jobs:
           "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;34.0.0" "build-tools;35.0.1" "platforms;android-35" "cmdline-tools;latest"
           echo "SDK=$SDK" >> "$GITHUB_ENV"
 
-      - name: Descargar Godot y las plantillas de exportación
+      - name: Descargar Godot y las plantillas (verificadas por SHA-512)
         run: |
           base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
-          wget -q "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
-          wget -q "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 -O "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 -O "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          echo "${GODOT_ZIP_SHA512}  Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" | sha512sum --check --strict
+          echo "${GODOT_TPZ_SHA512}  Godot_v${GODOT_VERSION}-stable_export_templates.tpz" | sha512sum --check --strict
           unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
           mkdir -p ~/.local/share/godot/export_templates tpl
           unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -d tpl
           mv tpl/templates ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
           chmod +x /usr/local/bin/godot
+          rm -f Godot_v*.zip Godot_v*.tpz
 
       - name: Configurar Godot para Android
         run: |
           mkdir -p ~/.config/godot
-          cp .github/reinos-debug.p12 "$HOME/debug.keystore"
           cat > ~/.config/godot/editor_settings-4.tres <<EOT
           [gd_resource type="EditorSettings" format=3]
 
           [resource]
           export/android/android_sdk_path = "$SDK"
           export/android/java_sdk_path = "$JAVA_HOME"
-          export/android/debug_keystore = "$HOME/debug.keystore"
-          export/android/debug_keystore_user = "androiddebugkey"
-          export/android/debug_keystore_pass = "android"
           EOT
+
+      - name: Clave de firma (secreta; si falta, clave desechable y sin publicar)
+        id: key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          ks="$RUNNER_TEMP/reinos-release.p12"
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
+            printf '%s' "$KS_B64" | base64 -d > "$ks"
+            chmod 600 "$ks"
+            pass="$KS_PASS"
+            echo "fixed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Firma::clave fija de los secretos de GitHub"
+          else
+            pass="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
+            echo "::add-mask::$pass"
+            keytool -genkeypair -alias reinos -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -validity 30 \
+              -keystore "$ks" -storetype PKCS12 -storepass "$pass" -keypass "$pass" -dname "CN=Reinos desechable" > /dev/null
+            echo "fixed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Sin clave fija::faltan los secretos ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD. APK con clave desechable: NO se publica y no se podra actualizar encima de otro."
+          fi
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$ks" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=reinos" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=$pass" >> "$GITHUB_ENV"
 
       - name: Número de versión (cada APK sube de versión y lo muestra el menú)
         run: |
           sed -i "s/^version\/code=.*/version\/code=${GITHUB_RUN_NUMBER}/" export_presets.cfg
           sed -i "s/^version\/name=.*/version\/name=\"1.${GITHUB_RUN_NUMBER}\"/" export_presets.cfg
           printf '{"build": "%s · %s"}\n' "${GITHUB_RUN_NUMBER}" "${GITHUB_SHA::7}" > data/build.json
-          grep -n "^version" export_presets.cfg; cat data/build.json
+          grep -n "^version" export_presets.cfg
+          cat data/build.json
 
-      - name: Importar recursos y exportar
+      - name: Importar recursos y exportar (release)
         run: |
           mkdir -p build
           godot --headless --path . --import || true
-          godot --headless --path . --export-debug "Android" build/reinos.apk
+          godot --headless --path . --export-release "Android" build/reinos.apk
           ls -la build
 
-      - uses: actions/upload-artifact@v4
+      - name: Comprobar que el APK no es depurable
+        run: |
+          aapt2="$SDK/build-tools/35.0.1/aapt2"
+          "$aapt2" dump badging build/reinos.apk > badging.txt
+          grep -E "^(package|sdkVersion|targetSdkVersion)" badging.txt | sed 's/^/::notice title=APK::/'
+          if grep -q "application-debuggable" badging.txt; then
+            echo "::error title=APK depurable::el APK tiene android:debuggable=true"
+            exit 1
+          fi
+
+      - name: Comprobar permisos contra la lista cerrada
+        run: |
+          aapt2="$SDK/build-tools/35.0.1/aapt2"
+          perms="$("$aapt2" dump permissions build/reinos.apk | sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" | sort -u | tr '\n' ' ')"
+          echo "::notice title=Permisos del APK::${perms}"
+          bad=""
+          for p in $perms; do
+            case " $ALLOWED_PERMISSIONS " in *" $p "*) ;; *) bad="$bad $p" ;; esac
+          done
+          if [ -n "$bad" ]; then
+            echo "::error title=Permisos no permitidos::${bad}"
+            exit 1
+          fi
+
+      - name: Verificar la firma y la clave esperada
+        id: sig
+        run: |
+          out="$("$SDK/build-tools/35.0.1/apksigner" verify --verbose --print-certs build/reinos.apk)"
+          fp="$(printf '%s\n' "$out" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+          echo "::notice title=Huella SHA-256 de la firma::${fp}"
+          printf '%s\n' "$out" | grep -E "^Verified using" | sed 's/^/::notice title=Firma::/'
+          echo "fp=$fp" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.key.outputs.fixed }}" = "true" ]; then
+            expected="$(tr -d ' \n' < .github/signing-cert.sha256)"
+            if [ "$fp" != "$expected" ]; then
+              echo "::error title=Clave de firma inesperada::la huella no coincide con .github/signing-cert.sha256"
+              exit 1
+            fi
+          fi
+
+      - name: Suma SHA-256 del APK
+        run: |
+          cd build
+          sha256sum reinos.apk | tee reinos.apk.sha256
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: reinos-apk
-          path: build/reinos.apk
+          name: ${{ steps.key.outputs.fixed == 'true' && 'reinos-apk' || 'reinos-apk-SIN-CLAVE-FIJA' }}
+          path: |
+            build/reinos.apk
+            build/reinos.apk.sha256
+
+      - name: Publicar release (solo con clave fija y desde main)
+        if: steps.key.outputs.fixed == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${GITHUB_RUN_NUMBER}" build/reinos.apk build/reinos.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "Build ${GITHUB_RUN_NUMBER}" \
+            --notes "APK firmado con la clave del proyecto. Huella SHA-256 de la firma: ${{ steps.sig.outputs.fp }}"

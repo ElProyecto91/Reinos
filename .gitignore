@@ -4,3 +4,11 @@ build/
 *.aab
 *.keystore
 .import/
+
+# Claves de firma: NUNCA al repositorio (van en secretos de GitHub)
+*.p12
+*.pfx
+*.jks
+*.pem
+*.b64
+.env

@@ -17,6 +17,8 @@ var _play: UiButton
 var _help_btn: UiButton
 var _quit: UiButton
 var _seed_btn: UiButton
+var _upd: Updater
+var _upd_btn: UiButton
 var _help: Control
 var _seg: Dictionary = {}
 var _t := 0.0
@@ -36,6 +38,9 @@ func _ready() -> void:
 	_add_segment("diff", Lang.t("menu_diff"), [[Lang.t("diff_0"), 0], [Lang.t("diff_1"), 1], [Lang.t("diff_2"), 2]], func() -> int: return diff, func(v: int) -> void: diff = v)
 	_add_segment("teams", Lang.t("menu_teams"), [[Lang.t("teams_allied"), 1], [Lang.t("teams_ffa"), 0]], func() -> int: return 1 if allied else 0, func(v: int) -> void: allied = v == 1)
 	_add_segment("perf", Lang.t("menu_perf"), [[Lang.t("perf_ahorro"), 0], [Lang.t("perf_equilibrado"), 1], [Lang.t("perf_alta"), 2]], func() -> int: return Settings.profile, func(v: int) -> void: Settings.set_profile(v, get_window()))
+	_add_segment("upd", Lang.t("menu_updates"), [[Lang.t("opt_yes"), 1], [Lang.t("opt_no"), 0]], func() -> int: return 1 if Settings.check_updates else 0, func(v: int) -> void:
+		Settings.check_updates = v == 1
+		Settings.save())
 	_seed_btn = UiButton.new()
 	_seed_btn.font_size = 22
 	_seed_btn.action = func() -> void:
@@ -58,9 +63,18 @@ func _ready() -> void:
 	_quit.font_size = 24
 	_quit.action = func() -> void: quit_pressed.emit()
 	root.add_child(_quit)
+	_upd_btn = UiButton.new()
+	_upd_btn.font_size = 20
+	_upd_btn.visible = false
+	_upd_btn.action = func() -> void: _upd.open_download()
+	root.add_child(_upd_btn)
 	_help = Hud.HelpPanel.new()
 	_help.visible = false
 	root.add_child(_help)
+	_upd = Updater.new()
+	add_child(_upd)
+	_upd.update_found.connect(_on_update_found)
+	_upd.check()
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 	_refresh()
@@ -86,7 +100,7 @@ func _layout() -> void:
 	var x := (vs.x - w) * 0.5
 	var y := 158.0
 	var rh := 50.0      # alto de botón
-	var pitch := 60.0   # separación entre filas
+	var pitch := 56.0   # separación entre filas
 	for key in _rows:
 		var d: Dictionary = _seg[key]
 		var btns: Array = d["btns"]
@@ -106,9 +120,16 @@ func _layout() -> void:
 	_help_btn.position = Vector2(x, y + 148)
 	_quit.size = Vector2(w * 0.5 - 6, 54)
 	_quit.position = Vector2(x + w * 0.5 + 6, y + 148)
+	_upd_btn.size = Vector2(480, 42)
+	_upd_btn.position = Vector2(vs.x - 492, 10)
 	_help.position = Vector2.ZERO
 	_help.size = vs
 	root.queue_redraw()
+
+func _on_update_found(build: int) -> void:
+	_upd_btn.text = Lang.t("update_available") % build
+	_upd_btn.visible = true
+	_upd_btn.queue_redraw()
 
 func _refresh() -> void:
 	for key in _rows:

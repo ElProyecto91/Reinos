@@ -24,6 +24,9 @@ const PROFILES := [
 
 static var profile := 1
 static var auto_pause := true
+static var check_updates := true      # aviso de versión nueva (única conexión a Internet del juego)
+static var last_update_check := 0     # segundos Unix de la última comprobación
+static var known_build := 0           # última build publicada que se conoce
 static var _loaded := false
 
 static func ensure_loaded() -> void:
@@ -34,11 +37,17 @@ static func ensure_loaded() -> void:
 	if cf.load(PATH) == OK:
 		profile = clampi(int(cf.get_value("rendimiento", "perfil", 1)), 0, PROFILES.size() - 1)
 		auto_pause = bool(cf.get_value("rendimiento", "pausa_auto", true))
+		check_updates = bool(cf.get_value("actualizaciones", "avisar", true))
+		last_update_check = int(cf.get_value("actualizaciones", "ultima", 0))
+		known_build = int(cf.get_value("actualizaciones", "conocida", 0))
 
 static func save() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("rendimiento", "perfil", profile)
 	cf.set_value("rendimiento", "pausa_auto", auto_pause)
+	cf.set_value("actualizaciones", "avisar", check_updates)
+	cf.set_value("actualizaciones", "ultima", last_update_check)
+	cf.set_value("actualizaciones", "conocida", known_build)
 	cf.save(PATH)
 
 static func cur() -> Dictionary:
