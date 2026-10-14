@@ -37,9 +37,31 @@ def b64_blocks(raw: str):
             i = j
         else:
             i += 1
+    # Texto pegado sin separar ("...A=Huella esperada..."): trozos base64 buscados dentro del texto
+    for m in re.finditer(r"[A-Za-z0-9+/]{%d,}={0,2}" % MIN_TOKEN, raw.replace("\r", "")):
+        blocks.append(m.group(0))
+    # Clave partida en varias líneas: se juntan quitando todo el espacio en blanco
+    flat = re.sub(r"\s+", "", raw)
+    for m in re.finditer(r"[A-Za-z0-9+/]{200,}={0,2}", flat):
+        blocks.append(m.group(0))
     # primero los más largos; la clave real suele ser el mayor
     uniq = sorted(set(blocks), key=len, reverse=True)
-    return uniq[:12]
+    return uniq[:20]
+
+
+def der_trim(data: bytes):
+    """Un .p12 es una secuencia DER que declara su propia longitud: se descarta lo que sobre
+    (texto pegado a continuación) y se rechaza si falta parte."""
+    if len(data) < 4 or data[0] != 0x30:
+        return None
+    if data[1] & 0x80:
+        n = data[1] & 0x7F
+        if n == 0 or n > 4 or len(data) < 2 + n:
+            return None
+        total = 2 + n + int.from_bytes(data[2:2 + n], "big")
+    else:
+        total = 2 + data[1]
+    return data[:total] if total <= len(data) else None
 
 
 def pass_candidates(raw: str):
@@ -67,9 +89,16 @@ def main() -> int:
     passes = pass_candidates(raw_pass)
     tried = 0
     for blk in blocks:
-        try:
-            data = base64.b64decode(blk + "=" * (-len(blk) % 4), validate=True)
-        except Exception:
+        data = None
+        for cut in (0, 1, 2, 3):          # por si hay letras pegadas que descuadran la última cuarteta
+            b = blk[:len(blk) - cut] if cut else blk
+            try:
+                data = der_trim(base64.b64decode(b + "=" * (-len(b) % 4), validate=True))
+            except Exception:
+                data = None
+            if data is not None:
+                break
+        if data is None:
             continue
         with open(out_path, "wb") as f:
             f.write(data)
