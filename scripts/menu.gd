@@ -261,6 +261,9 @@ const CIV_COL := {
 }
 
 ## Selector de civilización: ocho fichas con bonificaciones, unidad única y habilidad, y «Aleatoria».
+const CARD_H := 262.0
+const CARD_Y0 := 52.0
+
 class CivPanel extends Control:
 	var menu: MenuScreen
 	var cards: Array[CivCard] = []
@@ -307,26 +310,26 @@ class CivPanel extends Control:
 		var margin := 24.0
 		var gap := 12.0
 		var cw := minf(330.0, (size.x - margin * 2.0 - gap * 3.0) / 4.0)
-		var ch := 236.0
+		var ch := CARD_H
 		var total := cw * 4.0 + gap * 3.0
 		var x0 := (size.x - total) * 0.5
-		var y0 := 66.0
+		var y0 := CARD_Y0
 		for i in cards.size():
 			var c := cards[i]
 			c.size = Vector2(cw, ch)
 			c.position = Vector2(x0 + (i % 4) * (cw + gap), y0 + (i / 4) * (ch + gap))
-		var by := y0 + 2.0 * ch + gap + 14.0
-		rnd.size = Vector2(total * 0.5 - 6.0, 54.0)
+		var by := y0 + 2.0 * ch + gap + 10.0
+		rnd.size = Vector2(total * 0.5 - 6.0, 48.0)
 		rnd.position = Vector2(x0, by)
-		close.size = Vector2(total * 0.5 - 6.0, 54.0)
+		close.size = Vector2(total * 0.5 - 6.0, 48.0)
 		close.position = Vector2(x0 + total * 0.5 + 6.0, by)
 
 	func _draw() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.06, 0.10, 0.94), true)
 		var font := get_theme_default_font()
-		draw_string(font, Vector2(0, 44), Lang.t("civ_pick_title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 34, Color(1, 0.9, 0.5))
-		var by := 66.0 + 2.0 * 236.0 + 12.0 + 14.0 + 54.0
-		draw_multiline_string(font, Vector2(0, by + 26.0), Lang.t("civ_pick_note"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, 2, Color(0.8, 0.8, 0.72))
+		draw_string(font, Vector2(0, 38), Lang.t("civ_pick_title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 32, Color(1, 0.9, 0.5))
+		var by := CARD_Y0 + 2.0 * CARD_H + 12.0 + 10.0 + 48.0
+		draw_multiline_string(font, Vector2(0, by + 22.0), Lang.t("civ_pick_note"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, 2, Color(0.8, 0.72, 0.72))
 
 class CivCard extends Control:
 	var civ := ""
@@ -362,9 +365,15 @@ class CivCard extends Control:
 		var w := size.x - 24.0
 		draw_string(font, Vector2(12, 33), Lang.t("civ_" + civ), HORIZONTAL_ALIGNMENT_LEFT, w, 26, col)
 		var fg := Color(0.92, 0.88, 0.78)
-		var y := 66.0
-		draw_multiline_string(font, Vector2(12, y), Lang.t("civ_%s_pas" % civ), HORIZONTAL_ALIGNMENT_LEFT, w, 15, 4, fg)
-		y += 4.0 * 17.0 + 6.0
-		draw_multiline_string(font, Vector2(12, y), "%s: %s" % [Lang.t("civ_unique_label"), Lang.t("civ_%s_uni" % civ)], HORIZONTAL_ALIGNMENT_LEFT, w, 15, 2, Color(0.75, 0.9, 1.0))
-		y += 2.0 * 17.0 + 6.0
-		draw_multiline_string(font, Vector2(12, y), "%s: %s. %s" % [Lang.t("civ_ability_label"), Lang.t("abil_" + civ), Lang.t("abil_%s_desc" % civ)], HORIZONTAL_ALIGNMENT_LEFT, w, 15, 5, Color(1.0, 0.86, 0.55))
+		var fs := 14
+		var y := 62.0
+		# cada párrafo ocupa lo que mide (los textos tienen largos distintos): sin solaparse ni salirse de la tarjeta
+		var blocks := [
+			[Lang.t("civ_%s_pas" % civ), fg],
+			["%s: %s" % [Lang.t("civ_unique_label"), Lang.t("civ_%s_uni" % civ)], Color(0.75, 0.9, 1.0)],
+			["%s: %s. %s" % [Lang.t("civ_ability_label"), Lang.t("abil_" + civ), Lang.t("abil_%s_desc" % civ)], Color(1.0, 0.86, 0.55)]]
+		for blk in blocks:
+			var txt: String = blk[0]
+			var h := font.get_multiline_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, w, fs).y
+			draw_multiline_string(font, Vector2(12, y), txt, HORIZONTAL_ALIGNMENT_LEFT, w, fs, -1, blk[1])
+			y += h + 5.0
