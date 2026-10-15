@@ -24,7 +24,10 @@ const CARRY_HALF := 14.0               # mitad del lado del icono en píxeles de
 
 func build() -> void:
 	for c: Color in Defs.PLAYER_COLORS:
-		team_mod.append(Color(minf(1.0, c.r * 1.15), minf(1.0, c.g * 1.15), minf(1.0, c.b * 1.15), 1.0))
+		# ligeramente menos saturado que el color de jugador: la tela teñida no es tan chillona como el icono del HUD
+		var lum := 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+		var m := Color(lerpf(c.r, lum, 0.10), lerpf(c.g, lum, 0.10), lerpf(c.b, lum, 0.10), 1.0)
+		team_mod.append(Color(minf(1.0, m.r * 1.12), minf(1.0, m.g * 1.12), minf(1.0, m.b * 1.12), 1.0))
 	_build_buildings()
 	_build_resources()
 	_build_misc()

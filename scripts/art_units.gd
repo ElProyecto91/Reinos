@@ -5,7 +5,7 @@ extends RefCounted
 ## equipo se tiñe con el color del jugador, así que no hace falta una hoja por equipo.
 ## Luz desde arriba a la izquierda, igual que árboles y edificios.
 
-const OUT := Color(0.07, 0.05, 0.04, 0.96)
+const OUT := Color(0.08, 0.06, 0.07, 0.90)
 const SKIN := Color(0.93, 0.76, 0.60)
 const WSCALE := 0.62          # tamaño en el mundo = celda lógica × WSCALE
 const PAD := 4                # margen entre celdas de la hoja (px de textura)
@@ -66,10 +66,87 @@ static func build_sheet(type: String) -> Image:
 	for f in int(c[5]):
 		var sp := Sp.new(int(c[0]), int(c[1]), float(c[4]))
 		_paint(type, f, sp)
+		_finish(sp)
 		for l in 3:
 			var r := frame_rect(type, f, l)
 			sheet.blit_rect(sp.im[l], Rect2i(0, 0, r.size.x, r.size.y), r.position)
 	return sheet
+
+## Pasada final de luz sobre el fotograma ya pintado (las tres capas a la vez, con la silueta de las tres juntas):
+## más claro arriba y más oscuro hacia los pies (oclusión del suelo), luz cálida de borde a la izquierda y
+## borde en sombra fría a la derecha. A la escala de juego (~1/3 de la hoja) esto se nota más que cualquier detalle fino.
+static func _finish(sp: Sp) -> void:
+	var w := sp.im[0].get_width()
+	var h := sp.im[0].get_height()
+	var d0 := sp.im[0].get_data()
+	var d1 := sp.im[1].get_data()
+	var d2 := sp.im[2].get_data()
+	var mask := PackedByteArray()
+	mask.resize(w * h)
+	var y_top := h
+	var y_bot := 0
+	for y in h:
+		var any := false
+		for x in w:
+			var o := (y * w + x) * 4 + 3
+			if d0[o] > 90 or d1[o] > 90 or d2[o] > 90:
+				mask[y * w + x] = 1
+				any = true
+		if any:
+			y_top = mini(y_top, y)
+			y_bot = maxi(y_bot, y)
+	if y_bot <= y_top:
+		return
+	var span := float(y_bot - y_top)
+	var rl := PackedInt32Array()
+	rl.resize(w)
+	var rr := PackedInt32Array()
+	rr.resize(w)
+	var k := sp.k
+	var rim_w := 5.0 * k          # ancho (px) de la luz de borde, tras el contorno
+	var ds: Array[PackedByteArray] = [d0, d1, d2]
+	for y in h:
+		var run := 0
+		for x in w:
+			run = run + 1 if mask[y * w + x] == 1 else 0
+			rl[x] = run
+		run = 0
+		for x in range(w - 1, -1, -1):
+			run = run + 1 if mask[y * w + x] == 1 else 0
+			rr[x] = run
+		var t := clampf(float(y - y_top) / span, 0.0, 1.0)
+		var vf := lerpf(1.16, 0.78, pow(t, 1.15))
+		for x in w:
+			if mask[y * w + x] == 0:
+				continue
+			var f := vf
+			var dl := float(rl[x]) - 1.2 * k              # distancia al borde izquierdo, descontando el contorno
+			var dr := float(rr[x]) - 1.2 * k
+			var warm := 0.0
+			var cool := 0.0
+			if dl >= 0.0 and dl < rim_w:
+				warm = 0.30 * (1.0 - dl / rim_w)
+			if dr >= 0.0 and dr < rim_w:
+				cool = 0.22 * (1.0 - dr / rim_w)
+			for l in 3:
+				var dd: PackedByteArray = ds[l]
+				var o := (y * w + x) * 4
+				if dd[o + 3] == 0:
+					continue
+				var r := float(dd[o]) / 255.0
+				var g2 := float(dd[o + 1]) / 255.0
+				var b := float(dd[o + 2]) / 255.0
+				var lum := 0.3 * r + 0.59 * g2 + 0.11 * b
+				if lum < 0.16:
+					continue          # no tocar el contorno
+				r = r * f * (1.0 + warm * 1.0 - cool * 0.9)
+				g2 = g2 * f * (1.0 + warm * 0.75 - cool * 0.45)
+				b = b * f * (1.0 + warm * 0.35 + cool * 0.25)
+				dd[o] = int(clampf(r, 0.0, 1.0) * 255.0 + 0.5)
+				dd[o + 1] = int(clampf(g2, 0.0, 1.0) * 255.0 + 0.5)
+				dd[o + 2] = int(clampf(b, 0.0, 1.0) * 255.0 + 0.5)
+	for l in 3:
+		sp.im[l] = Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, ds[l])
 
 # ---------------------------------------------------------------- lienzo de tres capas
 
@@ -119,8 +196,16 @@ class Sp extends RefCounted:
 		poly(big, ink)
 		poly(pts, c)
 
+## Más/menos luz con color: la sombra se enfría y la luz se calienta (los grises de la capa de equipo no se tiñen).
 static func sh(c: Color, f: float) -> Color:
-	return Painter.shade(c, f)
+	var r := Painter.shade(c, f)
+	if maxf(c.r, maxf(c.g, c.b)) - minf(c.r, minf(c.g, c.b)) < 0.035:
+		return r
+	if f < 1.0:
+		var t := clampf((1.0 - f) / 0.45, 0.0, 1.0)
+		return Color(clampf(r.r * (1.0 - 0.13 * t), 0.0, 1.0), clampf(r.g * (1.0 - 0.05 * t), 0.0, 1.0), clampf(r.b * (1.0 + 0.12 * t), 0.0, 1.0), c.a)
+	var t2 := clampf((f - 1.0) / 0.35, 0.0, 1.0)
+	return r.lerp(Color(1.0, 0.93, 0.78, c.a), 0.20 * t2)
 
 static func g(v: float, a: float = 1.0) -> Color:
 	return Color(v, v, v, a)
@@ -154,7 +239,7 @@ const WALK := [
 	{"ln": [-0.42, 0.40], "lf": [0.55, 0.06], "an": [0.50, 0.40], "af": [-0.55, 0.25], "bob": 0.9},
 	{"ln": [0.22, 1.10], "lf": [0.04, 0.16], "an": [0.12, 0.35], "af": [-0.12, 0.30], "bob": -0.5},
 ]
-const IDLE_POSE := {"ln": [0.06, 0.04], "lf": [-0.10, 0.04], "an": [0.10, 0.28], "af": [-0.06, 0.30], "bob": 0.0}
+const IDLE_POSE := {"ln": [0.12, 0.03], "lf": [-0.17, 0.22], "an": [0.14, 0.38], "af": [-0.08, 0.42], "bob": 0.0}
 
 static func skel(pose: Dictionary, lean: float = 0.0) -> Dictionary:
 	var bob: float = pose.get("bob", 0.0)
@@ -182,52 +267,82 @@ static func skel(pose: Dictionary, lean: float = 0.0) -> Dictionary:
 		out["hang_" + side] = a3
 	return out
 
-## Miembro con volumen: tinta, color base, sombra abajo a la derecha y luz arriba a la izquierda.
-static func limb(sp: Sp, a: Vector2, b: Vector2, w: float, col: Color) -> void:
-	sp.line(a, b, w + 1.7, OUT)
-	sp.line(a, b, w, col)
+## Cápsula con dos anchos (más gruesa en el origen): base de los miembros afilados hacia la punta.
+static func _cap(sp: Sp, a: Vector2, b: Vector2, w0: float, w1: float, col: Color) -> void:
+	var d := b - a
+	var l := d.length()
+	if l < 0.05:
+		sp.disc(a.x, a.y, maxf(w0, w1) * 0.5, col)
+		return
+	d /= l
+	var n := V(-d.y, d.x)
+	sp.poly([a + n * w0 * 0.5, b + n * w1 * 0.5, b - n * w1 * 0.5, a - n * w0 * 0.5], col)
+	sp.disc(a.x, a.y, w0 * 0.5, col)
+	sp.disc(b.x, b.y, w1 * 0.5, col)
+
+## Miembro con volumen: contorno fino, color base, sombra propia abajo a la derecha, luz arriba a la izquierda
+## y un reflejo frío del cielo en el borde de sombra. taper: ancho de la punta respecto al origen.
+static func limb(sp: Sp, a: Vector2, b: Vector2, w: float, col: Color, taper: float = 0.84) -> void:
+	var w1 := w * taper
+	_cap(sp, a, b, w + 1.25, w1 + 1.25, OUT)
+	_cap(sp, a, b, w, w1, col)
 	var d := (b - a).normalized()
 	var n := V(-d.y, d.x)
 	if n.x < 0.0 or (absf(n.x) < 0.2 and n.y < 0.0):
 		n = -n          # normal hacia la derecha/abajo (lado en sombra)
-	sp.line(a + n * w * 0.26, b + n * w * 0.26, w * 0.42, sh(col, 0.76))
-	sp.line(a - n * w * 0.24, b - n * w * 0.24, maxf(0.9, w * 0.30), sh(col, 1.20))
+	_cap(sp, a + n * w * 0.25, b + n * w1 * 0.25, w * 0.46, w1 * 0.46, sh(col, 0.74))
+	_cap(sp, a - n * w * 0.23, b - n * w1 * 0.23, maxf(0.9, w * 0.28), maxf(0.8, w1 * 0.28), sh(col, 1.22))
+	if w > 2.6:
+		_cap(sp, a + n * w * 0.41, b + n * w1 * 0.41, 0.55, 0.5, sh(col, 1.0).lerp(Color(0.55, 0.66, 0.95), 0.28))
 
 static func boot(sp: Sp, foot: Vector2, ang: float, col: Color) -> void:
-	# bota: continúa la pierna y apunta hacia delante (derecha)
-	var toe := foot + V(3.6, 0.9 - absf(sin(ang)) * 0.4)
-	sp.line(foot + V(-0.4, -1.2), toe, 3.6 + 1.6, OUT)
-	sp.line(foot + V(-0.4, -1.2), toe, 3.6, col)
-	sp.line(foot + V(-0.4, -0.2), toe + V(0, 0.4), 1.3, sh(col, 0.65))
-	sp.line(foot + V(-0.6, -2.0), toe + V(-0.6, -0.9), 1.0, sh(col, 1.25))
+	# bota: caña que continúa la pierna, puño, suela y puntera hacia delante (derecha)
+	var toe := foot + V(3.8, 0.9 - absf(sin(ang)) * 0.4)
+	sp.line(foot + V(-0.4, -1.3), toe, 3.7 + 1.3, OUT)
+	sp.line(foot + V(-0.4, -1.3), toe, 3.7, col)
+	sp.line(foot + V(-0.8, -2.2), toe + V(-0.8, -1.0), 1.0, sh(col, 1.28))
+	sp.line(foot + V(-0.4, -0.2), toe + V(0.0, 0.4), 1.2, sh(col, 0.52))
+	sp.line(foot + V(-2.2, -3.1), foot + V(1.5, -3.1), 0.9, sh(col, 1.18))
+	sp.disc(toe.x - 0.5, toe.y - 0.6, 0.8, sh(col, 1.18))
 
 static func hand(sp: Sp, p: Vector2, skin: Color = SKIN) -> void:
-	sp.disc(p.x, p.y, 2.15, OUT)
+	sp.disc(p.x, p.y, 2.1, OUT)
 	sp.disc(p.x, p.y, 1.55, skin)
+	sp.disc(p.x + 0.5, p.y + 0.6, 0.85, sh(skin, 0.80))
 	sp.disc(p.x - 0.4, p.y - 0.5, 0.7, sh(skin, 1.12))
+	sp.line(p + V(-0.1, -1.0), p + V(1.0, -1.4), 0.5, sh(skin, 0.78))      # pulgar
 
 # ---------------------------------------------------------------- cabeza
 
 ## Cabeza mirando a la derecha. hair: color del pelo (alpha 0 = sin pelo visible).
 static func head(sp: Sp, c: Vector2, skin: Color, hair: Color, beard: Color = Color(0, 0, 0, 0), bald: bool = false) -> void:
-	# cuello
-	sp.rect(c.x - 1.9, c.y + 2.8, 3.6, 3.4, OUT)
-	sp.rect(c.x - 1.4, c.y + 2.8, 2.8, 3.4, sh(skin, 0.80))
+	# cuello: más ancho en la base y en sombra bajo la mandíbula
+	_cap(sp, c + V(-0.2, 2.4), c + V(0.1, 6.6), 3.5, 4.5, OUT)
+	_cap(sp, c + V(-0.2, 2.4), c + V(0.1, 6.6), 2.8, 3.8, sh(skin, 0.84))
+	sp.ell(c.x + 0.1, c.y + 3.8, 2.7, 1.6, sh(skin, 0.60))
+	# cráneo y mandíbula
+	sp.ell(c.x + 1.0, c.y + 2.4, 2.9, 2.4, OUT)
 	sp.ell(c.x, c.y, 3.9, 4.4, OUT)
 	sp.ell(c.x, c.y, 3.2, 3.7, skin)
+	sp.ell(c.x + 1.0, c.y + 2.3, 2.2, 1.7, skin)
 	# sombra abajo-derecha y luz arriba-izquierda
-	sp.ell(c.x + 0.7, c.y + 1.1, 2.4, 2.6, sh(skin, 0.86))
+	sp.ell(c.x + 0.8, c.y + 1.3, 2.4, 2.5, sh(skin, 0.86))
 	sp.ell(c.x - 0.4, c.y - 0.6, 2.4, 2.8, skin)
 	sp.ell(c.x - 1.0, c.y - 1.5, 1.2, 1.2, sh(skin, 1.10))
-	# nariz, oreja, ojo, ceja, boca
-	sp.tri(c + V(3.0, 0.0), c + V(4.3, 1.3), c + V(2.7, 1.6), sh(skin, 0.95))
+	sp.ell(c.x + 1.2, c.y + 0.9, 1.0, 0.7, Color(0.90, 0.52, 0.42, 0.26))      # pómulo
+	# nariz, oreja, ojo (esclerótica, iris y párpado), ceja, boca
+	sp.tri(c + V(3.0, -0.1), c + V(4.3, 1.3), c + V(2.7, 1.6), sh(skin, 0.95))
+	sp.line(c + V(3.1, 1.5), c + V(4.2, 1.4), 0.45, sh(skin, 0.62))
 	sp.disc(c.x - 1.2, c.y + 0.9, 0.95, sh(skin, 0.72))
-	sp.disc(c.x + 1.6, c.y - 0.2, 0.62, Color(0.10, 0.07, 0.05))
-	sp.line(c + V(0.7, -1.4), c + V(2.6, -1.1), 0.7, sh(hair if hair.a > 0.0 else Color(0.3, 0.2, 0.1), 0.8))
+	sp.disc(c.x + 1.7, c.y - 0.2, 0.78, Color(0.94, 0.92, 0.86))
+	sp.disc(c.x + 1.95, c.y - 0.15, 0.52, Color(0.10, 0.07, 0.05))
+	sp.line(c + V(0.8, -0.95), c + V(2.6, -0.75), 0.45, sh(skin, 0.52))
+	sp.line(c + V(0.7, -1.6), c + V(2.7, -1.25), 0.75, sh(hair if hair.a > 0.0 else Color(0.3, 0.2, 0.1), 0.8))
 	sp.line(c + V(1.5, 2.3), c + V(2.8, 2.2), 0.55, Color(0.55, 0.28, 0.25))
 	if beard.a > 0.0:
 		sp.ell(c.x + 1.0, c.y + 2.5, 2.9, 2.2, beard)
 		sp.ell(c.x + 0.6, c.y + 2.2, 2.0, 1.4, sh(beard, 1.15))
+		sp.ell(c.x + 1.6, c.y + 3.2, 1.8, 1.0, sh(beard, 0.78))
 		sp.line(c + V(1.4, 2.4), c + V(2.8, 2.5), 0.6, Color(0.55, 0.28, 0.25))
 	if hair.a > 0.0 and not bald:
 		sp.ell(c.x - 0.6, c.y - 1.9, 3.5, 2.5, hair)
@@ -236,24 +351,38 @@ static func head(sp: Sp, c: Vector2, skin: Color, hair: Color, beard: Color = Co
 
 # ---------------------------------------------------------------- piezas de ropa
 
-## Torso (capa de equipo) con sombra a la derecha, luz a la izquierda y pliegues. extra: largo del faldón.
+## Torso (capa de equipo): hombros anchos, cintura estrecha y faldón que se balancea con la marcha.
+## Luz a la izquierda, sombra a la derecha, pliegues de cintura y de faldón. skirt: largo del faldón.
 static func tunic(sp: Sp, j: Dictionary, skirt: float, team_v: float = 0.86, trim: Color = Color(0, 0, 0, 0)) -> void:
 	var s: Vector2 = j["sh"]
 	var h: Vector2 = j["hip"]
-	var ys := s.y - 1.4
+	var ys := s.y - 1.5
+	var yw := h.y - 1.2
 	var yb := h.y + skirt
-	var pts: Array = [V(s.x - 4.3, ys), V(s.x + 4.9, ys + 0.4), V(h.x + 4.7 + skirt * 0.12, yb), V(h.x - 4.4 - skirt * 0.12, yb)]
-	sp.lay(0).poly(grow(pts, 1.1), OUT)
-	sp.lay(1).poly(pts, g(team_v))
+	var kn: Vector2 = j["knee_n"]
+	var kf: Vector2 = j["knee_f"]
+	var sway := clampf((kn.x + kf.x) * 0.5 - h.x, -4.0, 4.0) * 0.30 * clampf((skirt - 1.5) / 4.0, 0.0, 1.2)
+	var up: Array = [V(s.x - 1.9, ys - 0.7), V(s.x + 2.4, ys - 0.6), V(s.x + 5.9, ys + 1.6), V(h.x + 4.6, yw), V(h.x - 4.5, yw), V(s.x - 5.4, ys + 1.6)]
+	var lo: Array = [V(h.x - 4.5, yw - 0.3), V(h.x + 4.6, yw - 0.3), V(h.x + 5.2 + skirt * 0.14 + sway, yb), V(h.x - 5.0 - skirt * 0.14 + sway * 0.6, yb)]
+	sp.lay(0).poly(grow(up, 1.0), OUT)
+	sp.poly(grow(lo, 1.0), OUT)
+	sp.lay(1)
+	sp.poly(up, g(team_v))
+	sp.poly(lo, g(team_v))
 	# luz a la izquierda, sombra a la derecha
-	sp.poly([pts[0], V(pts[0].x + 2.3, ys), V(pts[3].x + 2.1, yb), pts[3]], g(minf(1.0, team_v * 1.14)))
-	sp.poly([V(pts[1].x - 3.1, ys + 0.4), pts[1], pts[2], V(pts[2].x - 3.0, yb)], g(team_v * 0.68))
-	# pliegues del faldón y arruga del pecho
-	for fx in [-1.8, 0.6, 2.8]:
-		sp.line(V(h.x + fx, h.y + 3.0), V(h.x + fx * 1.25, yb - 0.4), 0.7, g(team_v * 0.62, 0.8))
-	sp.line(V(s.x - 1.0, ys + 6.0), V(s.x + 2.2, ys + 8.4), 0.6, g(team_v * 0.65, 0.7))
-	# bajo del faldón y cuello
-	sp.rect(h.x - 4.6 - skirt * 0.12, yb - 1.1, 9.3 + skirt * 0.24, 1.1, g(team_v * 0.58))
+	sp.poly([up[5], V(up[5].x + 2.8, up[5].y - 0.8), V(up[4].x + 2.5, yw), up[4]], g(minf(1.0, team_v * 1.16)))
+	sp.poly([lo[0], V(lo[0].x + 2.3, lo[0].y), V(lo[3].x + 2.3, yb), lo[3]], g(minf(1.0, team_v * 1.14)))
+	sp.poly([V(up[2].x - 3.6, up[2].y - 0.6), up[2], up[3], V(up[3].x - 3.4, yw)], g(team_v * 0.64))
+	sp.poly([V(lo[1].x - 3.2, lo[1].y), lo[1], lo[2], V(lo[2].x - 3.4, yb)], g(team_v * 0.62))
+	# pliegues del faldón, arrugas de la cintura y del pecho
+	for fx in [-2.0, 0.4, 2.7]:
+		sp.line(V(h.x + fx, yw + 1.6), V(h.x + fx * 1.3 + sway * 0.6, yb - 0.4), 0.7, g(team_v * 0.62, 0.8))
+	for k in 3:
+		sp.line(V(h.x - 3.2 + k * 2.7, yw - 0.3), V(h.x - 2.4 + k * 2.7, yw + 1.8), 0.5, g(team_v * 0.60, 0.65))
+	sp.line(V(s.x - 1.0, ys + 6.0), V(s.x + 2.2, ys + 8.2), 0.6, g(team_v * 0.65, 0.7))
+	sp.line(V(s.x - 3.6, ys + 1.3), V(s.x + 3.4, ys + 1.6), 0.7, g(minf(1.0, team_v * 1.18), 0.8))     # costura del hombro
+	# bajo del faldón
+	sp.poly([lo[3] + V(0.0, -1.1), lo[2] + V(0.0, -1.1), lo[2], lo[3]], g(team_v * 0.58))
 	sp.lay(2)
 	if trim.a > 0.0:
 		sp.line(V(s.x - 2.0, ys + 0.4), V(s.x + 3.0, ys + 0.7), 1.2, trim)
@@ -261,11 +390,13 @@ static func tunic(sp: Sp, j: Dictionary, skirt: float, team_v: float = 0.86, tri
 static func belt(sp: Sp, j: Dictionary, col: Color = Color(0.30, 0.19, 0.09), buckle: bool = true) -> void:
 	var h: Vector2 = j["hip"]
 	sp.lay(2)
-	sp.rect(h.x - 4.9, h.y - 1.6, 9.9, 2.3, OUT)
-	sp.rect(h.x - 4.6, h.y - 1.3, 9.3, 1.7, col)
-	sp.rect(h.x - 4.6, h.y - 1.3, 9.3, 0.6, sh(col, 1.3))
+	sp.rect(h.x - 4.8, h.y - 1.7, 9.6, 2.4, OUT)
+	sp.rect(h.x - 4.5, h.y - 1.4, 9.0, 1.8, col)
+	sp.rect(h.x - 4.5, h.y - 1.4, 9.0, 0.6, sh(col, 1.3))
+	sp.rect(h.x - 4.5, h.y - 0.1, 9.0, 0.5, sh(col, 0.70))
 	if buckle:
-		sp.rect(h.x + 1.8, h.y - 1.5, 1.8, 2.1, Color(0.82, 0.72, 0.30))
+		sp.rect(h.x + 1.8, h.y - 1.6, 1.8, 2.2, Color(0.82, 0.72, 0.30))
+		sp.rect(h.x + 2.2, h.y - 1.1, 0.9, 1.2, sh(col, 0.8))
 
 ## Piernas con calzas/pantalón y botas. back = pierna lejana (capa 0) o cercana (capa 2).
 static func leg(sp: Sp, j: Dictionary, side: String, pants: Color, boots: Color) -> void:
@@ -273,8 +404,10 @@ static func leg(sp: Sp, j: Dictionary, side: String, pants: Color, boots: Color)
 	var kn: Vector2 = j["knee_" + side]
 	var ft: Vector2 = j["foot_" + side]
 	var shade := 0.78 if side == "f" else 1.0
-	limb(sp, hp, kn, 4.6, sh(pants, shade))
-	limb(sp, kn, ft - V(0.0, 1.6), 4.0, sh(pants, shade * 0.97))
+	limb(sp, hp, kn, 5.8, sh(pants, shade), 0.78)
+	limb(sp, kn, ft - V(0.0, 1.6), 4.7, sh(pants, shade * 0.97), 0.70)
+	sp.disc(kn.x, kn.y, 2.1, sh(pants, shade))                                  # rodilla
+	sp.disc(kn.x - 0.5, kn.y - 0.5, 0.9, sh(pants, shade * 1.18))
 	boot(sp, ft, float(j["fang_" + side]), sh(boots, shade))
 
 static func arm_seg(sp: Sp, j: Dictionary, side: String, sleeve: Color, skin: Color, bare_fore: bool = true) -> void:
@@ -282,8 +415,15 @@ static func arm_seg(sp: Sp, j: Dictionary, side: String, sleeve: Color, skin: Co
 	var el: Vector2 = j["elbow_" + side]
 	var hd: Vector2 = j["hand_" + side]
 	var shade := 0.80 if side == "f" else 1.0
-	limb(sp, sp0, el, 3.9, sh(sleeve, shade))
-	limb(sp, el, hd - (hd - el).normalized() * 0.8, 3.3, sh(skin if bare_fore else sleeve, shade * (0.95 if bare_fore else 0.97)))
+	var sl := sh(sleeve, shade)
+	var fa := sh(skin if bare_fore else sleeve, shade * (0.95 if bare_fore else 0.97))
+	var u := (hd - el).normalized()
+	limb(sp, sp0, el, 4.8, sl, 0.80)
+	limb(sp, el, hd - u * 0.8, 3.8, fa, 0.78)
+	sp.disc(sp0.x, sp0.y, 2.8, sl)                                              # hombro
+	sp.disc(sp0.x - 0.6, sp0.y - 0.7, 1.1, sh(sl, 1.18))
+	if not bare_fore:
+		_cap(sp, hd - u * 1.9, hd - u * 0.9, 3.9, 3.6, sh(sleeve, 0.78 * shade))   # puño
 	hand(sp, hd, sh(skin, shade))
 
 # ---------------------------------------------------------------- herramientas y armas
@@ -968,13 +1108,17 @@ static func _p_monje(sp: Sp, f: int) -> void:
 	var sway := 0.0
 	if f >= F_WALK and f <= F_WALK + 3:
 		sway = [1.6, 0.0, -1.6, 0.0][f - F_WALK]
-	var pts: Array = [V(s.x - 4.8, s.y - 1.4), V(s.x + 5.2, s.y - 1.2), V(h.x + 8.2 + sway, gy), V(h.x - 8.0 + sway, gy)]
+	# hombros caídos y falda acampanada (casulla de monje, no un tablón)
+	var pts: Array = [V(s.x - 1.9, s.y - 1.4), V(s.x + 2.4, s.y - 1.2), V(s.x + 5.9, s.y + 1.4),
+		V(h.x + 8.2 + sway, gy), V(h.x - 8.0 + sway, gy), V(s.x - 5.4, s.y + 1.4)]
 	sp.poly(grow(pts, 1.1), OUT)
 	sp.poly(pts, robe)
-	sp.poly([pts[0], V(pts[0].x + 2.6, pts[0].y), V(pts[3].x + 3.4, gy), pts[3]], sh(robe, 1.14))
-	sp.poly([V(pts[1].x - 3.4, pts[1].y), pts[1], pts[2], V(pts[2].x - 4.0, gy)], sh(robe, 0.74))
+	sp.poly([pts[0], V(pts[0].x + 2.6, pts[0].y), V(pts[4].x + 3.4, gy), pts[4], pts[5]], sh(robe, 1.14))
+	sp.poly([V(pts[2].x - 3.4, pts[2].y), pts[2], pts[3], V(pts[3].x - 4.0, gy)], sh(robe, 0.74))
 	for fx in [-3.0, 0.0, 3.0]:
 		sp.line(V(h.x + fx, h.y + 4.0), V(h.x + fx * 1.9 + sway, gy - 0.6), 0.7, sh(robe, 0.66))
+	# bajo más oscuro y ondulado
+	sp.poly([V(h.x - 8.0 + sway, gy - 1.6), V(h.x + 8.2 + sway, gy - 1.6), V(h.x + 8.2 + sway, gy), V(h.x - 8.0 + sway, gy)], sh(robe, 0.8))
 	# pies asomando
 	sp.rect(h.x - 3.0 + sway, gy - 1.6, 3.6, 2.2, OUT)
 	sp.rect(h.x + 1.4 + sway, gy - 1.6, 3.6, 2.2, OUT)

@@ -9,7 +9,7 @@ static func V(x: float, y: float) -> Vector2:
 	return Vector2(x, y)
 
 static func sh(c: Color, f: float) -> Color:
-	return Painter.shade(c, f)
+	return ArtUnits.sh(c, f)
 
 const HIP_Y := 49.0          # donde nacen las patas
 const HOOF_Y := 66.0
@@ -21,10 +21,13 @@ static func _hleg(sp: ArtUnits.Sp, hip: Vector2, au: float, flex: float, w: floa
 	var knee := hip + V(sin(au), cos(au)) * up
 	var al := au - flex
 	var foot := knee + V(sin(al), cos(al)) * lo
-	ArtUnits.limb(sp, hip, knee, w, col)
-	ArtUnits.limb(sp, knee, foot - V(0, 1.0), w * 0.74, sh(col, 0.94))
-	sp.line(foot + V(-0.3, -1.6), foot + V(0.2, 0.2), w * 0.80 + 1.6, OUT)
-	sp.line(foot + V(-0.3, -1.6), foot + V(0.2, 0.2), w * 0.80, hoof_col)
+	ArtUnits.limb(sp, hip, knee, w * 1.18, col, 0.62)                          # antebrazo/muslo: ancho arriba, afina a la rodilla
+	ArtUnits.limb(sp, knee, foot - V(0, 1.2), w * 0.64, sh(col, 0.94), 0.80)   # caña fina
+	sp.disc(knee.x, knee.y, w * 0.36, sh(col, 0.92))                           # rodilla / corvejón
+	sp.disc(knee.x - 0.3, knee.y - 0.4, w * 0.16, sh(col, 1.15))
+	sp.line(foot + V(-0.3, -1.8), foot + V(0.3, 0.3), w * 0.74 + 1.4, OUT)
+	sp.line(foot + V(-0.3, -1.8), foot + V(0.3, 0.3), w * 0.74, hoof_col)
+	sp.line(foot + V(-0.9, -1.4), foot + V(-0.6, 0.0), 0.7, sh(hoof_col, 1.5))
 
 ## phase < 0: de pie. Devuelve el desplazamiento vertical del cuerpo.
 static func _gait(phase: float) -> Dictionary:
@@ -70,18 +73,20 @@ static func horse(sp: ArtUnits.Sp, phase: float, coat: Color, mane: Color, blaze
 	sp.ell(27.5, by - 0.4, 9.0, 10.4, OUT)
 	var n0 := V(50.0, by - 4.0)
 	var n1 := V(59.5, by - 19.0)
-	sp.line(n0, n1, 11.8, OUT)
+	ArtUnits._cap(sp, n0, n1, 12.8, 8.6, OUT)
 	var h0 := V(60.5, by - 20.0)
 	var h1 := V(69.0, by - 12.5)
-	sp.line(h0, h1, 8.0, OUT)
+	ArtUnits._cap(sp, h0, h1, 9.2, 5.4, OUT)
+	sp.ell(h0.x + 1.2, h0.y + 2.8, 3.9, 3.3, OUT)
 	sp.tri(V(57.5, by - 22.0), V(60.5, by - 22.5), V(58.5, by - 27.0), OUT)
 	sp.tri(V(61.0, by - 23.0), V(63.5, by - 22.0), V(62.5, by - 27.0), OUT)
 	# relleno
 	sp.ell(37.0, by, 14.8, 9.2, coat)
 	sp.ell(48.5, by - 1.0, 8.2, 9.8, coat)
 	sp.ell(27.5, by - 0.4, 8.2, 9.6, coat)
-	sp.line(n0, n1, 10.0, coat)
-	sp.line(h0, h1, 6.2, coat)
+	ArtUnits._cap(sp, n0, n1, 11.0, 7.0, coat)
+	ArtUnits._cap(sp, h0, h1, 7.6, 3.9, coat)
+	sp.ell(h0.x + 1.2, h0.y + 2.8, 3.2, 2.6, coat)
 	sp.tri(V(58.0, by - 22.0), V(60.0, by - 22.0), V(58.8, by - 26.0), coat)
 	sp.tri(V(61.5, by - 22.5), V(63.0, by - 22.0), V(62.4, by - 26.0), coat)
 	# luces y sombras
@@ -90,9 +95,14 @@ static func horse(sp: ArtUnits.Sp, phase: float, coat: Color, mane: Color, blaze
 	sp.ell(36.0, by - 5.4, 11.5, 3.3, sh(coat, 1.15))
 	sp.ell(26.0, by - 4.0, 4.6, 4.2, sh(coat, 1.10))
 	sp.ell(46.5, by - 5.0, 4.4, 4.2, sh(coat, 1.10))
-	sp.line(n0 + V(1.8, 1.8), n1 + V(1.8, 2.2), 3.0, sh(coat, 0.82))
+	sp.line(n0 + V(1.8, 1.8), n1 + V(1.1, 1.4), 2.8, sh(coat, 0.82))
 	sp.line(n0 + V(-2.0, -1.0), n1 + V(-2.0, -0.6), 2.2, sh(coat, 1.14))
 	sp.line(h0 + V(0.6, 1.4), h1 + V(0.0, 1.4), 2.0, sh(coat, 0.84))
+	sp.ell(37.0, by + 7.2, 9.5, 2.6, sh(coat, 0.68))                          # vientre
+	sp.line(V(45.0, by - 5.5), V(49.5, by + 5.5), 1.0, sh(coat, 0.66))         # separación de la espalda
+	sp.line(V(32.0, by - 6.5), V(31.0, by + 4.5), 0.9, sh(coat, 0.70))         # grupa
+	sp.ell(25.5, by - 1.8, 3.6, 5.0, sh(coat, 1.16))
+	sp.ell(47.0, by - 1.0, 3.0, 4.2, sh(coat, 1.10))
 	if blaze:
 		sp.line(h0 + V(1.4, -1.2), h1 + V(1.0, -1.0), 1.7, Color(0.96, 0.94, 0.88))
 	# crines
@@ -276,15 +286,20 @@ static func _p_caballero(sp: ArtUnits.Sp, f: int) -> void:
 	sp.rect(s.x - 3.8, s.y - 1.1, 8.4, 2.4, steel)
 	sp.rect(s.x - 3.8, s.y - 1.1, 8.4, 0.8, sh(steel, 1.25))
 	var hd: Vector2 = j["head"]
-	# yelmo de cubo con rendija
-	sp.rect(hd.x - 4.6, hd.y - 5.4, 9.4, 11.4, OUT)
-	sp.rect(hd.x - 3.9, hd.y - 4.8, 8.0, 10.2, steel)
-	sp.rect(hd.x - 3.9, hd.y - 4.8, 2.6, 10.2, sh(steel, 1.18))
-	sp.rect(hd.x + 1.8, hd.y - 4.8, 2.3, 10.2, sh(steel, 0.78))
-	sp.rect(hd.x - 0.6, hd.y - 1.9, 4.8, 1.2, Color(0.04, 0.03, 0.03))
-	sp.rect(hd.x - 4.2, hd.y - 5.0, 8.6, 1.0, sh(steel, 0.80))
+	# yelmo de cubo con corona redondeada, rendija, banda en cruz y remaches
+	var hp: Array = [V(hd.x - 4.0, hd.y + 5.6), V(hd.x + 4.5, hd.y + 5.6), V(hd.x + 4.2, hd.y - 2.2), V(hd.x + 2.4, hd.y - 5.0), V(hd.x - 2.6, hd.y - 5.3), V(hd.x - 4.2, hd.y - 2.2)]
+	sp.poly(ArtUnits.grow(hp, 0.95), OUT)
+	sp.poly(hp, steel)
+	sp.poly([hp[5], V(hd.x - 1.2, hd.y - 5.2), V(hd.x - 1.2, hd.y + 5.6), hp[0]], sh(steel, 1.22))
+	sp.poly([V(hd.x + 1.8, hd.y - 4.7), hp[3], hp[2], hp[1], V(hd.x + 1.8, hd.y + 5.6)], sh(steel, 0.74))
+	sp.ell(hd.x - 1.4, hd.y - 3.9, 1.8, 1.0, sh(steel, 1.45))
+	sp.rect(hd.x - 4.2, hd.y + 4.3, 8.9, 1.3, sh(steel, 0.78))
+	sp.rect(hd.x + 0.3, hd.y - 5.0, 1.2, 10.4, sh(steel, 0.90))
+	sp.rect(hd.x - 0.9, hd.y - 1.9, 5.2, 1.2, Color(0.04, 0.03, 0.03))
 	for k in 3:
-		sp.rect(hd.x + 1.0 + k * 1.2, hd.y + 1.4, 0.5, 0.5, Color(0.12, 0.10, 0.10))
+		sp.rect(hd.x + 1.6 + k * 1.1, hd.y + 1.4, 0.5, 0.5, Color(0.12, 0.10, 0.10))
+	for ry in [-3.4, 2.8]:
+		sp.disc(hd.x - 2.6, hd.y + ry, 0.45, sh(steel, 1.5))
 	# penacho del equipo
 	sp.lay(1)
 	var fl := 0.0 if f == 0 else 1.5 * sin(float(f) * 1.6)
