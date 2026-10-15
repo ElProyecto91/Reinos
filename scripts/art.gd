@@ -98,7 +98,7 @@ func unit_icon(type: String, team: int) -> Texture2D:
 # ------------------------------------------------------------------ edificios
 
 func _build_buildings() -> void:
-	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64}
+	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64, "monasterio": 96, "castillo": 128}
 	for type in sizes:
 		var px: int = sizes[type]
 		var ss := ArtBuildings.SS

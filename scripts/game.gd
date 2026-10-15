@@ -557,6 +557,15 @@ func _consume_events() -> void:
 					var ct: Vector2 = ev["to"]
 					_fx({"t": "cannon", "p": cf + (ct - cf).normalized() * 12.0 + Vector2(0, -10), "q": ct, "life": 0.55})
 					sfx("cannon", cf)
+			"rock":
+				if _seen(ev["from"]) or _seen(ev["to"]):
+					var rf: Vector2 = ev["from"]
+					var rt: Vector2 = ev["to"]
+					_fx({"t": "rock", "p": rf + Vector2(0, -12), "q": rt, "life": 0.7})
+					sfx("hit", rt)
+			"heal":
+				if _seen(ev["pos"]):
+					_fx({"t": "heal", "p": ev["pos"] + Vector2(randf_range(-6, 6), -14), "life": 0.9})
 			"boarded":
 				if ev["owner"] == human:
 					sfx("splash", ev["pos"])
@@ -1142,6 +1151,7 @@ func err_text(code: int) -> String:
 		Sim.ERR_NOSHORE: return Lang.t("err_noshore")
 		Sim.ERR_CANT: return Lang.t("err_cant")
 		Sim.ERR_FULL: return Lang.t("err_full")
+		Sim.ERR_REQ: return Lang.t("err_req")
 	return Lang.t("err_invalid")
 
 func _err(code: int) -> void:

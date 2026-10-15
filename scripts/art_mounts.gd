@@ -405,3 +405,277 @@ static func _p_ariete(sp: ArtUnits.Sp, f: int) -> void:
 	sp.line(V(71.2, 24.0), V(71.2, gy - 7.0), 1.0, sh(wd, 1.3))
 	_wheel(sp, V(26.0, gy - 6.5), 6.6, ang, 1.0)
 	_wheel(sp, V(70.0, gy - 6.5), 6.6, ang, 1.0)
+
+# ---------------------------------------------------------------- arquero a caballo
+
+static func _p_arquero_caballo(sp: ArtUnits.Sp, f: int) -> void:
+	var ph := -1.0
+	if f >= 1 and f <= 4:
+		ph = float(f - 1) / 4.0
+	elif f == 5 or f == 7:
+		ph = 0.10
+	elif f == 6:
+		ph = 0.34
+	sp.at(0.0, 0.0)
+	var coat := Color(0.66, 0.66, 0.69)
+	var mouth := horse(sp, ph, coat, Color(0.24, 0.24, 0.27), true, false, true)
+	var bob: float = float(_gait(ph)["bob"])
+	sp.at(7.0, -2.5 + bob)
+	var pose := {"ln": [0.5, 1.0], "lf": [0.5, 1.0], "an": [0.75, 0.30], "af": [0.35, 0.55], "bob": 0.0}
+	var lean := 0.0
+	var mode := 0          # 0 en marcha, 1 tensando, 2 suelta, 3 apuntando
+	if f >= 1 and f <= 4:
+		lean = 0.7
+	elif f == 5:
+		pose["an"] = [1.35, 0.12]
+		pose["af"] = [0.85, 1.20]
+		mode = 1
+	elif f == 6:
+		pose["an"] = [1.45, 0.05]
+		pose["af"] = [-1.00, 1.00]
+		lean = -0.6
+		mode = 2
+	elif f == 7:
+		pose["an"] = [1.45, 0.05]
+		pose["af"] = [-1.57, 2.90]
+		lean = 0.4
+		mode = 3
+	var j := ArtUnits.skel(pose, lean)
+	var sleeve := Color(0.60, 0.50, 0.32)
+	sp.lay(0)
+	ArtUnits.quiver(sp, j)
+	ArtUnits.arm_seg(sp, j, "f", sleeve, ArtUnits.SKIN)
+	ArtUnits.tunic(sp, j, 2.0, 0.84)
+	sp.lay(2)
+	_rider_leg(sp, j["hip"], Color(0.24, 0.16, 0.09), Color(0.36, 0.30, 0.20))
+	ArtUnits.belt(sp, j, Color(0.30, 0.19, 0.09))
+	var hd: Vector2 = j["head"]
+	ArtUnits.head(sp, hd, ArtUnits.SKIN, Color(0.22, 0.14, 0.07), Color(0, 0, 0, 0), true)
+	ArtUnits.hood(sp, hd, Color(0.46, 0.30, 0.16), true)
+	var s: Vector2 = j["sh"]
+	sp.line(V(s.x - 3.5, s.y - 1.0), V(s.x + 3.5, s.y + 11.0), 1.3, OUT)
+	sp.line(V(s.x - 3.5, s.y - 1.0), V(s.x + 3.5, s.y + 11.0), 0.8, Color(0.42, 0.27, 0.12))
+	ArtUnits.arm_seg(sp, j, "n", sleeve, ArtUnits.SKIN)
+	var gn: Vector2 = j["hand_n"]
+	var gf: Vector2 = j["hand_f"]
+	match mode:
+		0:
+			ArtUnits.bow(sp, gn + V(1.0, 0.5), gn + V(1.0, 0.5), false, false)
+			sp.line(gf, mouth - V(7.0, -2.5 - bob), 0.6, Color(0.30, 0.18, 0.08))
+		1:
+			ArtUnits.bow(sp, gn + V(1.0, 0.0), gf, true, true)
+		2:
+			ArtUnits.bow(sp, gn + V(1.0, 0.0), gn + V(1.0, 0.0), false, false)
+		3:
+			ArtUnits.bow(sp, gn + V(1.0, 0.0), gf, true, true)
+	if mode == 1 or mode == 3:
+		ArtUnits.hand(sp, gf, ArtUnits.SKIN)
+		ArtUnits.hand(sp, gn, ArtUnits.SKIN)
+
+# ---------------------------------------------------------------- asedio: catapulta y trabuquete
+
+static func _stone(sp: ArtUnits.Sp, c: Vector2, r: float) -> void:
+	sp.disc(c.x, c.y, r + 1.1, OUT)
+	sp.disc(c.x, c.y, r, Color(0.58, 0.57, 0.55))
+	sp.disc(c.x + 0.5, c.y + 0.7, r * 0.72, Color(0.46, 0.45, 0.44))
+	sp.disc(c.x - 0.7, c.y - 0.8, r * 0.45, Color(0.78, 0.77, 0.74))
+
+## Tablero de madera con listones (para cajas y paneles de equipo se usa otra capa).
+static func _planks(sp: ArtUnits.Sp, x: float, y: float, w: float, h: float, col: Color) -> void:
+	sp.rect(x - 0.9, y - 0.9, w + 1.8, h + 1.8, OUT)
+	sp.rect(x, y, w, h, col)
+	sp.rect(x, y, w, 1.0, sh(col, 1.2))
+	sp.rect(x, y + h - 1.2, w, 1.2, sh(col, 0.72))
+	var n := int(w / 5.0)
+	for i in range(1, n):
+		sp.rect(x + float(i) * 5.0, y, 0.6, h, sh(col, 0.68))
+
+static func _p_catapulta(sp: ArtUnits.Sp, f: int) -> void:
+	var wood := Color(0.52, 0.34, 0.17)
+	var wd := Color(0.40, 0.25, 0.12)
+	var iron := Color(0.56, 0.58, 0.64)
+	var rope := Color(0.76, 0.66, 0.44)
+	var ang := 0.0
+	var bob := 0.0
+	var phi := -100.0
+	var cocked := false
+	if f >= 1 and f <= 4:
+		ang = float(f - 1) * 0.26
+		bob = -0.6 * absf(sin(float(f) * 1.57))
+		phi = -100.0 + 4.0 * sin(float(f) * 1.57)
+	elif f == 5:
+		phi = 150.0
+		cocked = true
+	elif f == 6:
+		phi = -40.0
+	sp.at(0.0, bob)
+	var gy := 68.0
+	var P := V(58.0, 32.0)
+	var d := V(cos(deg_to_rad(phi)), sin(deg_to_rad(phi)))
+	var tip := P + d * 27.0
+	var stub := P - d * 9.0
+	# --- capa 0: lado lejano
+	sp.lay(0)
+	_wheel(sp, V(31.0, gy - 8.0), 6.0, ang + 0.3, 0.72)
+	_wheel(sp, V(85.0, gy - 8.0), 6.0, ang + 0.3, 0.72)
+	ArtUnits.limb(sp, V(16.0, gy - 15.0), V(100.0, gy - 15.0), 4.2, sh(wd, 0.82))
+	ArtUnits.limb(sp, V(45.0, gy - 15.5), P + V(2.0, 1.0), 4.0, sh(wd, 0.78))
+	ArtUnits.limb(sp, V(78.0, gy - 15.5), P + V(2.0, 1.0), 4.0, sh(wd, 0.78))
+	# --- capa 1: panel y banderín del equipo
+	sp.lay(1)
+	var pan: Array = [V(24.0, gy - 25.0), V(92.0, gy - 25.0), V(92.0, gy - 15.5), V(24.0, gy - 15.5)]
+	sp.poly(pan, ArtUnits.g(0.84))
+	sp.poly([pan[0], V(38.0, gy - 25.0), V(38.0, gy - 15.5), pan[3]], ArtUnits.g(1.0))
+	sp.poly([V(78.0, gy - 25.0), pan[1], pan[2], V(78.0, gy - 15.5)], ArtUnits.g(0.62))
+	for i in 6:
+		sp.rect(30.0 + i * 11.0, gy - 25.0, 0.8, 9.5, ArtUnits.g(0.5, 0.8))
+	var fw := 1.0 + 1.6 * sin(float(f) * 1.9) if f > 0 else 0.0
+	var flag: Array = [V(16.0, 29.0), V(16.0, 40.0), V(3.0 - fw, 38.0), V(5.0 - fw * 0.5, 32.0)]
+	sp.poly(flag, ArtUnits.g(0.84))
+	sp.poly([flag[0], V(16.0, 33.0), V(8.0, 33.5), flag[3]], ArtUnits.g(1.0))
+	sp.poly([flag[3], V(8.0, 33.5), V(16.0, 36.5), flag[1], flag[2]], ArtUnits.g(0.66))
+	# --- capa 2: cuerpo
+	sp.lay(2)
+	sp.rect(23.4, gy - 25.6, 69.2, 0.9, OUT)
+	sp.rect(23.4, gy - 15.9, 69.2, 0.9, OUT)
+	sp.rect(23.4, gy - 25.6, 0.9, 10.6, OUT)
+	sp.rect(91.8, gy - 25.6, 0.9, 10.6, OUT)
+	ArtUnits.limb(sp, V(12.0, gy - 14.5), V(102.0, gy - 14.5), 5.2, wood)
+	sp.line(V(16.0, gy - 14.0), V(16.0, 28.0), 2.4, OUT)
+	sp.line(V(16.0, gy - 14.0), V(16.0, 28.0), 1.4, wd)
+	# torno trasero
+	var wn := V(24.0, gy - 31.0)
+	sp.disc(wn.x, wn.y, 5.0, OUT)
+	sp.disc(wn.x, wn.y, 4.0, sh(wood, 0.9))
+	sp.disc(wn.x - 0.6, wn.y - 0.6, 2.8, sh(wood, 1.15))
+	for k in 4:
+		var a := float(k) * PI / 2.0 + 0.5
+		sp.line(wn, wn + V(cos(a), sin(a)) * 5.6, 1.1, wd)
+	sp.disc(wn.x, wn.y, 1.2, OUT)
+	if cocked:
+		sp.line(tip, wn + V(2.0, -2.0), 1.1, OUT)
+		sp.line(tip, wn + V(2.0, -2.0), 0.6, rope)
+	# resorte de torsión (tambor de cuerda) y brazo
+	sp.ell(P.x, P.y + 2.0, 7.6, 6.6, OUT)
+	sp.ell(P.x, P.y + 2.0, 6.8, 5.8, Color(0.66, 0.54, 0.34))
+	for k in 5:
+		sp.line(P + V(-5.6 + float(k) * 2.8, -2.6), P + V(-5.6 + float(k) * 2.8, 7.0), 0.8, Color(0.40, 0.30, 0.16, 0.85))
+	sp.ell(P.x - 1.6, P.y - 0.8, 3.6, 2.0, Color(0.82, 0.72, 0.52, 0.8))
+	ArtUnits.limb(sp, stub, P, 5.2, wood)
+	ArtUnits.limb(sp, P, tip, 4.2, wood)
+	sp.line(stub - d * 1.0, stub + d * 1.0, 6.4, OUT)
+	sp.line(stub - d * 0.6, stub + d * 0.6, 5.0, iron)
+	# cuchara
+	sp.ell(tip.x + d.x * 2.0, tip.y + d.y * 2.0 + 0.6, 5.0, 3.8, OUT)
+	sp.ell(tip.x + d.x * 2.0, tip.y + d.y * 2.0 + 0.6, 4.2, 3.0, sh(wood, 0.82))
+	sp.ell(tip.x + d.x * 2.0 - 0.4, tip.y + d.y * 2.0 + 0.2, 3.0, 1.8, sh(wd, 0.62))
+	if cocked:
+		_stone(sp, tip + d * 2.0 + V(0.0, -2.0), 3.6)
+	# bastidor cercano delante del brazo
+	ArtUnits.limb(sp, V(41.0, gy - 15.0), P + V(-1.0, 1.0), 4.8, wood)
+	ArtUnits.limb(sp, V(75.0, gy - 15.0), P + V(1.0, 1.0), 4.8, wood)
+	ArtUnits.limb(sp, V(47.0, gy - 26.0), V(69.0, gy - 26.0), 3.0, wd)
+	sp.disc(P.x, P.y, 3.2, OUT)
+	sp.disc(P.x, P.y, 2.4, iron)
+	sp.disc(P.x - 0.6, P.y - 0.6, 1.0, Color(0.9, 0.92, 0.96))
+	_wheel(sp, V(33.0, gy - 7.5), 6.6, ang, 1.0)
+	_wheel(sp, V(83.0, gy - 7.5), 6.6, ang, 1.0)
+
+static func _p_trabuquete(sp: ArtUnits.Sp, f: int) -> void:
+	var wood := Color(0.52, 0.34, 0.17)
+	var wd := Color(0.40, 0.25, 0.12)
+	var iron := Color(0.56, 0.58, 0.64)
+	var rope := Color(0.76, 0.66, 0.44)
+	var ang := 0.0
+	var bob := 0.0
+	var phi := -78.0
+	var mode := 0          # 0 reposo, 1 armado, 2 disparo
+	if f >= 1 and f <= 4:
+		ang = float(f - 1) * 0.26
+		bob = -0.5 * absf(sin(float(f) * 1.57))
+		phi = -78.0 + 2.5 * sin(float(f) * 1.57)
+	elif f == 5:
+		phi = 148.0
+		mode = 1
+	elif f == 6:
+		phi = -32.0
+		mode = 2
+	sp.at(0.0, bob)
+	var gy := 96.0
+	var P := V(62.0, 48.0)
+	var d := V(cos(deg_to_rad(phi)), sin(deg_to_rad(phi)))
+	var tip := P + d * 42.0
+	var stub := P - d * 13.0
+	# --- capa 0: lado lejano
+	sp.lay(0)
+	_wheel(sp, V(30.0, gy - 6.0), 5.2, ang + 0.3, 0.72)
+	_wheel(sp, V(96.0, gy - 6.0), 5.2, ang + 0.3, 0.72)
+	ArtUnits.limb(sp, V(16.0, gy - 10.0), V(112.0, gy - 10.0), 5.0, sh(wd, 0.82))
+	ArtUnits.limb(sp, V(41.0, gy - 10.5), P + V(3.0, 1.0), 4.6, sh(wd, 0.78))
+	ArtUnits.limb(sp, V(91.0, gy - 10.5), P + V(3.0, 1.0), 4.6, sh(wd, 0.78))
+	# --- capa 1: faldón y banderín del equipo
+	sp.lay(1)
+	var pan: Array = [V(24.0, gy - 21.0), V(104.0, gy - 21.0), V(104.0, gy - 11.5), V(24.0, gy - 11.5)]
+	sp.poly(pan, ArtUnits.g(0.84))
+	sp.poly([pan[0], V(40.0, gy - 21.0), V(40.0, gy - 11.5), pan[3]], ArtUnits.g(1.0))
+	sp.poly([V(88.0, gy - 21.0), pan[1], pan[2], V(88.0, gy - 11.5)], ArtUnits.g(0.62))
+	for i in 7:
+		sp.rect(31.0 + i * 11.0, gy - 21.0, 0.8, 9.5, ArtUnits.g(0.5, 0.8))
+	var fw := 1.0 + 1.6 * sin(float(f) * 1.9) if f > 0 else 0.0
+	var flag: Array = [V(15.0, 52.0), V(15.0, 64.0), V(2.0 - fw, 62.0), V(4.0 - fw * 0.5, 55.0)]
+	sp.poly(flag, ArtUnits.g(0.84))
+	sp.poly([flag[0], V(15.0, 56.5), V(7.0, 57.0), flag[3]], ArtUnits.g(1.0))
+	sp.poly([flag[3], V(7.0, 57.0), V(15.0, 60.0), flag[1], flag[2]], ArtUnits.g(0.66))
+	# --- capa 2: cuerpo
+	sp.lay(2)
+	sp.rect(23.4, gy - 21.6, 81.2, 0.9, OUT)
+	sp.rect(23.4, gy - 11.9, 81.2, 0.9, OUT)
+	sp.rect(23.4, gy - 21.6, 0.9, 10.6, OUT)
+	sp.rect(103.8, gy - 21.6, 0.9, 10.6, OUT)
+	ArtUnits.limb(sp, V(12.0, gy - 9.0), V(114.0, gy - 9.0), 6.0, wood)
+	sp.line(V(15.0, gy - 9.0), V(15.0, 50.0), 2.6, OUT)
+	sp.line(V(15.0, gy - 9.0), V(15.0, 50.0), 1.5, wd)
+	# contrapeso colgado del brazo corto (entre los dos bastidores)
+	var bc := stub + V(0.0, 10.0)
+	_planks(sp, bc.x - 7.5, bc.y - 7.0, 15.0, 15.0, sh(wood, 0.88))
+	sp.rect(bc.x - 6.0, bc.y - 5.5, 12.0, 4.4, OUT)
+	for k in 3:
+		sp.disc(bc.x - 4.0 + float(k) * 4.0, bc.y - 3.4, 1.8, Color(0.56, 0.55, 0.53))
+		sp.disc(bc.x - 4.3 + float(k) * 4.0, bc.y - 3.8, 0.7, Color(0.78, 0.77, 0.74))
+	sp.rect(bc.x - 7.5, bc.y - 1.0, 15.0, 1.6, iron)
+	sp.rect(bc.x - 7.5, bc.y + 4.0, 15.0, 1.6, iron)
+	sp.line(stub, bc + V(-5.0, -7.0), 0.9, OUT)
+	sp.line(stub, bc + V(5.0, -7.0), 0.9, OUT)
+	# brazo
+	ArtUnits.limb(sp, stub, P, 6.0, wood)
+	ArtUnits.limb(sp, P, tip, 4.6, wood)
+	sp.line(stub - d * 1.0, stub + d * 1.0, 7.0, OUT)
+	sp.line(stub - d * 0.6, stub + d * 0.6, 5.6, iron)
+	for k in 3:
+		var q := P.lerp(tip, 0.3 + float(k) * 0.22)
+		sp.line(q - V(-d.y, d.x) * 2.6, q + V(-d.y, d.x) * 2.6, 1.1, Color(0.30, 0.31, 0.36))
+	# honda
+	var pouch := tip + V(3.0, 15.0)
+	if mode == 1:
+		pouch = tip + V(14.0, 14.0)
+	elif mode == 2:
+		pouch = tip + V(15.0, -4.0)
+	sp.line(tip, pouch, 1.4, OUT)
+	sp.line(tip, pouch, 0.7, rope)
+	sp.ell(pouch.x, pouch.y, 3.4, 2.4, OUT)
+	sp.ell(pouch.x, pouch.y, 2.7, 1.8, Color(0.46, 0.32, 0.18))
+	if mode == 1:
+		_stone(sp, pouch + V(0.0, -2.2), 3.4)
+	# caballete cercano delante del brazo
+	ArtUnits.limb(sp, V(36.0, gy - 9.5), P + V(-1.0, 1.0), 5.6, wood)
+	ArtUnits.limb(sp, V(88.0, gy - 9.5), P + V(1.0, 1.0), 5.6, wood)
+	ArtUnits.limb(sp, V(41.0, gy - 17.0), V(83.0, gy - 17.0), 3.6, wd)
+	ArtUnits.limb(sp, V(44.0, gy - 17.0), V(55.0, gy - 31.0), 2.6, wd)
+	ArtUnits.limb(sp, V(80.0, gy - 17.0), V(69.0, gy - 31.0), 2.6, wd)
+	sp.rect(P.x - 5.0, P.y - 4.2, 10.0, 3.2, OUT)
+	sp.rect(P.x - 4.4, P.y - 3.7, 8.8, 2.3, iron)
+	sp.disc(P.x, P.y, 3.6, OUT)
+	sp.disc(P.x, P.y, 2.8, iron)
+	sp.disc(P.x - 0.7, P.y - 0.7, 1.1, Color(0.9, 0.92, 0.96))
+	_wheel(sp, V(28.0, gy - 5.5), 5.8, ang, 1.0)
+	_wheel(sp, V(98.0, gy - 5.5), 5.8, ang, 1.0)

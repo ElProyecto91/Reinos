@@ -29,6 +29,12 @@ const CELLS := {
 	"explorador": [92, 76, 40, 66, 2.0, 7],
 	"caballero": [112, 82, 42, 70, 2.0, 7],
 	"ariete": [112, 56, 56, 52, 2.0, 7],
+	"alabardero": [88, 76, 30, 72, 2.0, 7],
+	"hostigador": [70, 76, 30, 72, 2.0, 8],
+	"monje": [62, 76, 30, 72, 2.0, 7],
+	"arquero_caballo": [104, 76, 40, 66, 1.6, 8],
+	"catapulta": [112, 76, 56, 70, 1.6, 7],
+	"trabuquete": [128, 104, 62, 96, 1.6, 7],
 	"barco_pesca": [80, 60, 40, 44, 1.6, 6],
 	"barco_transporte": [104, 70, 52, 58, 1.6, 4],
 	"galera": [128, 64, 62, 46, 1.6, 6],
@@ -402,6 +408,18 @@ static func _paint(type: String, f: int, sp: Sp) -> void:
 			ArtMounts._p_caballero(sp, f)
 		"ariete":
 			ArtMounts._p_ariete(sp, f)
+		"alabardero":
+			_p_alabardero(sp, f)
+		"hostigador":
+			_p_hostigador(sp, f)
+		"monje":
+			_p_monje(sp, f)
+		"arquero_caballo":
+			ArtMounts._p_arquero_caballo(sp, f)
+		"catapulta":
+			ArtMounts._p_catapulta(sp, f)
+		"trabuquete":
+			ArtMounts._p_trabuquete(sp, f)
 		"barco_pesca":
 			ArtShips._p_pesca(sp, f)
 		"barco_transporte":
@@ -801,3 +819,198 @@ static func _p_ballestero(sp: Sp, f: int) -> void:
 	hand(sp, hn, SKIN)
 	if mode >= 2:
 		hand(sp, hf, SKIN)
+
+
+# ---------------------------------------------------------------- Edad de los Castillos
+
+## Alabarda: asta larga con punta, hoja de hacha y gancho.
+static func halberd(sp: Sp, h: Vector2, dir: Vector2, length: float) -> void:
+	var d := dir.normalized()
+	var n := V(-d.y, d.x)
+	var tail := h - d * (length * 0.30)
+	var tip := h + d * (length * 0.70)
+	var steel := Color(0.80, 0.83, 0.90)
+	sp.lay(2)
+	sp.line(tail, tip, 3.2, OUT)
+	sp.line(tail, tip, 1.8, Color(0.50, 0.33, 0.16))
+	sp.line(tail + V(-0.3, -0.3), tip + V(-0.3, -0.3), 0.6, Color(0.74, 0.55, 0.30))
+	# punta
+	sp.tri(tip + d * 5.4, tip - d * 0.6 + n * 1.6, tip - d * 0.6 - n * 1.6, OUT)
+	sp.tri(tip + d * 4.4, tip - d * 0.4 + n * 1.0, tip - d * 0.4 - n * 1.0, steel)
+	# hoja de hacha
+	var blade: Array = [tip - d * 1.0, tip - d * 0.6 + n * 5.6, tip - d * 7.4 + n * 4.4, tip - d * 8.4]
+	sp.opoly(blade, steel, OUT, 0.9)
+	sp.line(blade[1], blade[2], 0.9, Color(1, 1, 1, 0.85))
+	sp.poly([blade[0], blade[3], tip - d * 4.0 + n * 1.2], sh(steel, 0.72))
+	# gancho opuesto
+	sp.tri(tip - d * 4.6, tip - d * 4.2 - n * 3.8, tip - d * 6.8, OUT)
+	sp.tri(tip - d * 4.8, tip - d * 4.6 - n * 3.0, tip - d * 6.4, steel)
+	# adorno del equipo bajo la hoja
+	sp.lay(1)
+	var pb := tip - d * 11.0
+	sp.tri(pb, pb - d * 5.6 + n * 2.8, pb - d * 5.6 - n * 0.4, g(0.9))
+	sp.lay(2)
+
+static func _p_alabardero(sp: Sp, f: int) -> void:
+	sp.at(0.0, 12.0)
+	var mail := Color(0.58, 0.60, 0.66)
+	var pose := _mk(walk_pose(f), {})
+	var lean := 0.0
+	var sd := V(0.12, -1.0)
+	if f <= F_WALK + 3:
+		pose["an"] = [0.35, 0.75]
+	elif f == 5:
+		pose = _mk(STANCE_W, {"an": [0.55, 0.70], "af": [1.00, 0.50], "bob": 0.0})
+		lean = -1.2
+		sd = V(0.85, -0.55)
+	else:
+		pose = _mk(STANCE_S, {"an": [1.45, 0.10], "af": [1.25, 0.25], "bob": 0.0})
+		lean = 2.6
+		sd = V(1.0, -0.10)
+	var j := skel(pose, lean)
+	sp.lay(0)
+	leg(sp, j, "f", Color(0.30, 0.26, 0.22), Color(0.22, 0.15, 0.09))
+	arm_seg(sp, j, "f", mail, SKIN, false)
+	tunic(sp, j, 5.0, 0.84, Color(0.12, 0.10, 0.08))
+	sp.lay(2)
+	leg(sp, j, "n", Color(0.30, 0.26, 0.22), Color(0.22, 0.15, 0.09))
+	belt(sp, j, Color(0.22, 0.14, 0.07))
+	# hombreras de malla y cota sobre el pecho
+	var s: Vector2 = j["sh"]
+	sp.ell(s.x + 0.5, s.y - 0.6, 5.6, 2.4, OUT)
+	sp.ell(s.x + 0.5, s.y - 0.6, 5.0, 1.8, mail)
+	sp.ell(s.x - 0.8, s.y - 1.1, 2.4, 0.8, sh(mail, 1.25))
+	head(sp, j["head"], SKIN, Color(0.20, 0.13, 0.08), Color(0.22, 0.15, 0.09, 0.9))
+	helm_kettle(sp, j["head"], Color(0.62, 0.64, 0.70))
+	arm_seg(sp, j, "n", mail, SKIN, false)
+	halberd(sp, j["hand_n"], sd, 54.0)
+
+static func _p_hostigador(sp: Sp, f: int) -> void:
+	sp.at(0.0, 12.0)
+	var pose := _mk(walk_pose(f), {})
+	var lean := 0.0
+	var mode := 0        # 0 en marcha, 1 prepara, 2 lanza, 3 apunta
+	var jd := V(0.40, -1.0)
+	if f <= F_WALK + 3:
+		pose["an"] = [0.25, 0.70]
+	elif f == 5:
+		pose = _mk({"ln": [0.20, 0.14], "lf": [-0.22, 0.14]}, {"an": [-1.20, 0.55], "af": [1.00, 0.55], "bob": 0.0})
+		mode = 1
+		lean = -1.0
+		jd = V(1.0, -0.30)
+	elif f == 6:
+		pose = _mk({"ln": [0.26, 0.14], "lf": [-0.30, 0.14]}, {"an": [1.55, 0.10], "af": [-0.40, 0.50], "bob": 0.0})
+		mode = 2
+		lean = 2.4
+	else:
+		pose = _mk({"ln": [0.20, 0.14], "lf": [-0.22, 0.14]}, {"an": [2.00, 0.25], "af": [1.30, 0.20], "bob": 0.0})
+		mode = 3
+		lean = 0.8
+		jd = V(1.0, -0.42)
+	var j := skel(pose, lean)
+	var s: Vector2 = j["sh"]
+	sp.lay(0)
+	# haz de jabalinas a la espalda
+	for k in 3:
+		sp.line(V(s.x - 3.0 - k * 1.1, s.y + 10.0), V(s.x - 6.5 - k * 1.1, s.y - 9.0), 1.6, OUT)
+		sp.line(V(s.x - 3.0 - k * 1.1, s.y + 10.0), V(s.x - 6.5 - k * 1.1, s.y - 9.0), 0.8, Color(0.62, 0.44, 0.22))
+		sp.tri(V(s.x - 6.5 - k * 1.1, s.y - 12.0), V(s.x - 7.6 - k * 1.1, s.y - 8.6), V(s.x - 5.4 - k * 1.1, s.y - 8.6), Color(0.84, 0.86, 0.92))
+	leg(sp, j, "f", Color(0.40, 0.30, 0.20), Color(0.26, 0.17, 0.09))
+	arm_seg(sp, j, "f", Color(0.70, 0.62, 0.44), SKIN)
+	tunic(sp, j, 2.5, 0.86, Color(0.22, 0.14, 0.08))
+	sp.lay(2)
+	leg(sp, j, "n", Color(0.40, 0.30, 0.20), Color(0.26, 0.17, 0.09))
+	belt(sp, j, Color(0.30, 0.19, 0.09))
+	var hd: Vector2 = j["head"]
+	head(sp, hd, SKIN, Color(0.30, 0.18, 0.08), Color(0, 0, 0, 0))
+	# gorro de cuero con borde
+	sp.ell(hd.x - 0.3, hd.y - 2.0, 4.4, 3.2, OUT)
+	sp.ell(hd.x - 0.3, hd.y - 2.0, 3.8, 2.6, Color(0.50, 0.34, 0.18))
+	sp.ell(hd.x - 1.2, hd.y - 2.8, 1.8, 1.0, Color(0.68, 0.48, 0.26))
+	sp.rect(hd.x - 4.0, hd.y - 0.9, 7.2, 1.2, Color(0.30, 0.20, 0.10))
+	arm_seg(sp, j, "n", Color(0.70, 0.62, 0.44), SKIN)
+	var hn: Vector2 = j["hand_n"]
+	var hf: Vector2 = j["hand_f"]
+	match mode:
+		0:
+			spear(sp, hn, jd, 34.0, false)
+		1:
+			spear(sp, hn, jd, 34.0, false)
+		2:
+			pass
+		3:
+			spear(sp, hn, jd, 34.0, false)
+	if mode == 3 or mode == 1:
+		hand(sp, hf, SKIN)
+
+static func _p_monje(sp: Sp, f: int) -> void:
+	sp.at(0.0, 12.0)
+	var robe := Color(0.62, 0.50, 0.34)
+	var pose := _mk(walk_pose(f), {})
+	var lean := 0.0
+	var raised := 0
+	if f <= F_WALK + 3:
+		pose["an"] = [0.20, 0.50]
+	elif f == 5:
+		pose = _mk(IDLE_POSE, {"an": [2.3, 0.50], "af": [2.3, 0.50], "bob": 0.0})
+		raised = 1
+	elif f == 6:
+		pose = _mk(IDLE_POSE, {"an": [2.7, 0.20], "af": [2.7, 0.20], "bob": 0.0})
+		raised = 2
+		lean = -0.4
+	var j := skel(pose, lean)
+	var s: Vector2 = j["sh"]
+	var h: Vector2 = j["hip"]
+	var gy := 59.0 + (0.0 if f == 0 else 0.0)
+	sp.lay(0)
+	arm_seg(sp, j, "f", robe, SKIN)
+	# túnica larga hasta el suelo (sin piernas a la vista): el bajo se balancea al andar
+	var sway := 0.0
+	if f >= F_WALK and f <= F_WALK + 3:
+		sway = [1.6, 0.0, -1.6, 0.0][f - F_WALK]
+	var pts: Array = [V(s.x - 4.8, s.y - 1.4), V(s.x + 5.2, s.y - 1.2), V(h.x + 8.2 + sway, gy), V(h.x - 8.0 + sway, gy)]
+	sp.poly(grow(pts, 1.1), OUT)
+	sp.poly(pts, robe)
+	sp.poly([pts[0], V(pts[0].x + 2.6, pts[0].y), V(pts[3].x + 3.4, gy), pts[3]], sh(robe, 1.14))
+	sp.poly([V(pts[1].x - 3.4, pts[1].y), pts[1], pts[2], V(pts[2].x - 4.0, gy)], sh(robe, 0.74))
+	for fx in [-3.0, 0.0, 3.0]:
+		sp.line(V(h.x + fx, h.y + 4.0), V(h.x + fx * 1.9 + sway, gy - 0.6), 0.7, sh(robe, 0.66))
+	# pies asomando
+	sp.rect(h.x - 3.0 + sway, gy - 1.6, 3.6, 2.2, OUT)
+	sp.rect(h.x + 1.4 + sway, gy - 1.6, 3.6, 2.2, OUT)
+	sp.rect(h.x - 2.6 + sway, gy - 1.2, 2.8, 1.4, Color(0.34, 0.22, 0.12))
+	sp.rect(h.x + 1.8 + sway, gy - 1.2, 2.8, 1.4, Color(0.34, 0.22, 0.12))
+	# faja y escapulario con el color del equipo
+	sp.lay(1)
+	sp.poly([V(h.x - 4.4, h.y - 1.6), V(h.x + 4.6, h.y - 1.6), V(h.x + 4.6, h.y + 1.0), V(h.x - 4.4, h.y + 1.0)], g(0.9))
+	sp.poly([V(s.x - 1.8, s.y - 1.0), V(s.x + 2.4, s.y - 0.8), V(h.x + 2.4 + sway * 0.4, gy - 0.6), V(h.x - 1.8 + sway * 0.4, gy - 0.6)], g(0.74))
+	sp.poly([V(s.x - 1.8, s.y - 1.0), V(s.x + 0.2, s.y - 0.9), V(h.x + 0.2 + sway * 0.4, gy - 0.6), V(h.x - 1.8 + sway * 0.4, gy - 0.6)], g(0.92))
+	sp.rect(h.x - 8.0 + sway, gy - 2.6, 16.2, 1.8, g(0.82))
+	sp.lay(2)
+	# cabeza con tonsura y capucha caída
+	var hd: Vector2 = j["head"]
+	head(sp, hd, SKIN, Color(0.36, 0.26, 0.14), Color(0, 0, 0, 0), true)
+	sp.ell(hd.x - 1.4, hd.y - 0.6, 3.0, 3.5, sh(robe, 0.88))
+	sp.ell(hd.x - 0.2, hd.y - 2.4, 2.8, 1.4, SKIN)
+	sp.ell(hd.x - 0.2, hd.y - 2.4, 3.2, 1.0, Color(0.36, 0.26, 0.14, 0.0))
+	sp.arc(hd.x - 0.2, hd.y - 1.2, 3.8, PI * 1.05, PI * 1.95, 1.4, Color(0.34, 0.24, 0.12))
+	# crucecita al cuello
+	sp.rect(s.x + 1.0, s.y + 1.6, 0.9, 3.4, Color(0.90, 0.74, 0.28))
+	sp.rect(s.x + 0.0, s.y + 2.6, 2.9, 0.9, Color(0.90, 0.74, 0.28))
+	arm_seg(sp, j, "n", robe, SKIN)
+	var hn: Vector2 = j["hand_n"]
+	if raised == 0:
+		# bastón de peregrino con cruz
+		sp.line(V(hn.x + 1.0, gy + 0.4), V(hn.x + 1.4, hn.y - 15.0), 2.8, OUT)
+		sp.line(V(hn.x + 1.0, gy + 0.4), V(hn.x + 1.4, hn.y - 15.0), 1.5, Color(0.52, 0.36, 0.18))
+		sp.rect(hn.x - 1.8, hn.y - 19.0, 6.4, 1.8, Color(0.52, 0.36, 0.18))
+		sp.rect(hn.x + 0.4, hn.y - 22.0, 1.8, 7.0, Color(0.52, 0.36, 0.18))
+	hand(sp, hn, SKIN)
+	hand(sp, j["hand_f"], SKIN)
+	if raised > 0:
+		# destello de curación sobre las manos
+		var gc := V(hd.x + 1.0, hd.y - 12.0)
+		var a := 0.55 if raised == 1 else 0.85
+		sp.disc(gc.x, gc.y, 6.0 + raised * 2.0, Color(1.0, 0.95, 0.55, a * 0.35))
+		sp.disc(gc.x, gc.y, 3.6 + raised, Color(1.0, 0.98, 0.70, a * 0.7))
+		sp.disc(gc.x, gc.y, 1.8, Color(1, 1, 1, a))

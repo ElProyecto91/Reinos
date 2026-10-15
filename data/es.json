@@ -93,7 +93,7 @@
  "st_fish": "Pescando",
  "err_place": "No se puede colocar ahí",
  "err_cost": "Recursos insuficientes",
- "err_age": "Requiere la Edad Feudal",
+ "err_age": "Requiere una edad más avanzada",
  "err_queue": "La cola está llena",
  "err_nounits": "Selecciona aldeanos",
  "err_invalid": "Orden no válida",
@@ -164,7 +164,7 @@
   ],
   [
    "Construir",
-   "Selecciona aldeanos y pulsa Construir. Primera página: casa, granja, almacén, Puerto y Centro urbano. «Militares»: cuartel, arquería, establo y taller. «Defensas» (Edad Feudal): murallas, puertas y torres. Arrastra el edificio hasta un sitio verde y pulsa Construir. Las granjas (60 de madera) se siembran tocando casillas y se agotan."
+   "Selecciona aldeanos y pulsa Construir. Primera página: casa, granja, almacén, Puerto y Centro urbano. «Militares»: cuartel, arquería, establo, taller y monasterio (Edad de los Castillos). «Defensas»: murallas, puertas y torres (Edad Feudal) y castillo (Edad de los Castillos). Arrastra el edificio hasta un sitio verde y pulsa Construir. Las granjas (60 de madera) se siembran tocando casillas y se agotan."
   ],
   [
    "Defensas",
@@ -180,7 +180,7 @@
   ],
   [
    "Soldados",
-   "Cuartel: piquero (y espadachín en la Edad Feudal). Arquería: arquero y ballestero. Establo: explorador (rápido y con mucha vista), jinete y caballero (pesado). Taller: ariete."
+   "Cuartel: piquero, espadachín (Feudal) y alabardero (Castillos, el mejor contra caballería). Arquería: arquero, ballestero, hostigador (Castillos, castiga a los arqueros) y arquero a caballo (Castillos, rápido). Establo: explorador (rápido y con mucha vista), jinete y caballero (pesado). Taller: ariete y catapulta (Castillos, piedras que dañan en área). Castillo: trabuquete (derriba edificios desde muy lejos). Monasterio: monje (cura a los heridos cercanos)."
   ],
   [
    "Puerto y barcos",
@@ -196,11 +196,11 @@
   ],
   [
    "Edades",
-   "La Edad Feudal (en el Centro urbano: Avanzar, 400 comida y 200 oro) desbloquea arqueros, ballesteros, espadachines, exploradores, jinetes, caballeros, arietes, galeras, galeones y torres."
+   "La Edad Feudal (en el Centro urbano: Avanzar, 400 comida y 200 oro) desbloquea arqueros, ballesteros, espadachines, exploradores, jinetes, caballeros, arietes, galeras, galeones y torres. La Edad de los Castillos (700 comida y 450 oro; exige tener terminados al menos 2 tipos distintos de edificio militar) desbloquea alabarderos, hostigadores, arqueros a caballo, catapultas, trabuquetes, monjes, el monasterio y el castillo, y sube la vida y el daño de todos tus soldados."
   ],
   [
    "Combate",
-   "Piquero y ballestero frenan a la caballería; el jinete y el caballero arrasan arqueros y ballesteros; el arquero castiga al piquero; el espadachín (Cuartel, Edad Feudal) vence al piquero y destruye arietes, igual que la caballería, que los alcanza enseguida. El ariete (Taller) derriba edificios pero apenas se defiende: escóltalo. «Atacar» manda al grupo a un punto y lucharán contra lo que encuentren."
+   "Piquero, alabardero y ballestero frenan a la caballería (el alabardero es el mejor); el jinete y el caballero arrasan arqueros, ballesteros, hostigadores y monjes; el arquero castiga al piquero; el hostigador castiga a los arqueros y a los arqueros a caballo; el arquero a caballo castiga a la infantería pero huye mal de la caballería. El espadachín vence al piquero y destruye arietes y catapultas, igual que la caballería, que los alcanza enseguida. La catapulta lanza piedras que dañan en área (a unidades y edificios) pero apenas se defiende: escóltala. El ariete y el trabuquete solo atacan edificios. Los monjes curan a los heridos que tienen cerca: llévalos con el ejército. «Atacar» manda al grupo a un punto y lucharán contra lo que encuentren."
   ],
   [
    "Mapa",
@@ -242,5 +242,20 @@
  "toast_explore_done": "Exploración terminada: no queda nada por descubrir a su alcance",
  "toast_explore_none": "Selecciona un explorador, un jinete o un barco",
  "toast_unload_go": "El barco navega hacia la orilla",
- "toast_board_go": "%d unidades suben al barco"
+ "toast_board_go": "%d unidades suben al barco",
+ "age_2": "Edad de los Castillos",
+ "u_alabardero": "Alabardero",
+ "u_hostigador": "Hostigador",
+ "u_arquero_caballo": "Arquero a caballo",
+ "us_arquero_caballo": "Arq. caballo",
+ "u_catapulta": "Catapulta",
+ "u_trabuquete": "Trabuquete",
+ "u_monje": "Monje",
+ "b_monasterio": "Monasterio",
+ "b_castillo": "Castillo",
+ "needs_age_1": "Feudal",
+ "needs_age_2": "Castillos",
+ "needs_mil": "%d/%d militares",
+ "err_req": "Necesitas 2 tipos distintos de edificio militar terminados (cuartel, arquería, establo o taller)",
+ "unit_stats_heal": "Cura %.1f vida/s a %d aliados · Velocidad %.1f"
 }

@@ -31,8 +31,10 @@ var mix_t: float = -100.0
 var store_cd: float = 0.0
 var port_cd: float = 0.0              # espera entre búsquedas de sitio de puerto
 var port_spot_cache := Vector2i(-2, -2)
+var reserve: Dictionary = {}          # recursos que el entrenamiento no debe gastar (próximo edificio de la 3ª edad)
 var assign_fail: Dictionary = {}      # recurso -> instante hasta el que no se repite una búsqueda fallida (partidas largas)
 var rng := RandomNumberGenerator.new()
+const LIMITED := ["ariete", "catapulta", "trabuquete", "monje"]   # tipos que la IA no acumula sin límite
 
 func _init(s: Sim, idx: int, d: int) -> void:
 	sim = s
@@ -101,6 +103,7 @@ func _think() -> void:
 	_fishing(p, boats)
 	t0 = _pt("ai_fishing", t0)
 	_build(p, vills, base, done, inprog)
+	_plan_reserve(p, vills, done, inprog)
 	t0 = _pt("ai_build", t0)
 	_expand(p, vills, base, done, inprog)
 	t0 = _pt("ai_expand", t0)
@@ -129,7 +132,12 @@ func _vill_target(p: Player) -> int:
 	return t
 
 func _wants_age(p: Player, vills: Array, done: Dictionary) -> bool:
-	return p.age == 0 and int(done.get("cuartel", 0)) >= 1 and vills.size() >= [24, 20, 16][diff]
+	if p.age == 0:
+		return int(done.get("cuartel", 0)) >= 1 and vills.size() >= [24, 20, 16][diff]
+	if p.age == 1 and diff >= 1 and p.age < Defs.AGES.size() - 1:
+		# Edad de los Castillos: con una economía ya grande y al menos 2 tipos de edificio militar
+		return vills.size() >= [0, 36, 30][diff] and p.pop >= [0, 90, 75][diff] and sim.military_kinds_done(pi) >= int(Defs.AGES[2].get("need_mil", 0))
+	return false
 
 func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: Dictionary) -> void:
 	var n := vills.size()
@@ -428,6 +436,12 @@ func _build(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: D
 				_try_build(p, "arqueria", base, vills, 6, 14, 2)
 			if int(done.get("establo", 0)) + int(inprog.get("establo", 0)) < ranges:
 				_try_build(p, "establo", base, vills, 6, 14, 2)
+			# Edad de los Castillos: monasterio (monjes) y castillo (trabuquetes y defensa fuerte)
+			var nb := _next_castle_building(p, done, inprog)
+			if nb == "monasterio":
+				_try_build(p, "monasterio", base, vills, 7, 15, 2)
+			elif nb == "castillo":
+				_try_build(p, "castillo", base, vills, 9, 16, 3)
 			# Excedentes de madera y oro: torres de defensa alrededor de la base
 			if n >= min_vills + 4 and int(p.res.wood) >= 450 and int(p.res.gold) >= 250 and int(inprog.get("torre", 0)) == 0:
 				if int(done.get("torre", 0)) < [2, 4, 6][diff]:
@@ -545,28 +559,69 @@ func _age(p: Player, vills: Array, done: Dictionary) -> void:
 func _saving_for_age(p: Player, vills: Array, done: Dictionary) -> bool:
 	return _wants_age(p, vills, done) and not p.aging
 
-## ¿puede gastar `cost` sin retrasar el ascenso de edad?
+## Próximo edificio de la Edad de los Castillos que le falta a la IA ("" si ya tiene los que quiere).
+func _next_castle_building(p: Player, done: Dictionary, inprog: Dictionary) -> String:
+	if p.age < 2 or diff < 1:
+		return ""
+	var want_m := 2 if (diff == 2 and p.pop >= 150) else 1
+	if int(done.get("monasterio", 0)) + int(inprog.get("monasterio", 0)) < want_m:
+		return "monasterio"
+	var want_c := 2 if (diff == 2 and p.pop >= 170) else 1
+	if int(done.get("castillo", 0)) + int(inprog.get("castillo", 0)) < want_c:
+		return "castillo"
+	return ""
+
+## Guarda el coste del próximo edificio de la 3ª edad: sin esto el entrenamiento de unidades gastaba la madera y el oro
+## en cuanto entraban y la IA no llegaba nunca a reunir lo necesario (medido: 0 monasterios y 0 castillos en 20 min).
+func _plan_reserve(p: Player, vills: Array, done: Dictionary, inprog: Dictionary) -> void:
+	reserve = {}
+	if vills.size() < [12, 10, 9][diff] + 6:
+		return
+	var nb := _next_castle_building(p, done, inprog)
+	if nb != "":
+		reserve = (Defs.BUILDINGS[nb]["cost"] as Dictionary).duplicate()
+
+## ¿puede gastar `cost` sin retrasar el ascenso de edad ni el próximo edificio planeado?
 func _can_spend(p: Player, cost: Dictionary, saving: bool) -> bool:
+	for k in reserve:
+		if int(cost.get(k, 0)) > 0 and int(p.res.get(k, 0)) - int(cost.get(k, 0)) < int(reserve[k]):
+			return false
 	if not saving:
 		return true
-	var ac: Dictionary = Defs.AGES[1]["cost"]
+	var ac: Dictionary = Defs.AGES[mini(p.age + 1, Defs.AGES.size() - 1)]["cost"]
 	for k in ac:
 		if int(p.res.get(k, 0)) - int(cost.get(k, 0)) < int(ac[k]) and int(cost.get(k, 0)) > 0:
 			return false
 	return true
 
 ## Elige qué soldado entrenar en un edificio (mezcla de contrarios, sólo lo que se puede pagar y permite la edad).
-func _pick_unit(b: Ent, p: Player, rams: int) -> String:
+## `cnt` = cuántos hay (en pie o en cola) de los tipos que se limitan: ariete, catapulta, trabuquete, monje.
+func _pick_unit(b: Ent, p: Player, cnt: Dictionary) -> String:
 	var opts: Array = []        # [tipo, peso]
+	var a := p.age
 	match b.type:
 		"cuartel":
-			opts = [["piquero", 1.0 if p.age == 0 else 0.55], ["espadachin", 0.0 if p.age == 0 else 0.45]]
+			if a == 0:
+				opts = [["piquero", 1.0]]
+			elif a == 1:
+				opts = [["piquero", 0.55], ["espadachin", 0.45]]
+			else:
+				opts = [["piquero", 0.15], ["espadachin", 0.35], ["alabardero", 0.50]]
 		"arqueria":
-			opts = [["arquero", 0.6], ["ballestero", 0.4]]
+			if a <= 1:
+				opts = [["arquero", 0.6], ["ballestero", 0.4]]
+			else:
+				opts = [["arquero", 0.30], ["ballestero", 0.20], ["hostigador", 0.25], ["arquero_caballo", 0.25]]
 		"establo":
 			opts = [["jinete", 0.5], ["caballero", 0.5]]
 		"taller":
-			opts = [["ariete", 1.0 if rams < [1, 2, 4][diff] else 0.0]]
+			opts = [["ariete", 1.0 if int(cnt.get("ariete", 0)) < [1, 2, 4][diff] else 0.0]]
+			if a >= 2:
+				opts.append(["catapulta", 1.2 if int(cnt.get("catapulta", 0)) < [0, 2, 4][diff] else 0.0])
+		"monasterio":
+			opts = [["monje", 1.0 if int(cnt.get("monje", 0)) < [1, 3, 5][diff] else 0.0]]
+		"castillo":
+			opts = [["trabuquete", 1.0 if int(cnt.get("trabuquete", 0)) < [0, 1, 3][diff] else 0.0]]
 		_:
 			var tr: Array = b.def["train"]
 			opts = [[tr[0], 1.0]]
@@ -593,10 +648,10 @@ func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array
 	var queued_v := 0
 	var queued_boats := 0
 	var queued_ships := 0
-	var rams := 0
+	var cnt := {}
 	for u in army:
-		if u.type == "ariete":
-			rams += 1
+		if LIMITED.has(u.type):
+			cnt[u.type] = int(cnt.get(u.type, 0)) + 1
 	for b in sim.buildings:
 		if not (b.alive and b.owner == pi and b.progress >= 1.0):
 			continue
@@ -607,8 +662,8 @@ func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array
 				queued_boats += 1
 			elif q == "galera" or q == "galeon":
 				queued_ships += 1
-			elif q == "ariete":
-				rams += 1
+			elif LIMITED.has(q):
+				cnt[q] = int(cnt.get(q, 0)) + 1
 	for b in sim.buildings:
 		if not (b.alive and b.owner == pi and b.progress >= 1.0):
 			continue
@@ -634,10 +689,10 @@ func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array
 			if n < [12, 10, 9][diff]:
 				continue
 			if b.queue.size() < 2 and p.pop + p.reserved + b.queue.size() < p.pop_cap:
-				var ut := _pick_unit(b, p, rams)
+				var ut := _pick_unit(b, p, cnt)
 				if ut != "" and _can_spend(p, Defs.UNITS[ut]["cost"], saving):
-					if sim.cmd_train(pi, b.id, ut) > 0 and ut == "ariete":
-						rams += 1
+					if sim.cmd_train(pi, b.id, ut) > 0 and LIMITED.has(ut):
+						cnt[ut] = int(cnt.get(ut, 0)) + 1
 
 ## Los barcos de pesca ociosos buscan peces solos.
 func _fishing(p: Player, boats: Array) -> void:

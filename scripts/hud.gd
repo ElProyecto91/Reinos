@@ -509,14 +509,16 @@ func _fill_grid(p: Player) -> int:
 			for ut: String in b.def["train"]:
 				var ud: Dictionary = Defs.UNITS[ut]
 				var okage := p.age >= int(ud["age"])
-				_slot(n, _short_name(ut), g.art.unit_icon(ut, g.human % 4), "", ud["cost"], res, okage, (func() -> void: g.ui_train(ut)), false, -1.0, "" if okage else Lang.t("needs_feudal"))
+				_slot(n, _short_name(ut), g.art.unit_icon(ut, g.human % 4), "", ud["cost"], res, okage, (func() -> void: g.ui_train(ut)), false, -1.0, "" if okage else Lang.t("needs_age_%d" % int(ud["age"])))
 				n += 1
 			if b.type == "centro":
 				if p.aging:
 					_slot(n, Lang.t("aging"), null, "age", {}, res, true, (func() -> void: pass), true, 1.0 - p.age_left / float(Defs.AGES[p.age + 1]["time"]), "%ds" % int(ceil(p.age_left)))
 					n += 1
 				elif p.age < Defs.AGES.size() - 1:
-					_slot(n, Lang.t("age_up"), null, "age", Defs.AGES[p.age + 1]["cost"], res, true, (func() -> void: g.ui_age_up()))
+					var need: int = int(Defs.AGES[p.age + 1].get("need_mil", 0))
+					var have: int = g.sim.military_kinds_done(g.human) if need > 0 else 0
+					_slot(n, Lang.t("age_up"), null, "age", Defs.AGES[p.age + 1]["cost"], res, have >= need, (func() -> void: g.ui_age_up()), false, -1.0, "" if have >= need else Lang.t("needs_mil", [have, need]))
 					n += 1
 			_slot(n, Lang.t("rally"), null, "flag", {}, res, true, (func() -> void: g.ui_toggle_rally()), g.rally_mode)
 			n += 1
@@ -555,7 +557,7 @@ func _fill_grid(p: Player) -> int:
 					kind = "farm"
 				else:
 					tex = g.art.building_tex[t][g.human % 4]
-				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, "" if okage else Lang.t("needs_feudal"))
+				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, "" if okage else Lang.t("needs_age_%d" % int(Defs.BUILDINGS[t]["age"])))
 				idx += 1
 			if grid_mode == "build":
 				_slot(idx, Lang.t("military"), g.art.building_tex["cuartel"][g.human % 4], "", {}, res, true, (func() -> void:
@@ -872,7 +874,9 @@ class InfoPanel extends Control:
 					draw_string(font, Vector2(88, 122), Lang.t("passengers", [e.cargo.size(), int(e.def["cargo"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, Color(0.7, 0.9, 1.0))
 				var ud: Dictionary = e.def
 				var stat := Lang.t("unit_stats", [int(ud["atk"] * Defs.AGE_STAT_MULT[g.sim.players[e.owner].age]), (ud["range"] as float), (ud["speed"] as float)])
-				if float(ud["atk"]) <= 0.0:
+				if float(ud.get("heal", 0.0)) > 0.0:
+					stat = Lang.t("unit_stats_heal", [float(ud["heal"]), int(ud.get("heal_n", 1)), (ud["speed"] as float)])
+				elif float(ud["atk"]) <= 0.0:
 					stat = Lang.t("unit_stats_peace", [(ud["speed"] as float)])
 				draw_string(font, Vector2(12, size.y - 14), stat, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, Color(0.75, 0.7, 0.58))
 		else:

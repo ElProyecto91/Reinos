@@ -426,6 +426,58 @@ static func slit(cv: Cv, x: float, y: float, h: float, base: Color) -> void:
 	cv.rect(x, y, 2.0, h, Color(0.05, 0.04, 0.05))
 	cv.rect(x - 1.8, y - 1.2, 5.6, 0.7, sh(base, 1.32))
 
+## Vidriera ojival: marco de piedra clara, plomos y cristales de colores con luz cálida detrás.
+static func stained(cv: Cv, x: float, y: float, w: float, h: float, base: Color) -> void:
+	cv.rect(x - 2.2, y - 0.4, w + 4.4, h + 1.0, sh(base, 1.18))
+	cv.disc(x + w * 0.5, y, w * 0.5 + 2.2, sh(base, 1.18))
+	cv.rect(x - 2.2, y - 0.4, 0.8, h + 1.0, sh(base, 1.34))
+	cv.rect(x - 1.0, y - 0.4, w + 2.0, h + 0.6, INK)
+	cv.disc(x + w * 0.5, y, w * 0.5 + 1.0, INK)
+	var blue := Color(0.22, 0.34, 0.72)
+	cv.rect(x, y, w, h, blue)
+	cv.disc(x + w * 0.5, y, w * 0.5, Color(0.28, 0.42, 0.80))
+	cv.rect(x, y + h * 0.34, w, h * 0.33, Color(0.78, 0.22, 0.20))
+	cv.rect(x, y + h * 0.67, w, h * 0.33, Color(0.26, 0.56, 0.38))
+	cv.disc(x + w * 0.5, y + h * 0.50, w * 0.23, Color(0.94, 0.76, 0.28))
+	cv.rect(x + 0.4, y, w * 0.32, h, Color(1, 1, 1, 0.10))
+	cv.rect(x + w * 0.5 - 0.35, y - w * 0.45, 0.7, h + w * 0.45, INK)
+	cv.rect(x, y + h * 0.34 - 0.3, w, 0.6, INK)
+	cv.rect(x, y + h * 0.67 - 0.3, w, 0.6, INK)
+	cv.rect(x - 1.2, y + h + 0.5, w + 2.4, 1.3, sh(base, 0.80))
+
+## Almenas repartidas de forma uniforme entre x0 y x1.
+static func merlons(cv: Cv, x0: float, x1: float, y: float, base: Color, n: int, gap: float, h: float = 8.0) -> void:
+	var w := ((x1 - x0) - float(n - 1) * gap) / float(n)
+	for i in n:
+		var x := x0 + float(i) * (w + gap)
+		cv.rect(x - 0.9, y - 0.9, w + 1.8, h + 0.9, INK)
+		cv.rect(x, y, w, h, sh(base, 1.10))
+		cv.rect(x, y, w, 1.1, sh(base, 1.30))
+		cv.rect(x, y, 0.8, h, sh(base, 1.25))
+		cv.rect(x + w - 1.2, y, 1.2, h, sh(base, 0.82))
+
+## Tejado cónico de pizarra (torreones y campanarios).
+static func cone(cv: Cv, cx: float, y_base: float, hw: float, y_tip: float, col: Color) -> void:
+	cv.tri(cx - hw - 1.2, y_base + 0.6, cx + hw + 1.2, y_base + 0.6, cx, y_tip - 1.4, INK)
+	cv.tri(cx - hw, y_base, cx + hw, y_base, cx, y_tip, col)
+	cv.tri(cx, y_tip, cx + hw, y_base, cx + hw * 0.15, y_base, sh(col, 0.66))
+	cv.tri(cx - hw, y_base, cx - hw * 0.30, y_base, cx, y_tip, sh(col, 1.16))
+	var n := 5
+	for i in range(1, n):
+		var t := float(i) / float(n)
+		var hwt := hw * t
+		cv.line(cx - hwt, lerpf(y_tip, y_base, t), cx + hwt, lerpf(y_tip, y_base, t), 0.7, sh(col, 0.60))
+	cv.rect(cx - hw - 1.4, y_base - 1.0, hw * 2.0 + 2.8, 2.2, sh(col, 0.72))
+	cv.rect(cx - hw - 1.4, y_base - 1.0, hw * 2.0 + 2.8, 0.7, sh(col, 1.14))
+
+## Cruz dorada.
+static func cross(cv: Cv, x: float, y: float, h: float = 5.0) -> void:
+	var gold := Color(0.90, 0.74, 0.26)
+	cv.rect(x - 1.0, y - 0.6, 2.0, h + 1.2, INK)
+	cv.rect(x - 1.9, y + h * 0.28 - 0.6, 3.8, 2.2, INK)
+	cv.rect(x - 0.4, y, 0.8, h, gold)
+	cv.rect(x - 1.3, y + h * 0.28, 2.6, 0.8, gold)
+
 # ---------------------------------------------------------------- edificios
 
 const STONE := Color(0.67, 0.65, 0.61)
@@ -785,6 +837,145 @@ static func paint_base(cv: Cv, type: String) -> void:
 			for sp in [Vector2(30.5, 28), Vector2(23, 40), Vector2(38, 40)]:
 				slit(cv, sp.x, sp.y, 9.0, STONE)
 			door(cv, 27, 45, 10, 11, PLANK, true)
+		"monasterio":
+			yard(cv, 48, 88, 45, 8, 81, true)
+			cast_shadow(cv, 8, 80, 88, 52)
+			# nave
+			side_face(cv, 80, 88, 62, 10, 6, sh(STONE, 0.66))
+			stone(cv, 28, 62, 52, 26, STONE, 82, 4.5)
+			quoins(cv, 28, 80, 64, 24, STONE, 83, 4.0, 4.5)
+			cv.rect(28, 84, 52, 4, sh(STONE, 1.08))
+			cv.rect(28, 84, 52, 0.8, sh(STONE, 1.28))
+			moss(cv, 28, 88, 52, 84, 0.9)
+			cv.rect(28, 62, 52, 2.6, sh(STONE, 0.84))
+			door(cv, 46, 72, 10, 16, PLANK, true, true)
+			cv.rect(41, 86, 20, 2.4, Color(0.74, 0.72, 0.68))
+			cv.rect(43, 88, 16, 1.8, Color(0.62, 0.60, 0.56))
+			stained(cv, 35.0, 69, 4.6, 10, STONE)
+			stained(cv, 68.0, 69, 4.6, 10, STONE)
+			torch(cv, 42.5, 76)
+			torch(cv, 60.5, 76)
+			eave_shadow(cv, 28, 80, 62)
+			roof_side(cv, Vector2(84, 62), Vector2(94, 56), Vector2(82, 37), Vector2(72, 40), sh(TILE_RED, 0.66), 5)
+			tiles(cv, 24, 84, 62, 40, 12, TILE_RED, 85, 4.0)
+			dormer(cv, 56, 58, 8, TILE_RED)
+			# campanario delante de la nave
+			stone(cv, 8, 28, 22, 60, STONE, 86, 4.5)
+			quoins(cv, 8, 30, 30, 56, STONE, 87, 3.6, 4.4)
+			cv.rect(8, 28, 2.0, 60, Color(1, 1, 1, 0.09))
+			cv.rect(25, 28, 5.0, 60, Color(0, 0, 0, 0.14))
+			cv.rect(6, 82, 26, 6, sh(STONE, 1.06))
+			cv.rect(6, 82, 26, 0.9, sh(STONE, 1.28))
+			cv.rect(6, 87, 26, 1.0, Color(0, 0, 0, 0.28))
+			moss(cv, 6, 88, 26, 88, 1.0)
+			ivy(cv, 8, 86, 30, 89)
+			cv.rect(6, 25, 26, 3.2, sh(STONE, 1.12))
+			cv.rect(6, 25, 26, 0.8, sh(STONE, 1.32))
+			cv.rect(7, 47, 24, 2.0, sh(STONE, 1.10))
+			cv.rect(7, 47, 24, 0.6, sh(STONE, 1.30))
+			for ax in [11.5, 20.0]:
+				cv.rect(ax - 0.9, 32.0, 6.8, 13.0, INK)
+				cv.rect(ax, 33.0, 5.0, 12.0, Color(0.12, 0.09, 0.08))
+				cv.disc(ax + 2.5, 33.0, 2.5, Color(0.12, 0.09, 0.08))
+				cv.rect(ax - 0.4, 44.2, 5.8, 1.2, sh(STONE, 1.2))
+			cv.disc(14.0, 39.0, 2.4, Color(0.86, 0.62, 0.20))
+			cv.rect(13.6, 35.5, 0.8, 1.6, Color(0.30, 0.20, 0.10))
+			cv.disc(14.0, 41.6, 0.7, Color(0.30, 0.20, 0.10))
+			stained(cv, 17.0, 63, 4.4, 10, STONE)
+			slit(cv, 17.8, 53.0, 6.0, STONE)
+			cone(cv, 19, 26, 15.0, 4, SLATE)
+			cross(cv, 19, -0.5, 5.0)
+			# huerto de hierbas
+			for bx in [60.0, 76.0]:
+				cv.rect(bx - 0.9, 89.1, 13.8, 6.8, INK)
+				cv.rect(bx, 90, 12, 5, Color(0.36, 0.25, 0.14))
+				cv.rect(bx, 90, 12, 1.0, Color(0.50, 0.36, 0.20))
+				for k in 5:
+					cv.disc(bx + 1.6 + k * 2.3, 92.0, 1.2, Color(0.28, 0.50, 0.20))
+					cv.disc(bx + 1.2 + k * 2.3, 91.6, 0.6, Color(0.46, 0.68, 0.30))
+					cv.disc(bx + 1.6 + k * 2.3, 94.0, 0.9, Color(0.34, 0.56, 0.24))
+			cv.disc(66.0, 91.0, 0.9, Color(0.92, 0.80, 0.30))
+			cv.disc(82.0, 92.6, 0.9, Color(0.90, 0.40, 0.55))
+			barrel(cv, 34, 90, 3.4)
+		"castillo":
+			yard(cv, 64, 119, 60, 9, 91, true)
+			cast_shadow(cv, 4, 118, 120, 84)
+			# torre del homenaje (detrás de las murallas)
+			stone(cv, 40, 14, 48, 50, STONE_BLUE, 92, 4.6)
+			quoins(cv, 40, 88, 16, 46, STONE_BLUE, 93, 4.0, 4.5)
+			cv.rect(40, 14, 48, 2.6, sh(STONE_BLUE, 0.84))
+			cv.rect(38, 13, 52, 10, INK)
+			stone(cv, 39, 14, 50, 8, sh(STONE_BLUE, 1.08), 94, 3.0)
+			corbels(cv, 39, 89, 21.2, STONE_BLUE)
+			merlons(cv, 39, 89, 5, STONE_BLUE, 6, 3.6, 9.0)
+			slit(cv, 50, 32, 9.0, STONE_BLUE)
+			slit(cv, 76, 32, 9.0, STONE_BLUE)
+			window(cv, 60.5, 36, 7, 9, Color(0.30, 0.34, 0.42), true)
+			# muralla cortina
+			stone(cv, 10, 66, 108, 52, STONE, 95, 4.8)
+			cv.rect(10, 110, 108, 8, sh(STONE, 1.06))
+			cv.rect(10, 110, 108, 0.9, sh(STONE, 1.28))
+			cv.rect(10, 117, 108, 1.0, Color(0, 0, 0, 0.28))
+			moss(cv, 10, 118, 108, 96, 1.1)
+			cv.rect(9, 57, 110, 9, INK)
+			stone(cv, 10, 58, 108, 7, sh(STONE, 1.08), 97, 3.0)
+			corbels(cv, 10, 118, 64.2, STONE)
+			merlons(cv, 12, 116, 48, STONE, 11, 3.6, 10.0)
+			slit(cv, 30, 84, 10.0, STONE)
+			slit(cv, 94, 84, 10.0, STONE)
+			# casa de la puerta
+			stone(cv, 50, 52, 28, 66, STONE, 100, 4.6)
+			quoins(cv, 50, 78, 54, 62, STONE, 101, 3.8, 4.4)
+			cv.rect(50, 52, 28, 2.4, sh(STONE, 0.84))
+			cv.rect(48, 45, 32, 8, INK)
+			stone(cv, 49, 46, 30, 6, sh(STONE, 1.08), 102, 3.0)
+			corbels(cv, 49, 79, 51.2, STONE)
+			merlons(cv, 49, 79, 37, STONE, 4, 3.4, 9.0)
+			cv.rect(50, 110, 28, 8, sh(STONE, 1.06))
+			cv.rect(50, 110, 28, 0.9, sh(STONE, 1.28))
+			slit(cv, 62.0, 60, 8.0, STONE)
+			# arco de entrada con rastrillo
+			cv.rect(54.6, 91, 18.8, 27, sh(STONE, 1.16))
+			cv.disc(64, 91, 9.4, sh(STONE, 1.16))
+			cv.rect(54.6, 91, 1.0, 27, sh(STONE, 1.34))
+			cv.rect(56.0, 91, 16.0, 27, INK)
+			cv.disc(64, 91, 8.0, INK)
+			cv.rect(57.2, 91, 13.6, 27, Color(0.10, 0.08, 0.07))
+			cv.disc(64, 91, 6.8, Color(0.10, 0.08, 0.07))
+			cv.rect(58, 96, 12, 8, Color(0.30, 0.20, 0.10, 0.45))
+			var iron := Color(0.50, 0.52, 0.58)
+			for gx in 5:
+				var bxx := 58.4 + gx * 2.9
+				cv.rect(bxx - 0.5, 90.0 + absf(float(gx) - 2.0) * 1.2, 1.0, 22.0 - absf(float(gx) - 2.0) * 1.2, iron)
+				cv.tri(bxx - 0.9, 112.0, bxx + 0.9, 112.0, bxx, 115.0, iron)
+			for gy in [96.0, 102.0, 108.0]:
+				cv.rect(57.4, gy, 13.2, 1.0, iron)
+				cv.rect(57.4, gy, 13.2, 0.4, sh(iron, 1.3))
+			torch(cv, 52.2, 96)
+			torch(cv, 75.8, 96)
+			# torreones de esquina
+			for tx: float in [2.0, 94.0]:
+				var mid := tx + 16.0
+				stone(cv, tx, 30, 32, 88, STONE, 103 + int(tx), 4.8)
+				quoins(cv, tx, tx + 32.0, 34, 80, STONE, 105 + int(tx), 4.0, 4.6)
+				cv.rect(tx, 30, 3.0, 88, Color(1, 1, 1, 0.09))
+				cv.rect(tx + 23.0, 30, 9.0, 88, Color(0, 0, 0, 0.14))
+				cv.rect(tx - 2.0, 106, 36.0, 12, sh(STONE, 1.06))
+				cv.rect(tx - 2.0, 106, 36.0, 0.9, sh(STONE, 1.28))
+				cv.rect(tx - 2.0, 117, 36.0, 1.0, Color(0, 0, 0, 0.28))
+				moss(cv, tx - 2.0, 118, 36.0, 107 + int(tx), 1.0)
+				cv.rect(tx - 2.0, 24, 36.0, 10, INK)
+				stone(cv, tx - 1.0, 25, 34.0, 8, sh(STONE, 1.08), 108 + int(tx), 3.0)
+				corbels(cv, tx - 1.0, tx + 33.0, 32.2, STONE)
+				merlons(cv, tx - 1.0, tx + 33.0, 14, STONE, 4, 3.2, 11.0)
+				slit(cv, mid - 1.0, 50, 10.0, STONE)
+				slit(cv, mid - 1.0, 76, 10.0, STONE)
+				window(cv, mid - 3.0, 90, 6, 8, Color(0.30, 0.34, 0.42), true)
+			ivy(cv, 2, 116, 52, 111)
+			barrel(cv, 44, 114, 4.0)
+			barrel(cv, 49, 116, 3.4)
+			crate(cv, 82, 110, 6)
+			sack(cv, 90, 115, 4.0)
 		"muralla":
 			cast_shadow(cv, 4, 60, 56, 26)
 			side_face(cv, 60, 56, 26, 4, 2, sh(STONE, 0.66))
@@ -871,5 +1062,17 @@ static func paint_team(cv: Cv, type: String, c: Color) -> void:
 			pennant(cv, 32, -2, 10, c, 9.0, 6.0)
 			cv.rect(28.4, 31.0, 7.2, 7.0, INK)
 			cv.rect(29.0, 31.6, 6.0, 5.8, c)
+		"monasterio":
+			pennant(cv, 72, 28, 41, c, 9.0, 6.0)
+			banner(cv, 19, 50, 7.0, 12.0, c)
+			cv.rect(43.6, 70.2, 14.8, 1.8, c)
+		"castillo":
+			pennant(cv, 64, 0, 10, c, 10.0, 6.5)
+			pennant(cv, 18, 2, 16, c, 9.0, 6.0)
+			pennant(cv, 110, 2, 16, c, 9.0, 6.0)
+			banner(cv, 64, 22, 8.0, 18.0, c)
+			banner(cv, 44, 70, 6.0, 14.0, c)
+			banner(cv, 84, 70, 6.0, 14.0, c)
+			cv.rect(50, 86.0, 28, 2.0, c)
 		"muralla", "puerta":
 			pennant(cv, 32, 0, 14, c, 9.0, 6.0)

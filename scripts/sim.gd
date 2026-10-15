@@ -31,6 +31,7 @@ const ERR_UNREACHABLE := -7
 const ERR_NOSHORE := -8     # no hay orilla cerca para desembarcar
 const ERR_CANT := -9        # esas unidades no pueden hacer eso
 const ERR_FULL := -10       # el barco va lleno
+const ERR_REQ := -11        # falta un requisito (p. ej. edificios militares para la Edad de los Castillos)
 
 var W: int = 0
 var H: int = 0
@@ -1647,6 +1648,14 @@ func cmd_set_rally(pidx: int, bid: int, tile: Vector2i) -> void:
 	if b != null and b.owner == pidx and b.is_building:
 		b.rally = tile
 
+## Cuántos tipos distintos de edificio militar tiene terminados el jugador (requisito de la Edad de los Castillos).
+func military_kinds_done(pidx: int) -> int:
+	var seen := {}
+	for b in buildings:
+		if b.alive and b.owner == pidx and b.progress >= 1.0 and Defs.MIL_BUILDINGS.has(b.type):
+			seen[b.type] = true
+	return seen.size()
+
 func cmd_age_up(pidx: int) -> int:
 	var p: Player = players[pidx]
 	if p.age >= Defs.AGES.size() - 1 or p.aging:
@@ -1654,6 +1663,8 @@ func cmd_age_up(pidx: int) -> int:
 	var ad: Dictionary = Defs.AGES[p.age + 1]
 	if not Defs.can_afford(p.res, ad["cost"]):
 		return ERR_COST
+	if military_kinds_done(pidx) < int(ad.get("need_mil", 0)):
+		return ERR_REQ
 	var has_tc := false
 	for b in buildings:
 		if b.alive and b.owner == pidx and b.type == "centro" and b.progress >= 1.0:
@@ -1739,6 +1750,8 @@ func step() -> void:
 		if b.alive:
 			_update_building(b)
 	_update_players()
+	if step_count % 10 == 0:
+		_heal_tick()
 	if profiling:
 		_p("buildings", t0)
 		t0 = Time.get_ticks_usec()
@@ -1762,6 +1775,26 @@ func _cleanup() -> void:
 	units.assign(units.filter(func(e: Ent) -> bool: return e.alive))
 	buildings.assign(buildings.filter(func(e: Ent) -> bool: return e.alive))
 	dead.clear()
+
+## Una vez por segundo cada monje cura a los aliados heridos que tiene cerca (los que menos vida tienen primero).
+func _heal_tick() -> void:
+	for m in units:
+		if not m.alive or float(m.def.get("heal", 0.0)) <= 0.0:
+			continue
+		var rate: float = float(m.def["heal"])
+		var rpx: float = float(m.def["heal_r"]) * float(Defs.TILE)
+		var hurt: Array[Ent] = []
+		for o in query(m.pos, rpx):
+			if o != m and o.alive and not o.is_building and not o.naval and o.hp < o.max_hp - 0.5 and (o.owner == m.owner or not hostile[m.owner][o.owner]):
+				hurt.append(o)
+		if hurt.is_empty():
+			continue
+		hurt.sort_custom(func(a: Ent, b: Ent) -> bool: return a.hp / a.max_hp < b.hp / b.max_hp)
+		var n := mini(hurt.size(), int(m.def.get("heal_n", 3)))
+		for i in n:
+			var o := hurt[i]
+			o.hp = minf(o.max_hp, o.hp + rate)
+			_ev({"t": "heal", "pos": o.pos, "owner": m.owner})
 
 func _update_players() -> void:
 	for p in players:
@@ -1828,6 +1861,12 @@ func _u_idle(e: Ent) -> void:
 	if e.explore:
 		_explore_next(e)
 		return
+	if float(e.def.get("heal", 0.0)) > 0.0:
+		e.scan_t -= DT
+		if e.scan_t <= 0.0:
+			e.scan_t = 1.0
+			_healer_seek(e)
+		return
 	if not e.is_military():
 		return
 	e.scan_t -= DT
@@ -1836,6 +1875,23 @@ func _u_idle(e: Ent) -> void:
 		var t := scan_enemy(e, _los_px(e))
 		if t != null:
 			_engage(e, t, true)
+
+## Un monje ocioso se acerca al aliado herido más próximo que vea (si no está ya a tiro de su curación).
+func _healer_seek(e: Ent) -> void:
+	var rpx: float = float(e.def["heal_r"]) * float(Defs.TILE)
+	var best: Ent = null
+	var bd := 1e18
+	for o in query(e.pos, _los_px(e)):
+		if o != e and o.alive and not o.is_building and not o.naval and o.hp < o.max_hp - 2.0 and (o.owner == e.owner or not hostile[e.owner][o.owner]):
+			var d := e.pos.distance_squared_to(o.pos)
+			if d < bd:
+				bd = d
+				best = o
+	if best == null or sqrt(bd) <= rpx * 0.7:
+		return
+	e.state = S_MOVE
+	e.amove = false
+	_request_path(e, tile_of(best.pos))
 
 func _u_move(e: Ent, step_px: float) -> void:
 	if e.explore:
@@ -2104,11 +2160,22 @@ func _hit(a: Ent, t: Ent) -> void:
 		dmg *= float(bon.get(t.type, 1.0))
 	if bool(a.def.get("cannon", false)):
 		_ev({"t": "cannon", "from": a.pos, "to": t.center(), "owner": a.owner})
+	elif bool(a.def.get("rock", false)):
+		_ev({"t": "rock", "from": a.pos, "to": t.center(), "owner": a.owner})
 	elif float(a.def["range"]) > 1.5:
 		_ev({"t": "arrow", "from": a.pos, "to": t.center(), "owner": a.owner})
 	else:
 		_ev({"t": "hit", "pos": t.center(), "owner": a.owner})
 	_damage(t, dmg, a)
+	var splash := float(a.def.get("splash", 0.0))
+	if splash > 0.0:
+		# la piedra también golpea (a menos fuerza) a los enemigos que están junto al objetivo
+		var c := t.center()
+		var base_atk: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age])
+		for o in query(c, splash * float(Defs.TILE)):
+			if o != t and o.alive and not o.is_building and o.owner != a.owner and hostile[a.owner][o.owner]:
+				var bon2: Dictionary = Defs.BONUS.get(a.type, {})
+				_damage(o, base_atk * 0.55 * float(bon2.get(o.type, 1.0)), a)
 
 func _damage(t: Ent, dmg: float, attacker: Ent) -> void:
 	if not t.is_building:

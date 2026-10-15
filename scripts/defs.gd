@@ -44,8 +44,11 @@ const PLAYER_COLOR_NAMES := ["Azul", "Rojo", "Amarillo", "Morado"]
 const AGES := [
 	{"name": "age_0"},
 	{"name": "age_1", "cost": {"food": 400, "gold": 200}, "time": 40.0},
+	# Edad de los Castillos: exige tener al menos 2 tipos distintos de edificio militar terminados
+	{"name": "age_2", "cost": {"food": 700, "gold": 450}, "time": 55.0, "need_mil": 2},
 ]
-const AGE_STAT_MULT := [1.0, 1.15]
+const AGE_STAT_MULT := [1.0, 1.15, 1.30]
+const MIL_BUILDINGS := ["cuartel", "arqueria", "establo", "taller"]
 
 # Unidades. speed y range en casillas/s y casillas.
 const UNITS := {
@@ -95,6 +98,39 @@ const UNITS := {
 		"cost": {"wood": 150, "gold": 50}, "time": 36.0, "building": "taller", "age": 1,
 		"military": true, "radius": 11.0, "vs_building": 3.5, "siege": true, "rres": 0.25,
 	},
+	# --- Edad de los Castillos ---
+	"alabardero": {
+		"hp": 72, "speed": 2.2, "atk": 6.5, "range": 0.9, "cd": 1.2, "los": 6,
+		"cost": {"food": 55, "wood": 45}, "time": 26.0, "building": "cuartel", "age": 2,
+		"military": true, "radius": 8.0, "vs_building": 0.8,
+	},
+	"hostigador": {
+		"hp": 36, "speed": 2.3, "atk": 5.5, "range": 4.5, "cd": 1.4, "los": 8,
+		"cost": {"food": 30, "wood": 40}, "time": 22.0, "building": "arqueria", "age": 2,
+		"military": true, "radius": 7.0, "vs_building": 0.25,
+	},
+	"arquero_caballo": {
+		"hp": 75, "speed": 3.5, "atk": 6.0, "range": 4.5, "cd": 1.5, "los": 9,
+		"cost": {"wood": 55, "gold": 65}, "time": 30.0, "building": "arqueria", "age": 2,
+		"military": true, "radius": 10.0, "vs_building": 0.2,
+	},
+	# Artillería: la catapulta lanza piedras que dañan en área (a unidades y edificios); el trabuquete sólo derriba edificios, desde lejos
+	"catapulta": {
+		"hp": 120, "speed": 1.3, "atk": 26.0, "range": 8.0, "cd": 4.2, "los": 7,
+		"cost": {"wood": 160, "gold": 100}, "time": 42.0, "building": "taller", "age": 2,
+		"military": true, "radius": 12.0, "vs_building": 2.0, "rock": true, "splash": 1.5, "rres": 0.5,
+	},
+	"trabuquete": {
+		"hp": 150, "speed": 1.0, "atk": 46.0, "range": 11.0, "cd": 6.0, "los": 10,
+		"cost": {"wood": 220, "gold": 180}, "time": 55.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 13.0, "vs_building": 3.2, "siege": true, "rock": true, "rres": 0.4,
+	},
+	# El monje no ataca: cura sin parar a los aliados heridos que tiene cerca (hasta `heal_n` a la vez)
+	"monje": {
+		"hp": 32, "speed": 2.0, "atk": 0.0, "range": 0.0, "cd": 9.0, "los": 7,
+		"cost": {"gold": 90}, "time": 28.0, "building": "monasterio", "age": 2,
+		"military": false, "radius": 7.0, "vs_building": 0.0, "heal": 2.6, "heal_r": 3.6, "heal_n": 3,
+	},
 	# --- barcos (sólo navegan por agua; se entrenan en el Puerto) ---
 	"barco_pesca": {
 		"hp": 55, "speed": 2.8, "atk": 0.0, "range": 0.0, "cd": 9.0, "los": 8,
@@ -122,13 +158,16 @@ const UNITS := {
 # Lanza > caballería > arqueros > infantería ligera; el espadachín cuesta más pero vence a la lanza y al ariete;
 # la caballería (rápida) también alcanza y destroza arietes, como en la tabla de contras de Age of Empires II.
 const BONUS := {
-	"piquero": {"jinete": 3.0, "caballero": 3.2, "explorador": 2.0},
-	"espadachin": {"piquero": 1.6, "arquero": 1.2, "ballestero": 1.2, "ariete": 2.5},
-	"arquero": {"piquero": 1.6, "espadachin": 1.3, "aldeano": 1.3},
+	"piquero": {"jinete": 3.0, "caballero": 3.2, "explorador": 2.0, "arquero_caballo": 2.0},
+	"alabardero": {"jinete": 3.5, "caballero": 3.8, "explorador": 2.4, "arquero_caballo": 2.8},
+	"espadachin": {"piquero": 1.6, "alabardero": 1.4, "arquero": 1.2, "ballestero": 1.2, "hostigador": 1.3, "ariete": 2.5, "catapulta": 2.2, "trabuquete": 2.2, "monje": 1.4},
+	"arquero": {"piquero": 1.6, "alabardero": 1.5, "espadachin": 1.3, "aldeano": 1.3},
 	"ballestero": {"jinete": 1.8, "caballero": 1.7, "espadachin": 1.2, "aldeano": 1.2},
-	"jinete": {"arquero": 2.2, "ballestero": 2.0, "aldeano": 1.3, "ariete": 1.6},
-	"explorador": {"aldeano": 1.4, "arquero": 1.4, "ariete": 1.4},
-	"caballero": {"arquero": 2.2, "ballestero": 2.0, "aldeano": 1.3, "espadachin": 1.2, "ariete": 1.8},
+	"hostigador": {"arquero": 2.2, "ballestero": 1.8, "arquero_caballo": 2.0, "monje": 1.3},
+	"arquero_caballo": {"piquero": 1.6, "espadachin": 1.4, "alabardero": 1.2, "aldeano": 1.3, "monje": 1.5, "catapulta": 1.4},
+	"jinete": {"arquero": 2.2, "ballestero": 2.0, "hostigador": 1.5, "arquero_caballo": 1.6, "aldeano": 1.3, "monje": 1.8, "ariete": 1.6, "catapulta": 1.8, "trabuquete": 1.8},
+	"explorador": {"aldeano": 1.4, "arquero": 1.4, "ariete": 1.4, "catapulta": 1.4},
+	"caballero": {"arquero": 2.2, "ballestero": 2.0, "hostigador": 1.6, "arquero_caballo": 1.6, "aldeano": 1.3, "espadachin": 1.2, "monje": 1.8, "ariete": 1.8, "catapulta": 2.0, "trabuquete": 2.0},
 	"galera": {"barco_pesca": 1.6, "barco_transporte": 1.6},
 	"galeon": {"galera": 1.5, "barco_pesca": 1.6, "barco_transporte": 1.6},
 }
@@ -150,19 +189,19 @@ const BUILDINGS := {
 	},
 	"cuartel": {
 		"size": 3, "hp": 900, "cost": {"wood": 150}, "time": 40.0,
-		"pop": 0, "drop": false, "train": ["piquero"], "los": 5, "age": 0,
+		"pop": 0, "drop": false, "train": ["piquero", "espadachin", "alabardero"], "los": 5, "age": 0,
 	},
 	"arqueria": {
 		"size": 3, "hp": 900, "cost": {"wood": 175}, "time": 42.0,
-		"pop": 0, "drop": false, "train": ["arquero"], "los": 5, "age": 1,
+		"pop": 0, "drop": false, "train": ["arquero", "ballestero", "hostigador", "arquero_caballo"], "los": 5, "age": 1,
 	},
 	"establo": {
 		"size": 3, "hp": 900, "cost": {"wood": 175}, "time": 42.0,
-		"pop": 0, "drop": false, "train": ["jinete"], "los": 5, "age": 1,
+		"pop": 0, "drop": false, "train": ["explorador", "jinete", "caballero"], "los": 5, "age": 1,
 	},
 	"taller": {
 		"size": 3, "hp": 900, "cost": {"wood": 200}, "time": 45.0,
-		"pop": 0, "drop": false, "train": ["ariete"], "los": 5, "age": 1,
+		"pop": 0, "drop": false, "train": ["ariete", "catapulta"], "los": 5, "age": 1,
 	},
 	# El Puerto se construye en la orilla (junto a mar abierto): entrena barcos y recibe el pescado.
 	"puerto": {
@@ -174,6 +213,16 @@ const BUILDINGS := {
 		"size": 2, "hp": 700, "cost": {"wood": 100, "gold": 50}, "time": 36.0,
 		"pop": 0, "drop": false, "train": [], "los": 9, "age": 1,
 		"atk": 8.0, "range": 8.0, "cd": 1.6,
+	},
+	# Edad de los Castillos
+	"monasterio": {
+		"size": 3, "hp": 1100, "cost": {"wood": 175, "gold": 100}, "time": 50.0,
+		"pop": 0, "drop": false, "train": ["monje"], "los": 6, "age": 2,
+	},
+	"castillo": {
+		"size": 4, "hp": 3200, "cost": {"wood": 300, "gold": 300}, "time": 120.0,
+		"pop": 0, "drop": false, "train": ["trabuquete"], "los": 12, "age": 2,
+		"atk": 15.0, "range": 10.0, "cd": 1.1,
 	},
 	# Murallas y puertas: 1x1, se trazan en línea. La puerta deja pasar a los aliados y no al enemigo.
 	"muralla": {
@@ -191,8 +240,8 @@ const FARM_COST := {"wood": 60}
 
 # Orden de los botones de construcción
 const BUILD_MENU := ["casa", "granja", "almacen", "puerto", "centro"]
-const MILITARY_MENU := ["cuartel", "arqueria", "establo", "taller"]
-const DEFENSE_MENU := ["muralla", "puerta", "torre"]
+const MILITARY_MENU := ["cuartel", "arqueria", "establo", "taller", "monasterio"]
+const DEFENSE_MENU := ["muralla", "puerta", "torre", "castillo"]
 const WALL_MAX_LINE := 40
 const MIN_SEA := 40        # una masa de agua menor que esto no sirve de puerto (charcas)
 

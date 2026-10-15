@@ -110,9 +110,9 @@ static func _unit_target_pos(g: Game, u: Ent) -> Vector2:
 
 const WS_FOOT := 0.62          # píxeles de mundo por píxel lógico de la hoja (gente, caballos, ariete)
 const WS_SHIP := 0.58
-const SHADOWS := {"jinete": Vector2(46, 13), "explorador": Vector2(44, 13), "caballero": Vector2(50, 14), "ariete": Vector2(60, 14)}
+const SHADOWS := {"jinete": Vector2(46, 13), "explorador": Vector2(44, 13), "caballero": Vector2(50, 14), "ariete": Vector2(60, 14), "arquero_caballo": Vector2(46, 13), "catapulta": Vector2(54, 14), "trabuquete": Vector2(60, 15)}
 const SHIP_HALF := {"barco_pesca": 19.0, "barco_transporte": 24.0, "galera": 31.0, "galeon": 31.0}
-const RANGED := ["arquero", "ballestero"]
+const RANGED := ["arquero", "ballestero", "hostigador", "arquero_caballo"]
 
 static func ws_of(u: Ent) -> float:
 	return WS_SHIP if u.naval else WS_FOOT
@@ -163,7 +163,7 @@ static var _ti: Dictionary = {}
 static var _ti_art: Art = null
 static var _groups: Dictionary = {}    # tipo -> índices (Array: los vectores empaquetados se copian al sacarlos del diccionario)
 const DRAW_ORDER := ["barco_pesca", "barco_transporte", "galera", "galeon", "aldeano", "piquero", "espadachin", "arquero", "ballestero",
-		"jinete", "explorador", "caballero", "ariete"]
+		"jinete", "explorador", "caballero", "arquero_caballo", "alabardero", "hostigador", "monje", "ariete", "catapulta", "trabuquete"]
 static var _types: Array = []          # DRAW_ORDER y, detrás, cualquier tipo nuevo de Defs.UNITS que no esté en la lista
 
 static func _draw_types() -> Array:
@@ -614,6 +614,25 @@ static func _draw_fx(c: CanvasItem, f: Dictionary) -> void:
 			if k < 0.53:
 				c.draw_circle(bp, 3.0, Color(0.08, 0.07, 0.07, 0.95))
 				c.draw_line(bp, bp - (q - p).normalized() * 14.0, Color(0.9, 0.9, 0.9, 0.5), 2.0)
+		"rock":
+			var p: Vector2 = f["p"]
+			var q: Vector2 = f["q"]
+			# la piedra sube en arco y cae; al caer levanta una nube de polvo
+			var kk := minf(1.0, k * 1.25)
+			var bp := p.lerp(q, kk) + Vector2(0, -sin(kk * PI) * 46.0)
+			if kk < 1.0:
+				c.draw_circle(bp, 3.6, Color(0.30, 0.28, 0.26, 0.95))
+				c.draw_circle(bp + Vector2(-1.0, -1.0), 1.6, Color(0.55, 0.52, 0.48, 0.9))
+			else:
+				var j := (k - 0.8) / 0.2
+				c.draw_circle(q, 6.0 + 14.0 * j, Color(0.62, 0.56, 0.48, 0.55 * (1.0 - j)))
+				c.draw_arc(q, 8.0 + 16.0 * j, 0.0, TAU, 16, Color(1, 1, 1, 0.5 * (1.0 - j)), 1.5)
+		"heal":
+			var p: Vector2 = f["p"]
+			var q := p + Vector2(0, -16.0 * k)
+			var a := 1.0 - k
+			c.draw_rect(Rect2(q + Vector2(-1.4, -4.5), Vector2(2.8, 9.0)), Color(0.3, 1.0, 0.45, a))
+			c.draw_rect(Rect2(q + Vector2(-4.5, -1.4), Vector2(9.0, 2.8)), Color(0.3, 1.0, 0.45, a))
 		"flash":
 			var p: Vector2 = f["p"]
 			c.draw_arc(p, 10.0 + 22.0 * k, 0.0, TAU, 24, Color(1, 1, 1, 0.8 * (1.0 - k)), 3.0)
