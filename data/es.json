@@ -117,7 +117,18 @@
  "banner_select": "Dibuja un recuadro en el mapa",
  "pause_resume": "Reanudar",
  "pause_help": "Cómo jugar",
- "pause_exit": "Salir al menú",
+ "pause_exit": "Guardar y salir",
+ "pause_saved": " · partida guardada",
+ "toast_loaded": "Partida cargada",
+ "toast_save_failed": "No se pudo guardar la partida",
+ "loading_save": "Cargando partida…",
+ "load_failed": "No se pudo cargar la partida guardada",
+ "menu_continue": "Continuar partida",
+ "menu_new": "Nueva partida",
+ "menu_new_confirm": "¿Reemplazar la guardada? Pulsa otra vez",
+ "save_info": "%s de juego · mapa %d · %d %s",
+ "rival_one": "rival",
+ "rival_many": "rivales",
  "pause_exit_confirm": "¿Seguro? Pulsa otra vez",
  "pause_sound_on": "Sonido: sí",
  "pause_sound_off": "Sonido: no",
@@ -176,7 +187,7 @@
   ],
   [
    "Economía",
-   "Los aldeanos llevan comida, madera y oro al Centro o al Almacén. Las Casas suben el límite de población (máximo 80)."
+   "Los aldeanos llevan comida, madera y oro al Centro o al Almacén. Las Casas suben el límite de población (máximo 200)."
   ],
   [
    "Edades",
@@ -189,6 +200,10 @@
   [
    "Mapa",
    "Hay continentes, islas y mar, con montañas por las que no se puede pasar y zonas de nieve y de desierto. Todas las bases están en el continente principal; las islas se alcanzan en barco (gran parte del oro y las bayas está allí). Lo no explorado está en la niebla. Hay día y noche, y a veces llueve."
+  ],
+  [
+   "Guardar",
+   "La partida se guarda sola cada minuto y medio, al pausar, al pasar la app a segundo plano y al pulsar «Guardar y salir». En el menú, «Continuar partida» la retoma donde la dejaste (empieza en pausa). Solo hay un hueco: si empiezas una partida nueva y la guardas, sustituye a la anterior. Al ganar o perder, la partida guardada se borra."
   ],
   [
    "Batería",

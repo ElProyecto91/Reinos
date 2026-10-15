@@ -22,10 +22,12 @@ func _ready() -> void:
 		return
 	_show_menu()
 
-func _show_menu() -> void:
+func _show_menu(notice: String = "") -> void:
 	Settings.set_playing(false)
 	menu = MenuScreen.new()
+	menu.notice = notice
 	menu.play_pressed.connect(_start_game)
+	menu.continue_pressed.connect(_continue_game)
 	menu.quit_pressed.connect(func() -> void: get_tree().quit())
 	add_child(menu)
 
@@ -37,6 +39,22 @@ func _start_game(cfg: Dictionary) -> void:
 	game.exit_requested.connect(_back_to_menu)
 	add_child(game)
 	game.start(cfg)
+
+func _continue_game() -> void:
+	if menu != null:
+		menu.queue_free()
+		menu = null
+	game = Game.new()
+	game.exit_requested.connect(_back_to_menu)
+	game.load_failed.connect(_on_load_failed)
+	add_child(game)
+	game.start_load()
+
+func _on_load_failed() -> void:
+	if game != null:
+		game.queue_free()
+		game = null
+	_show_menu(Lang.t("load_failed"))
 
 func _back_to_menu() -> void:
 	if game != null:

@@ -4,7 +4,7 @@ extends RefCounted
 ## Todo se dibuja por código, así que no hay arte externo (coste 0 y APK pequeño).
 
 const TILE := 32
-const MAX_POP := 80
+const MAX_POP := 200
 
 const KINDS := ["food", "wood", "gold"]
 

@@ -3,12 +3,14 @@ extends Node2D
 ## Pantalla de juego: bucle de simulación, cámara, entrada táctil, selección y órdenes.
 
 signal exit_requested
+signal load_failed
 signal sel_changed
 
 const T := Defs.TILE
 const ZOOM_MAX := 2.2
 const MOVE_THRESHOLD := 16.0
 const LONG_PRESS := 0.45
+const AUTOSAVE_SEC := 90.0   # guardado periódico (tiempo real, sólo con la partida en marcha)
 
 var cfg: Dictionary = {}
 var sim: Sim
@@ -29,6 +31,10 @@ var load_state: int = 0
 var _thread: Thread
 var _gen_ok := false
 var _gen_tries := 0
+var loading_save := false     # true = se está cargando la partida guardada en vez de generar un mundo
+var loaded: Dictionary = {}   # datos leídos del archivo (se liberan al terminar la carga)
+var last_save_ok := false
+var _autosave_t := AUTOSAVE_SEC
 
 # bucle
 var _acc := 0.0
@@ -104,14 +110,27 @@ func start(c: Dictionary) -> void:
 	add_child(audio)
 	_begin_generation()
 
+## Carga la partida guardada (la lectura y la reconstrucción van en el hilo de carga).
+func start_load() -> void:
+	loading_save = true
+	start({})
+
 func _begin_generation() -> void:
 	sim = Sim.new()
 	load_state = 1
-	hud.set_loading(Lang.t("loading_world"))
+	hud.set_loading(Lang.t("loading_save") if loading_save else Lang.t("loading_world"))
 	_thread = Thread.new()
 	_thread.start(_gen_thread)
 
 func _gen_thread() -> void:
+	if loading_save:
+		loaded = SaveGame.read_data()
+		var s: Sim = SaveGame.restore(loaded) if not loaded.is_empty() else null
+		_gen_ok = s != null
+		if s != null:
+			sim = s
+			cfg = (loaded["cfg"] as Dictionary).duplicate(true)
+		return
 	_gen_ok = sim.setup(cfg)
 
 func _poll_thread() -> void:
@@ -121,6 +140,9 @@ func _poll_thread() -> void:
 	_thread = null
 	if _gen_ok:
 		_prepare()
+	elif loading_save:
+		push_warning("No se pudo cargar la partida: " + SaveGame.last_error)
+		load_failed.emit()
 	else:
 		_gen_tries += 1
 		if _gen_tries < 6:
@@ -151,11 +173,19 @@ func _prepare() -> void:
 	_build_atmosphere()
 	l_fog = _make_layer(2)
 	fog = Fog.new(sim.W, sim.H)
-	# granjas existentes (ninguna al inicio, pero por si se carga una partida)
 	farm_tiles.clear()
 	var st: Vector2i = sim.players[human].start_tile
 	cam_pos = sim.tile_center(st)
 	zoom = 1.0
+	if loading_save:
+		var gd: Dictionary = loaded.get("game", {})
+		if gd.get("cam") is Vector2:
+			cam_pos = gd["cam"]
+		zoom = clampf(float(gd.get("zoom", 1.0)), 0.25, ZOOM_MAX)
+		speed = clampf(float(gd.get("speed", 1.0)), 1.0, 3.0)
+		anim_t = float(gd.get("anim_t", 0.0))
+		SaveGame.restore_fog(gd, fog)
+		loaded = {}
 	fog.update(sim, human)
 	l_terrain.queue_redraw()
 	l_fog.queue_redraw()
@@ -163,7 +193,11 @@ func _prepare() -> void:
 	load_state = 3
 	hud.finish_loading()
 	_apply_camera()
-	hud.toast(Lang.t("toast_start"), Color(1, 1, 1))
+	if loading_save:
+		hud.toast(Lang.t("toast_loaded"), Color(1, 1, 1))
+		hud.show_pause()    # la partida cargada empieza en pausa: tiempo para orientarse
+	else:
+		hud.toast(Lang.t("toast_start"), Color(1, 1, 1))
 
 func _build_atmosphere() -> void:
 	l_sky = _make_layer(3)
@@ -277,6 +311,7 @@ func _atlas_index(rt: int, x: int, y: int) -> int:
 func _exit_tree() -> void:
 	if _thread != null and _thread.is_started():
 		_thread.wait_to_finish()
+	SaveGame.wait_idle()
 	if is_inside_tree():
 		get_viewport().canvas_transform = Transform2D.IDENTITY
 
@@ -300,6 +335,10 @@ func _process(delta: float) -> void:
 			_atmosphere()
 		_step_sim(delta)
 		_check_idle()
+		_autosave_t -= delta
+		if _autosave_t <= 0.0:
+			_autosave_t = AUTOSAVE_SEC
+			SaveGame.save(self, false)
 	_update_fx(delta)
 	var still := paused or (sim.game_over and _end_shown)
 	if not still:
@@ -389,7 +428,11 @@ func _notification(what: int) -> void:
 		return
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		if not paused and not sim.game_over:
-			hud.show_pause()
+			hud.show_pause()     # pausa y guarda
+		else:
+			save_now()
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		save_now()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		hud.back_pressed()
 
@@ -541,6 +584,7 @@ func _consume_events() -> void:
 			"gameover":
 				_end_timer = 2.0
 				paused = false
+				SaveGame.delete()
 	sim.events.clear()
 
 func _update_fx(delta: float) -> void:
@@ -1290,8 +1334,25 @@ func ui_set_speed(s: float) -> void:
 
 func ui_pause(v: bool) -> void:
 	paused = v
+	if v:
+		save_now()
+
+## Guarda ya (síncrono). Con la partida terminada no hace nada.
+func save_now() -> bool:
+	if load_state != 3 or sim.game_over:
+		return false
+	last_save_ok = SaveGame.save(self, true)
+	if not last_save_ok:
+		push_warning("No se pudo guardar la partida: " + SaveGame.last_error)
+		hud.toast(Lang.t("toast_save_failed"), Color(1, 0.6, 0.5))
+	return last_save_ok
 
 func ui_exit() -> void:
+	if load_state == 3:
+		if sim.game_over:
+			SaveGame.delete()      # partida terminada: no hay nada que continuar
+		else:
+			save_now()
 	exit_requested.emit()
 
 func _ghost_ok() -> bool:

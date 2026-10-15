@@ -106,48 +106,7 @@ func setup(cfg: Dictionary) -> bool:
 	dw = m["dw"]
 	heat = m["heat"]
 	map_info = {"main_size": m["main_size"], "islands": m["islands"], "land_count": m["land_count"], "rock_count": m["rock_count"]}
-	var total := W * H
-	rowner.resize(total)
-	rowner.fill(255)
-	solid.resize(total)
-	occ.resize(total)
-	bfs_mark.resize(total)
-	bfs_dist.resize(total)
-	astar = AStarGrid2D.new()
-	astar.region = Rect2i(0, 0, W, H)
-	astar.cell_size = Vector2(1, 1)
-	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
-	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	astar.update()
-	astar2 = AStarGrid2D.new()
-	astar2.region = Rect2i(0, 0, W, H)
-	astar2.cell_size = Vector2(1, 1)
-	astar2.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
-	astar2.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	astar2.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	astar2.update()
-	wall_tile.resize(total)
-	gate_tile.resize(total)
-	for i in total:
-		var rt := rtype[i]
-		if terrain[i] == Defs.T_WATER or terrain[i] == Defs.T_ROCK or rt == Defs.R_TREE or rt == Defs.R_GOLD or rt == Defs.R_BERRY:
-			solid[i] = 1
-			astar.set_point_solid(Vector2i(i % W, i / W), true)
-			astar2.set_point_solid(Vector2i(i % W, i / W), true)
-	_setup_water()
-	cw = (W + 7) / 8
-	for k in 6:
-		var arr := PackedInt32Array()
-		arr.resize(cw * cw)
-		chunk_cnt.append(arr)
-	for i in total:
-		if rtype[i] != 0:
-			chunk_cnt[rtype[i]][((i / W) / 8) * cw + (i % W) / 8] += 1
-	bw = (W + BUCKET - 1) / BUCKET
-	bh = (H + BUCKET - 1) / BUCKET
-	for i in bw * bh:
-		buckets.append([])
+	_build_grids()
 	# Jugadores
 	var starts: Array = m["starts"].duplicate()
 	for i in range(starts.size() - 1, 0, -1):
@@ -187,9 +146,62 @@ func setup(cfg: Dictionary) -> bool:
 	return true
 
 
+## Rejillas derivadas del terreno (sólido, rutas, agua, cubos de búsqueda). La usan setup() y SaveGame.
+func _build_grids() -> void:
+	var total := W * H
+	rowner.resize(total)
+	rowner.fill(255)
+	solid.resize(total)
+	occ.resize(total)
+	bfs_mark.resize(total)
+	bfs_dist.resize(total)
+	solid.fill(0)
+	occ.fill(0)
+	bfs_mark.fill(0)
+	bfs_dist.fill(0)
+	astar = AStarGrid2D.new()
+	astar.region = Rect2i(0, 0, W, H)
+	astar.cell_size = Vector2(1, 1)
+	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	astar.update()
+	astar2 = AStarGrid2D.new()
+	astar2.region = Rect2i(0, 0, W, H)
+	astar2.cell_size = Vector2(1, 1)
+	astar2.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	astar2.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	astar2.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	astar2.update()
+	wall_tile.resize(total)
+	gate_tile.resize(total)
+	wall_tile.fill(0)
+	gate_tile.fill(0)
+	for i in total:
+		var rt := rtype[i]
+		if terrain[i] == Defs.T_WATER or terrain[i] == Defs.T_ROCK or rt == Defs.R_TREE or rt == Defs.R_GOLD or rt == Defs.R_BERRY:
+			solid[i] = 1
+			astar.set_point_solid(Vector2i(i % W, i / W), true)
+			astar2.set_point_solid(Vector2i(i % W, i / W), true)
+	_setup_water()
+	cw = (W + 7) / 8
+	for k in 6:
+		var arr := PackedInt32Array()
+		arr.resize(cw * cw)
+		chunk_cnt.append(arr)
+	for i in total:
+		if rtype[i] != 0:
+			chunk_cnt[rtype[i]][((i / W) / 8) * cw + (i % W) / 8] += 1
+	bw = (W + BUCKET - 1) / BUCKET
+	bh = (H + BUCKET - 1) / BUCKET
+	for i in bw * bh:
+		buckets.append([])
+
+
 func _setup_water() -> void:
 	var total := W * H
 	wsol.resize(total)
+	wsol.fill(0)
 	wcomp.resize(total)
 	wcomp.fill(-1)
 	astar_w = AStarGrid2D.new()

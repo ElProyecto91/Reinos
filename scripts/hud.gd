@@ -283,6 +283,8 @@ func show_pause(auto: bool = false) -> void:
 	pause_ui.visible = true
 	_exit_confirm = -10.0
 	_pause_title.text = Lang.t("pause_title_auto") if auto else Lang.t("pause_title")
+	if game.last_save_ok:
+		_pause_title.text += Lang.t("pause_saved")
 	_refresh_pause()
 
 func hide_pause() -> void:
@@ -350,12 +352,7 @@ func _cycle_speed() -> void:
 	refresh_now()
 
 func _exit_pressed() -> void:
-	var now := Time.get_ticks_msec() / 1000.0
-	if now - _exit_confirm < 3.0:
-		game.ui_exit()
-	else:
-		_exit_confirm = now
-		_refresh_pause()
+	game.ui_exit()    # guarda la partida y vuelve al menú (ya no se pierde nada, no hace falta confirmar)
 
 func _q_idle() -> void:
 	game.ui_select_idle()

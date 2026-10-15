@@ -4,6 +4,7 @@ extends CanvasLayer
 
 signal play_pressed(cfg: Dictionary)
 signal quit_pressed
+signal continue_pressed
 
 var rivals := 2
 var map_size := 192
@@ -22,6 +23,10 @@ var _upd_btn: UiButton
 var _help: Control
 var _seg: Dictionary = {}
 var _t := 0.0
+var _continue: UiButton
+var _has_save := false
+var _new_confirm := -10.0
+var notice := ""
 
 func _ready() -> void:
 	layer = 5
@@ -53,6 +58,19 @@ func _ready() -> void:
 	_play.accent = Color(0.5, 0.95, 0.5)
 	_play.action = _on_play
 	root.add_child(_play)
+	_continue = UiButton.new()
+	_continue.font_size = 32
+	_continue.accent = Color(1.0, 0.85, 0.45)
+	_continue.action = func() -> void: continue_pressed.emit()
+	root.add_child(_continue)
+	var meta := SaveGame.meta()
+	_has_save = not meta.is_empty()
+	_continue.visible = _has_save
+	if _has_save:
+		_play.text = Lang.t("menu_new")
+		_continue.text = Lang.t("menu_continue")
+		var secs := int(float(meta.get("time", 0.0)))
+		_continue.sub = Lang.t("save_info", ["%d:%02d" % [secs / 60, secs % 60], int(meta.get("size", 0)), int(meta.get("rivals", 0)), Lang.t("rival_one" if int(meta.get("rivals", 0)) == 1 else "rival_many")])
 	_help_btn = UiButton.new()
 	_help_btn.text = Lang.t("menu_help")
 	_help_btn.font_size = 24
@@ -114,8 +132,14 @@ func _layout() -> void:
 	_seed_btn.size = Vector2(w * 0.62 - 6, rh)
 	_seed_btn.position = Vector2(x + w * 0.38, y)
 	_seg["seed_y"] = y - 4.0
-	_play.size = Vector2(w, 74)
-	_play.position = Vector2(x, y + 62)
+	if _has_save:
+		_continue.size = Vector2(w * 0.5 - 6, 74)
+		_continue.position = Vector2(x, y + 62)
+		_play.size = Vector2(w * 0.5 - 6, 74)
+		_play.position = Vector2(x + w * 0.5 + 6, y + 62)
+	else:
+		_play.size = Vector2(w, 74)
+		_play.position = Vector2(x, y + 62)
 	_help_btn.size = Vector2(w * 0.5 - 6, 54)
 	_help_btn.position = Vector2(x, y + 148)
 	_quit.size = Vector2(w * 0.5 - 6, 54)
@@ -143,7 +167,21 @@ func _refresh() -> void:
 	_seed_btn.queue_redraw()
 	root.queue_redraw()
 
+func _process(_d: float) -> void:
+	if _has_save and _new_confirm > 0.0 and Time.get_ticks_msec() / 1000.0 - _new_confirm > 4.0:
+		_new_confirm = -10.0
+		_play.text = Lang.t("menu_new")
+		_play.queue_redraw()
+
 func _on_play() -> void:
+	if _has_save:
+		# empezar de nuevo sustituye la partida guardada: pide confirmación (dos toques)
+		var now := Time.get_ticks_msec() / 1000.0
+		if now - _new_confirm > 4.0:
+			_new_confirm = now
+			_play.text = Lang.t("menu_new_confirm")
+			_play.queue_redraw()
+			return
 	var plist: Array = [{"human": true, "team": 0, "diff": 1, "name": Lang.t("player_name")}]
 	for i in rivals:
 		plist.append({"human": false, "team": 1 if allied else i + 1, "diff": diff, "name": Defs.PLAYER_COLOR_NAMES[i + 1]})
@@ -174,6 +212,8 @@ class MenuBg extends Control:
 		draw_string(font, Vector2(0, 100), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(1, 0.9, 0.5))
 		draw_string(font, Vector2(0, 140), Lang.t("subtitle"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(0.85, 0.92, 1.0))
 		draw_string(font, Vector2(14, size.y - 12), Settings.build_label(), HORIZONTAL_ALIGNMENT_LEFT, size.x, 18, Color(1, 1, 1, 0.55))
+		if menu != null and menu.notice != "":
+			draw_string(font, Vector2(0, size.y - 14), menu.notice, HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(1, 0.62, 0.52))
 		if menu != null:
 			var w := 760.0
 			var x := (size.x - w) * 0.5

@@ -21,7 +21,7 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 | Sonido | Sintetizado por código; **nadie lo ha escuchado**. Puede sonar mal. Se regenera con `tools/gen_audio.py`. |
 | Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. Los shaders de terreno/nubes/lluvia duplican el coste por fotograma en ese entorno; el perfil Ahorro usa una variante más ligera del terreno. Cuenta con **menos autonomía** que antes. |
 | Islas y barcos | Se llega a las islas con transportes. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. Barcos, pesca, embarque y combate naval están probados con pruebas automáticas y toques simulados, **no en un móvil**. |
-| Guardar/cargar partida | No existe. |
+| Guardar/cargar partida | Una sola ranura (`user://partida.sav`). Se guarda sola cada ~90 s de juego, al pausar, al salir al menú y cuando Android manda la app a segundo plano; al terminar la partida se borra. Probado en PC: guardar → cargar → seguir da **exactamente** el mismo resultado que no haber guardado (también con barcos con pasajeros). **No probado en un móvil real**: los tiempos medidos (guardar ~15-30 ms, cargar ~0,1-0,3 s en PC) en el móvil serán varias veces mayores. Si Android mata la app a mitad de un autoguardado, queda la partida anterior (se escribe en un archivo temporal y se renombra). |
 | IA | Sube de edad, construye economía, ejército, torres, taller (con arietes), puerto y barcos de pesca, y ataca por tierra. **No usa murallas ni puertas, y no invade por mar**: sus galeras defienden y los barcos hostiles que se acercan los ataca, pero no desembarca tropas. |
 | Rendimiento del arte nuevo | Las figuras nuevas son más detalladas que las anteriores. En el PC de pruebas (sin GPU) un fotograma con muchas unidades cuesta ~10-15 % más que antes. Las texturas de unidades ocupan unos **39 MB** como máximo (se cargan al hacer falta). Sin medir en móvil. |
 
@@ -30,7 +30,7 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 Qué se ha hecho y qué NO se puede prometer («100 % segura» no existe):
 
 - **Permisos del APK:** solo `VIBRATE` e `INTERNET`. Internet se usa únicamente para el aviso de versión nueva (se desactiva en el menú, «Actualizaciones: No») y no envía ningún dato tuyo. No pide ubicación, contactos, cámara, micrófono ni almacenamiento. El flujo de GitHub **falla** si el APK pide cualquier otro permiso o es depurable.
-- **Datos:** solo `ajustes.cfg` en el almacenamiento privado de la app (perfil, auto-pausa, avisos). No hay cuentas, ni publicidad, ni estadísticas. El juego no ejecuta nada que venga de fuera.
+- **Datos:** solo `ajustes.cfg` (perfil, auto-pausa, avisos) y `partida.sav`/`partida.json` (tu partida guardada, comprimida) en el almacenamiento privado de la app. No hay cuentas, ni publicidad, ni estadísticas. El juego no ejecuta nada que venga de fuera.
 - **Firma:** el APK es *release* (no depurable) y va firmado con una clave privada que **solo existe en los secretos de GitHub** (`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`). Su huella SHA-256 está en `.github/signing-cert.sha256` y en las notas de cada release; el flujo se niega a publicar si la huella no coincide.
 - **Actualizaciones:** el juego consulta (HTTPS) la última release; si hay una nueva, avisa en el menú. Al tocar el aviso abre en el navegador una dirección fija del código. La instala Android, que **solo acepta un APK firmado con la misma clave** que el instalado: uno manipulado no puede sustituirlo. Android no permite instalar sin que toques «Instalar»; esto no se puede automatizar más sin permisos peores.
 - **Cadena de compilación:** Godot y sus plantillas se verifican con SHA-512 fijados, las acciones de terceros van fijadas por commit y el token del flujo es de solo lectura salvo para publicar la release.
@@ -40,7 +40,7 @@ Lo que NO está cubierto:
 
 - **Play Protect** seguirá avisando de «app desconocida» mientras no esté en Google Play (cuesta 25 USD una vez; fuera del objetivo de coste 0).
 - Todo depende de **tu cuenta de GitHub**: activa la verificación en dos pasos y no compartas tokens. Quien controle el repositorio controla las actualizaciones.
-- Si pierdes los secretos de firma habrá que crear una clave nueva y **desinstalar el juego una vez** (sin pérdida de partidas: no existen).
+- Si pierdes los secretos de firma habrá que crear una clave nueva y **desinstalar el juego una vez** (y se pierde la partida guardada).
 - El historial de git contiene una clave de depuración antigua, ya descartada y sin uso.
 
 ### Configurar la firma (una sola vez)
@@ -82,7 +82,8 @@ Para publicar en Google Play necesitarías un `.aab` firmado con tu propia clave
 - Dos dedos: zoom. Minimapa (abajo a la izquierda): toca para saltar.
 - Aldeanos → **Construir** → edificio → mueve el fantasma → **Construir**. **Militares** agrupa cuartel, arquería, establo y taller; **Defensas** agrupa murallas (arrastra para trazar la línea, o toca inicio y final), puertas (sobre un tramo de muralla) y torres. El **Puerto** va en la orilla (el fantasma se pone verde si hay mar junto a él).
 - Barcos de pesca: tócalos y toca un banco de peces (hay que haberlo explorado navegando cerca). Con el puerto seleccionado, **Reunión** sobre un banco de peces hace que los barcos nuevos pesquen solos.
-- Pausa (☰ arriba a la derecha): velocidad ×1/×2/×3, sonido, auto-pausa, perfil de rendimiento.
+- Pausa (☰ arriba a la derecha): velocidad ×1/×2/×3, sonido, auto-pausa, perfil de rendimiento. **Salir al menú guarda la partida**; en el menú aparece **Continuar**. Empezar una partida nueva con otra guardada pide confirmación y la sustituye.
+- Población máxima: 200 (casas +5, centro urbano +10).
 
 ## Batería
 
@@ -109,6 +110,7 @@ scripts/        código del juego (GDScript)
   art_buildings.gd edificios por capas (base, equipo)
   hud.gd        interfaz táctil; ui_kit.gd botones; menu.gd menú
   settings.gd   perfiles de batería y calidad (se guardan en user://ajustes.cfg)
+  save_game.gd  guardar/cargar partida (Sim + IA + niebla + cámara) en user://partida.sav
 data/es.json    todos los textos en español (para traducir: otro JSON y cambiar Lang.FILE)
 audio/*.wav     sonidos generados por tools/gen_audio.py
 art/units/      hojas de unidades horneadas por tools/bake_units.gd (3 capas: fondo, equipo, primer plano)
@@ -131,6 +133,10 @@ $GODOT --headless --path . --script res://tools/naval_test.gd -- seed=1
 xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test2.tscn --rendering-driver opengl3
 # también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), ui_test6 (recolectar oro),
 # ui_test7 (puerto: construir, entrenar barcos, pescar, embarcar, desembarcar, atacar), battery_test, perf_test
+
+# guardar y cargar (ida y vuelta idéntica, barcos con carga, archivo corrupto o de otra versión)
+$GODOT --headless --path . --script res://tools/save_test.gd -- seed=8 size=256 min=11
+xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test8.tscn --rendering-driver opengl3 --resolution 1280x720
 
 # aviso de actualización (necesita el servidor de pruebas en marcha)
 python3 tools/mock_release_server.py 18765 &

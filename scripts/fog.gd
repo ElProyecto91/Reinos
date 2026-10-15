@@ -22,6 +22,28 @@ func _init(w: int, h: int) -> void:
 	img.fill(Color(0, 0, 0, A_UNEXPLORED))
 	tex = ImageTexture.create_from_image(img)
 
+## Carga lo explorado de una partida guardada (todo lo explorado queda «no visible»; update() recalcula lo visible).
+func load_explored(saved: PackedByteArray) -> void:
+	var n := W * H
+	if saved.size() != n:
+		return
+	state = saved.duplicate()
+	var bytes := PackedByteArray()
+	bytes.resize(n * 4)
+	var a_unexp := int(round(A_UNEXPLORED * 255.0))
+	var a_exp := int(round(A_EXPLORED * 255.0))
+	var j := 3
+	for i in n:
+		if state[i] == 0:
+			bytes[j] = a_unexp
+		else:
+			state[i] = 1
+			bytes[j] = a_exp
+		j += 4
+	img = Image.create_from_data(W, H, false, Image.FORMAT_RGBA8, bytes)
+	tex.update(img)
+	vis_list = PackedInt32Array()
+
 func _offsets(r: int) -> PackedInt32Array:
 	if _offs.has(r):
 		return _offs[r]
