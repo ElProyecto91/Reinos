@@ -526,6 +526,8 @@ func _fill_grid(p: Player) -> int:
 		var has_v := false
 		var has_m := false
 		var has_cargo := false
+		var has_scout := false
+		var all_exploring := true
 		for u in units:
 			if u.type == "aldeano":
 				has_v = true
@@ -533,6 +535,10 @@ func _fill_grid(p: Player) -> int:
 				has_m = true
 			if u.naval and not u.cargo.is_empty():
 				has_cargo = true
+			elif bool(u.def.get("scout", false)):
+				has_scout = true
+				if not u.explore:
+					all_exploring = false
 		if has_v and (grid_mode == "build" or grid_mode == "military" or grid_mode == "defense"):
 			var idx := 0
 			var list: Array = Defs.BUILD_MENU
@@ -574,6 +580,9 @@ func _fill_grid(p: Player) -> int:
 			n += 1
 		if has_cargo:
 			_slot(n, Lang.t("unload"), null, "anchor", {}, res, true, (func() -> void: g.ui_unload()))
+			n += 1
+		if has_scout:
+			_slot(n, Lang.t("explore"), null, "explore", {}, res, true, (func() -> void: g.ui_explore()), all_exploring)
 			n += 1
 		if has_m:
 			_slot(n, Lang.t("attack_move"), null, "sword", {}, res, true, (func() -> void: g.ui_toggle_amove()), g.amove_mode)

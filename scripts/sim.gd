@@ -46,13 +46,15 @@ var ents: Dictionary = {}
 var units: Array[Ent] = []
 var buildings: Array[Ent] = []
 var players: Array[Player] = []
-var ais: Array[AiPlayer] = []
+var ais: Array = []                      # IAs (AiPlayer; en tools/ai_match.gd también la copia AiLegacy)
 var hostile: Array = []
 var next_id: int = 1
 var time: float = 0.0
 var events: Array = []
 var record_events: bool = true
 var buckets: Array = []
+var bucket_mask := PackedInt32Array()   # por cubo: bit (1 << dueño) de quién tiene algo allí (filtro previo de scan_enemy)
+var hostile_bits := PackedInt32Array()  # por jugador: bits de los jugadores hostiles
 var bw: int = 0
 var bh: int = 0
 var qcount: int = 0
@@ -78,6 +80,13 @@ var wall_tile := PackedByteArray()      # 1 = casilla con muralla o puerta
 var gate_tile := PackedByteArray()      # 1 = puerta terminada (no sólida para aliados)
 var astar2: AStarGrid2D                 # rejilla de asedio: las murallas se pueden atravesar con coste alto
 var wall_count: int = 0
+# --- exploración automática: la niebla (Fog) cuenta, por celda de 4×4 casillas, cuántas conoce el jugador humano
+const EX_CELL := 4
+const EX_DONE := 11                    # una celda con 11 de sus 16 casillas conocidas cuenta como explorada
+var ex_w: int = 0
+var explore_known := PackedByteArray()
+var ex_rep := PackedInt32Array()       # por celda: casilla de tierra andable cercana a su centro (−1 si no hay)
+var ex_rep_w := PackedInt32Array()     # por celda: casilla de agua navegable cercana a su centro (−1 si no hay)
 var wsol := PackedByteArray()           # rejilla de agua (barcos): 1 = tierra, orilla o casilla con peces
 var wcomp := PackedInt32Array()         # masa de agua conectada (−1 = tierra)
 var wcomp_size: Array = []
@@ -135,8 +144,10 @@ func setup(cfg: Dictionary) -> bool:
 			row.append(players[a].team != players[b].team)
 		hostile.append(row)
 	for p in players:
+		_spawn_building("centro", p.idx, p.start_tile - Vector2i(1, 1), true)
+	map_info["carved_trees"] = _ensure_routes()
+	for p in players:
 		var s: Vector2i = p.start_tile
-		_spawn_building("centro", p.idx, s - Vector2i(1, 1), true)
 		for k in 5:
 			var ft := nearest_free_tile(s + Vector2i(k - 2, 3), 6)
 			_spawn_unit("aldeano", p.idx, ft)
@@ -145,6 +156,118 @@ func setup(cfg: Dictionary) -> bool:
 	_rebuild_buckets()
 	return true
 
+
+## Garantiza que desde cualquier casilla libre junto al centro urbano de cada base se pueda ir andando a las demás bases.
+## Los árboles, las minas y las bayas son sólidos, así que un bosque denso puede cortar el paso por completo (los
+## ejércitos no llegarían a verse: la IA no ataca y tú tampoco) o dejar un hueco cerrado junto al centro donde
+## aparecerían las unidades. Si no hay ruta, se busca la que cruza menos árboles (o, si no hay otra, un paso de
+## montaña) y se abre un claro de unas 3 casillas de ancho. Devuelve cuántas casillas se despejaron.
+func _ensure_routes() -> int:
+	var opened := 0
+	var tmp: AStarGrid2D = null
+	var anchors: Array[Vector2i] = []
+	var pockets: Array = []          # [casilla de un hueco cerrado, ancla de su base]
+	for p in players:
+		var s: Vector2i = p.start_tile
+		var ring: Array[Vector2i] = []
+		for dy in range(-2, 3):
+			for dx in range(-2, 3):
+				if maxi(absi(dx), absi(dy)) == 2:
+					var q := s + Vector2i(dx, dy)
+					if in_bounds(q) and not astar.is_point_solid(q):
+						ring.append(q)
+		# Componentes de la corona (sólo se cuentan hasta 2500 casillas: basta para distinguir «mundo» de «hueco»)
+		var seen: Dictionary = {}
+		var comps: Array = []        # [casilla, tamaño]
+		for q in ring:
+			if seen.has(q):
+				continue
+			var stack: Array[Vector2i] = [q]
+			seen[q] = true
+			var cnt := 0
+			while not stack.is_empty():
+				var c: Vector2i = stack.pop_back()
+				cnt += 1
+				if cnt >= 2500:
+					continue
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					var n: Vector2i = c + d
+					if in_bounds(n) and not seen.has(n) and not astar.is_point_solid(n):
+						seen[n] = true
+						stack.append(n)
+			comps.append([q, cnt])
+		if comps.is_empty():
+			anchors.append(Vector2i(-1, -1))
+			continue
+		var best := 0
+		for k in comps.size():
+			if int(comps[k][1]) > int(comps[best][1]):
+				best = k
+		anchors.append(comps[best][0])
+		for k in comps.size():
+			if k != best:
+				pockets.append([comps[k][0], comps[best][0]])
+	var links: Array = []
+	for i in range(1, anchors.size()):
+		if anchors[0].x >= 0 and anchors[i].x >= 0:
+			links.append([anchors[i], anchors[0]])
+	links.append_array(pockets)
+	for l in links:
+		var a: Vector2i = l[0]
+		var b: Vector2i = l[1]
+		if not astar.get_id_path(a, b, false).is_empty():
+			continue
+		if tmp == null:
+			tmp = AStarGrid2D.new()
+			tmp.region = Rect2i(0, 0, W, H)
+			tmp.cell_size = Vector2(1, 1)
+			tmp.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+			tmp.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+			tmp.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+			tmp.update()
+			for k in W * H:
+				var rt := rtype[k]
+				var pt := Vector2i(k % W, k / W)
+				if terrain[k] == Defs.T_WATER or rt == Defs.R_GOLD or rt == Defs.R_BERRY or occ[k] != 0:
+					tmp.set_point_solid(pt, true)
+				elif terrain[k] == Defs.T_ROCK:
+					tmp.set_point_weight_scale(pt, 30.0)     # un paso de montaña sólo si no hay otra salida
+				elif rt == Defs.R_TREE:
+					tmp.set_point_weight_scale(pt, 6.0)
+		var path: Array = tmp.get_id_path(a, b, false)
+		for t in path:
+			var rocky: bool = terrain[t.y * W + t.x] == Defs.T_ROCK
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					var q: Vector2i = t + Vector2i(dx, dy)
+					if not in_bounds(q):
+						continue
+					var qi := q.y * W + q.x
+					if rtype[qi] == Defs.R_TREE:
+						_fell_tree(q)
+						opened += 1
+					elif rocky and terrain[qi] == Defs.T_ROCK:
+						_open_pass(q)
+						opened += 1
+	return opened
+
+## Abre un paso en una cordillera: la casilla de roca pasa a hierba.
+func _open_pass(q: Vector2i) -> void:
+	var i := q.y * W + q.x
+	terrain[i] = Defs.T_GRASS
+	solid[i] = 0
+	astar.set_point_solid(q, false)
+	astar2.set_point_solid(q, false)
+
+func _fell_tree(q: Vector2i) -> void:
+	var i := q.y * W + q.x
+	rtype[i] = Defs.R_NONE
+	ramt[i] = 0
+	solid[i] = 0
+	astar.set_point_solid(q, false)
+	astar2.set_point_solid(q, false)
+	var ci := (q.y / 8) * cw + q.x / 8
+	chunk_cnt[Defs.R_TREE][ci] = maxi(0, int(chunk_cnt[Defs.R_TREE][ci]) - 1)
 
 ## Rejillas derivadas del terreno (sólido, rutas, agua, cubos de búsqueda). La usan setup() y SaveGame.
 func _build_grids() -> void:
@@ -472,12 +595,17 @@ func _on_building_complete(b: Ent, announce: bool) -> void:
 func _rebuild_buckets() -> void:
 	for b in buckets:
 		b.clear()
+	if bucket_mask.size() != buckets.size():
+		bucket_mask.resize(buckets.size())
+	bucket_mask.fill(0)
 	var bs := float(BUCKET * Defs.TILE)
 	for e in units:
 		if e.alive:
 			var bx := clampi(int(e.pos.x / bs), 0, bw - 1)
 			var by := clampi(int(e.pos.y / bs), 0, bh - 1)
-			buckets[by * bw + bx].append(e)
+			var bi := by * bw + bx
+			buckets[bi].append(e)
+			bucket_mask[bi] |= 1 << e.owner
 	for e in buildings:
 		if e.alive:
 			var r := e.rect()
@@ -485,9 +613,29 @@ func _rebuild_buckets() -> void:
 			var x1 := clampi(int((r.end.x - 1.0) / bs), 0, bw - 1)
 			var y0 := clampi(int(r.position.y / bs), 0, bh - 1)
 			var y1 := clampi(int((r.end.y - 1.0) / bs), 0, bh - 1)
+			var bit := 1 << e.owner
 			for by in range(y0, y1 + 1):
 				for bx in range(x0, x1 + 1):
 					buckets[by * bw + bx].append(e)
+					bucket_mask[by * bw + bx] |= bit
+
+## Recalcula el filtro por dueño a partir de los cubos (tras cargar una partida guardada).
+func rebuild_bucket_masks() -> void:
+	bucket_mask.resize(buckets.size())
+	bucket_mask.fill(0)
+	for i in buckets.size():
+		for e: Ent in buckets[i]:
+			if e.alive:
+				bucket_mask[i] |= 1 << e.owner
+
+func _calc_hostile_bits() -> void:
+	hostile_bits.resize(players.size())
+	for a in players.size():
+		var bits := 0
+		for b in players.size():
+			if hostile[a][b]:
+				bits |= 1 << b
+		hostile_bits[a] = bits
 
 func query(pos: Vector2, r: float) -> Array[Ent]:
 	## Entidades vivas cuyo borde está a menos de r píxeles de pos.
@@ -509,6 +657,24 @@ func query(pos: Vector2, r: float) -> Array[Ent]:
 	return out
 
 func scan_enemy(e: Ent, r: float) -> Ent:
+	# Filtro previo: si en los cubos que cubre el alcance no hay nadie hostil, no hace falta recorrer a nadie
+	# (la gran mayoría de los escaneos de soldados parados en su base acaban aquí).
+	if hostile_bits.size() != players.size():
+		_calc_hostile_bits()
+	var hb: int = hostile_bits[e.owner]
+	if hb == 0:
+		return null
+	var bsz := float(BUCKET * Defs.TILE)
+	var qx0 := clampi(int((e.pos.x - r) / bsz), 0, bw - 1)
+	var qx1 := clampi(int((e.pos.x + r) / bsz), 0, bw - 1)
+	var qy0 := clampi(int((e.pos.y - r) / bsz), 0, bh - 1)
+	var qy1 := clampi(int((e.pos.y + r) / bsz), 0, bh - 1)
+	var seen_mask := 0
+	for qy in range(qy0, qy1 + 1):
+		for qx in range(qx0, qx1 + 1):
+			seen_mask |= bucket_mask[qy * bw + qx]
+	if seen_mask & hb == 0:
+		return null
 	var best: Ent = null
 	var bs := 1e9
 	for o in query(e.pos, r):
@@ -991,6 +1157,7 @@ func _clear_orders(e: Ent) -> void:
 	e.fails = 0
 	e.resume_id = 0
 	e.unload_at = Vector2i(-1, -1)
+	e.explore = false          # cualquier orden del jugador corta la exploración automática
 
 func _own_units(pidx: int, ids: Array) -> Array:
 	var out: Array = []
@@ -1016,6 +1183,152 @@ func cmd_move(pidx: int, ids: Array, tile: Vector2i, attack_move: bool = false) 
 		_move_group(land, tile, attack_move)
 	if not sea.is_empty():
 		_move_fleet(sea, tile, attack_move)
+
+# ------------------------------------------------------------------ exploración automática
+
+## Prepara la rejilla gruesa de exploración (una vez): por celda de 4×4 casillas, una casilla andable y otra de agua.
+func ensure_explore_grid() -> void:
+	if ex_w > 0:
+		return
+	ex_w = (W + EX_CELL - 1) / EX_CELL
+	var n := ex_w * ex_w
+	explore_known.resize(n)
+	explore_known.fill(0)
+	ex_rep.resize(n)
+	ex_rep.fill(-1)
+	ex_rep_w.resize(n)
+	ex_rep_w.fill(-1)
+	for cy in ex_w:
+		for cx in ex_w:
+			var mx := cx * EX_CELL + EX_CELL / 2
+			var my := cy * EX_CELL + EX_CELL / 2
+			var bl := 1 << 30
+			var bw := 1 << 30
+			for dy in EX_CELL:
+				var y := cy * EX_CELL + dy
+				if y >= H:
+					break
+				for dx in EX_CELL:
+					var x := cx * EX_CELL + dx
+					if x >= W:
+						break
+					var i := y * W + x
+					var d := (x - mx) * (x - mx) + (y - my) * (y - my)
+					if terrain[i] == Defs.T_WATER:
+						if wsol[i] == 0 and d < bw:
+							bw = d
+							ex_rep_w[cy * ex_w + cx] = i
+					elif terrain[i] != Defs.T_ROCK and solid[i] == 0 and d < bl:
+						bl = d
+						ex_rep[cy * ex_w + cx] = i
+
+## Zonas peligrosas conocidas para `e`: torres y centros enemigos cuya casilla ya se ha visto (centro y radio en casillas²).
+func _explore_danger_zones(e: Ent) -> Array:
+	var out: Array = []
+	for b in buildings:
+		if not b.alive or not is_hostile(e.owner, b.owner) or not b.def.has("atk") or b.progress < 1.0:
+			continue
+		var c := b.tile + Vector2i(b.size / 2, b.size / 2)
+		if explore_known[(c.y / EX_CELL) * ex_w + c.x / EX_CELL] < 6:
+			continue                    # nunca se ha visto: no se sabe que está ahí
+		var r := float(b.def["range"]) + 4.0
+		out.append([c, r * r])
+	return out
+
+## Elige la celda sin explorar más cercana a la que se pueda llegar y evita zonas peligrosas. Falso si no queda ninguna.
+func _explore_pick(e: Ent) -> bool:
+	ensure_explore_grid()
+	var t0 := tile_of(e.pos)
+	var ti := t0.y * W + t0.x
+	var my_comp: int = wcomp[ti] if e.naval else comp[ti]
+	var reps := ex_rep_w if e.naval else ex_rep
+	var zones := _explore_danger_zones(e)
+	var avoid_hit: bool = time - e.danger_t < 90.0 and e.danger_pos.x >= 0.0
+	var dp := tile_of(e.danger_pos) if avoid_hit else Vector2i(-1, -1)
+	var best := -1
+	var bs := 1e18
+	for c in ex_w * ex_w:
+		var kn: int = explore_known[c]
+		if kn >= EX_DONE:
+			continue
+		var rep: int = reps[c]
+		if rep < 0 or e.xp_bad.has(c):
+			continue
+		if (wcomp[rep] if e.naval else comp[rep]) != my_comp:
+			continue
+		var rx := rep % W
+		var ry := rep / W
+		if avoid_hit and (rx - dp.x) * (rx - dp.x) + (ry - dp.y) * (ry - dp.y) < 144:
+			continue
+		var unsafe := false
+		for z in zones:
+			var zc: Vector2i = z[0]
+			if float((rx - zc.x) * (rx - zc.x) + (ry - zc.y) * (ry - zc.y)) < float(z[1]):
+				unsafe = true
+				break
+		if unsafe:
+			continue
+		var sc := float((rx - t0.x) * (rx - t0.x) + (ry - t0.y) * (ry - t0.y)) + float(kn) * 3.0
+		if sc < bs:
+			bs = sc
+			best = c
+	if best < 0:
+		return false
+	e.xp_cell = best
+	e.xp_t = 1.5
+	var goal_i: int = reps[best]
+	var goal := Vector2i(goal_i % W, goal_i / W)
+	e.state = S_MOVE
+	e.amove = false
+	e.amove_goal = goal
+	e.home = tile_center(goal)
+	e.fails = 0
+	e.ignore_id = 0
+	_request_path(e, goal)
+	return true
+
+## Siguiente destino de un explorador; si ya no queda nada accesible por descubrir, vuelve a casa y avisa.
+func _explore_next(e: Ent) -> void:
+	if _explore_pick(e):
+		return
+	e.explore = false
+	e.xp_cell = -1
+	e.state = S_IDLE
+	e.path = []
+	var home := Vector2i(-1, -1)
+	var bd := 1e18
+	for b in buildings:
+		if not (b.alive and b.owner == e.owner and b.progress >= 1.0):
+			continue
+		if (bool(b.def.get("dock", false)) if e.naval else b.type == "centro"):
+			var d := b.center().distance_squared_to(e.pos)
+			if d < bd:
+				bd = d
+				home = b.dock_tile if e.naval else _spawn_tile_near(b)
+	if home.x >= 0:
+		if e.naval:
+			_move_fleet([e], home, false)
+		else:
+			_move_group([e], home, false)
+	_ev({"t": "explore_done", "owner": e.owner, "pos": e.pos, "id": e.id})
+
+## Orden «explorar» (activar) o «dejar de explorar». Sólo la obedecen las unidades de exploración (`scout`).
+func cmd_explore(pidx: int, ids: Array, on: bool = true) -> int:
+	var n := 0
+	for e: Ent in _own_units(pidx, ids):
+		if not bool(e.def.get("scout", false)) or e.stowed or not e.cargo.is_empty():
+			continue
+		if on:
+			_clear_orders(e)
+			e.xp_bad = []
+			e.danger_t = -1000.0
+			e.explore = true
+			_explore_next(e)
+			n += 1
+		elif e.explore:
+			_clear_orders(e)
+			n += 1
+	return OK if n > 0 else ERR_NOUNITS
 
 func _move_group(us: Array, tile: Vector2i, attack_move: bool) -> void:
 	var center := tile_center(tile)
@@ -1406,9 +1719,19 @@ func step() -> void:
 	if profiling:
 		_p("paths", t0)
 		t0 = Time.get_ticks_usec()
-	for u in units:
-		if u.alive:
-			_update_unit(u)
+	if profiling:
+		for u in units:
+			if u.alive:
+				var tu := Time.get_ticks_usec()
+				var st0 := u.state
+				_update_unit(u)
+				var k := "u_%s_s%d" % [u.type, st0]
+				prof[k] = int(prof.get(k, 0)) + (Time.get_ticks_usec() - tu)
+				prof[k + "_n"] = int(prof.get(k + "_n", 0)) + 1
+	else:
+		for u in units:
+			if u.alive:
+				_update_unit(u)
 	if profiling:
 		_p("units", t0)
 		t0 = Time.get_ticks_usec()
@@ -1502,6 +1825,9 @@ func _engage(e: Ent, t: Ent, auto: bool) -> void:
 	e.fails = 0
 
 func _u_idle(e: Ent) -> void:
+	if e.explore:
+		_explore_next(e)
+		return
 	if not e.is_military():
 		return
 	e.scan_t -= DT
@@ -1512,6 +1838,13 @@ func _u_idle(e: Ent) -> void:
 			_engage(e, t, true)
 
 func _u_move(e: Ent, step_px: float) -> void:
+	if e.explore:
+		e.xp_t -= DT
+		if e.xp_t <= 0.0:
+			e.xp_t = 1.5
+			if e.xp_cell >= 0 and explore_known[e.xp_cell] >= EX_DONE:
+				_explore_next(e)       # su destino ya se ha visto (otra unidad, o desde lejos): siguiente
+				return
 	if e.amove and e.is_military():
 		e.scan_t -= DT
 		if e.scan_t <= 0.0:
@@ -1529,6 +1862,10 @@ func _u_move(e: Ent, step_px: float) -> void:
 		if e.unload_at.x >= 0:
 			_unload(e)
 			e.unload_at = Vector2i(-1, -1)
+		if e.explore and r == 2 and e.xp_cell >= 0:
+			e.xp_bad.append(e.xp_cell)       # no hay camino hasta allí: no se vuelve a intentar un rato
+			if e.xp_bad.size() > 16:
+				e.xp_bad.pop_front()
 
 # --- transporte marítimo
 
@@ -1786,6 +2123,13 @@ func _damage(t: Ent, dmg: float, attacker: Ent) -> void:
 		_ev({"t": "alarm", "pos": t.center(), "owner": t.owner})
 	if t.hp <= 0.0:
 		_kill(t, attacker)
+		return
+	if attacker != null and (not t.is_building) and t.explore:
+		# El explorador no se pone a pelear: huye y evita esa zona un rato
+		if time - t.danger_t > 3.0:
+			t.danger_pos = t.pos
+			_explore_next(t)
+		t.danger_t = time
 		return
 	if attacker != null and (not t.is_building) and t.state == S_IDLE and t.is_military():
 		_engage(t, attacker, true)
@@ -2132,6 +2476,8 @@ func _spawn_trained(b: Ent) -> void:
 			_assign_gather(u, b.rally, kind_of_tile(b.rally))
 		else:
 			cmd_move(b.owner, [u.id], b.rally)
+	elif utype == "explorador" and p.is_human:
+		cmd_explore(b.owner, [u.id], true)      # sin punto de reunión: el explorador nuevo sale a explorar solo
 
 # ------------------------------------------------------------------ muerte y victoria
 

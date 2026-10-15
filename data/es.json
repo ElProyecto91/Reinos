@@ -53,6 +53,7 @@
  "build": "Construir",
  "military": "Militares",
  "unload": "Desembarcar",
+ "explore": "Explorar",
  "attack_move": "Atacar",
  "stop": "Detener",
  "rally": "Reunión",
@@ -174,6 +175,10 @@
    "Toca un edificio y usa sus botones. «Reunión» fija dónde aparecen las tropas nuevas."
   ],
   [
+   "Explorar",
+   "Selecciona un explorador, un jinete o un barco y pulsa «Explorar»: irá solo hacia lo que aún no has visto (por tierra o por mar), esquiva torres enemigas que ya conoces, huye en lugar de pelear si le atacan y vuelve a casa al terminar. Cualquier otra orden lo detiene. Los exploradores nuevos del Establo salen a explorar solos si no has fijado «Reunión»."
+  ],
+  [
    "Soldados",
    "Cuartel: piquero (y espadachín en la Edad Feudal). Arquería: arquero y ballestero. Establo: explorador (rápido y con mucha vista), jinete y caballero (pesado). Taller: ariete."
   ],
@@ -195,7 +200,7 @@
   ],
   [
    "Combate",
-   "Piquero y ballestero frenan a la caballería; el jinete y el caballero arrasan arqueros y ballesteros; el arquero castiga al piquero; el espadachín (Cuartel, Edad Feudal) vence al piquero y destruye arietes. El ariete (Taller) derriba edificios pero apenas se defiende: escóltalo. «Atacar» manda al grupo a un punto y lucharán contra lo que encuentren."
+   "Piquero y ballestero frenan a la caballería; el jinete y el caballero arrasan arqueros y ballesteros; el arquero castiga al piquero; el espadachín (Cuartel, Edad Feudal) vence al piquero y destruye arietes, igual que la caballería, que los alcanza enseguida. El ariete (Taller) derriba edificios pero apenas se defiende: escóltalo. «Atacar» manda al grupo a un punto y lucharán contra lo que encuentren."
   ],
   [
    "Mapa",
@@ -233,6 +238,9 @@
  "toast_gather": "Recolectando %s",
  "toast_rally_res": "Los nuevos aldeanos recolectarán %s",
  "toast_unloaded": "Desembarcan %d unidades",
+ "toast_explore_start": "Exploración automática",
+ "toast_explore_done": "Exploración terminada: no queda nada por descubrir a su alcance",
+ "toast_explore_none": "Selecciona un explorador, un jinete o un barco",
  "toast_unload_go": "El barco navega hacia la orilla",
  "toast_board_go": "%d unidades suben al barco"
 }

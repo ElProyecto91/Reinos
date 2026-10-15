@@ -67,7 +67,7 @@ const UNITS := {
 	"jinete": {
 		"hp": 110, "speed": 3.8, "atk": 8.0, "range": 1.0, "cd": 1.4, "los": 8,
 		"cost": {"food": 60, "gold": 75}, "time": 28.0, "building": "establo", "age": 1,
-		"military": true, "radius": 10.0, "vs_building": 0.5,
+		"military": true, "radius": 10.0, "vs_building": 0.5, "scout": true,
 	},
 	# --- soldados nuevos ---
 	"espadachin": {
@@ -83,7 +83,7 @@ const UNITS := {
 	"explorador": {
 		"hp": 65, "speed": 4.8, "atk": 3.5, "range": 1.0, "cd": 1.2, "los": 12,
 		"cost": {"food": 70}, "time": 16.0, "building": "establo", "age": 1,
-		"military": true, "radius": 9.0, "vs_building": 0.2,
+		"military": true, "radius": 9.0, "vs_building": 0.2, "scout": true,
 	},
 	"caballero": {
 		"hp": 200, "speed": 3.3, "atk": 11.0, "range": 1.0, "cd": 1.5, "los": 8,
@@ -99,35 +99,36 @@ const UNITS := {
 	"barco_pesca": {
 		"hp": 55, "speed": 2.8, "atk": 0.0, "range": 0.0, "cd": 9.0, "los": 8,
 		"cost": {"wood": 60}, "time": 16.0, "building": "puerto", "age": 0,
-		"military": false, "radius": 11.0, "vs_building": 0.0, "naval": true, "fisher": true, "carry": 15.0,
+		"military": false, "radius": 11.0, "vs_building": 0.0, "naval": true, "fisher": true, "carry": 15.0, "scout": true,
 	},
 	"barco_transporte": {
 		"hp": 120, "speed": 2.5, "atk": 0.0, "range": 0.0, "cd": 9.0, "los": 8,
 		"cost": {"wood": 110}, "time": 24.0, "building": "puerto", "age": 0,
-		"military": false, "radius": 13.0, "vs_building": 0.0, "naval": true, "cargo": 8,
+		"military": false, "radius": 13.0, "vs_building": 0.0, "naval": true, "cargo": 8, "scout": true,
 	},
 	"galera": {
 		"hp": 140, "speed": 3.0, "atk": 7.0, "range": 6.0, "cd": 1.6, "los": 10,
 		"cost": {"wood": 80, "gold": 45}, "time": 28.0, "building": "puerto", "age": 1,
-		"military": true, "radius": 12.0, "vs_building": 0.5, "naval": true,
+		"military": true, "radius": 12.0, "vs_building": 0.5, "naval": true, "scout": true,
 	},
 	"galeon": {
 		"hp": 320, "speed": 2.3, "atk": 17.0, "range": 7.0, "cd": 2.6, "los": 10,
 		"cost": {"wood": 130, "gold": 110}, "time": 42.0, "building": "puerto", "age": 1,
-		"military": true, "radius": 15.0, "vs_building": 1.1, "naval": true, "cannon": true,
+		"military": true, "radius": 15.0, "vs_building": 1.1, "naval": true, "cannon": true, "scout": true,
 	},
 }
 
 # Multiplicadores de daño (atacante -> objetivo).
-# Lanza > caballería > arqueros > infantería ligera; el espadachín cuesta más pero vence a la lanza y al ariete.
+# Lanza > caballería > arqueros > infantería ligera; el espadachín cuesta más pero vence a la lanza y al ariete;
+# la caballería (rápida) también alcanza y destroza arietes, como en la tabla de contras de Age of Empires II.
 const BONUS := {
 	"piquero": {"jinete": 3.0, "caballero": 3.2, "explorador": 2.0},
 	"espadachin": {"piquero": 1.6, "arquero": 1.2, "ballestero": 1.2, "ariete": 2.5},
 	"arquero": {"piquero": 1.6, "espadachin": 1.3, "aldeano": 1.3},
 	"ballestero": {"jinete": 1.8, "caballero": 1.7, "espadachin": 1.2, "aldeano": 1.2},
-	"jinete": {"arquero": 2.2, "ballestero": 2.0, "aldeano": 1.3},
-	"explorador": {"aldeano": 1.4, "arquero": 1.4},
-	"caballero": {"arquero": 2.2, "ballestero": 2.0, "aldeano": 1.3, "espadachin": 1.2},
+	"jinete": {"arquero": 2.2, "ballestero": 2.0, "aldeano": 1.3, "ariete": 1.6},
+	"explorador": {"aldeano": 1.4, "arquero": 1.4, "ariete": 1.4},
+	"caballero": {"arquero": 2.2, "ballestero": 2.0, "aldeano": 1.3, "espadachin": 1.2, "ariete": 1.8},
 	"galera": {"barco_pesca": 1.6, "barco_transporte": 1.6},
 	"galeon": {"galera": 1.5, "barco_pesca": 1.6, "barco_transporte": 1.6},
 }

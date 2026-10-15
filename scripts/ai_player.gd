@@ -8,16 +8,30 @@ var pi: int
 var diff: int
 var acc: float = 0.0
 var interval: float = 1.0
-var attack_at: float = 480.0
-var need_army: int = 12
+var attack_at: float = 600.0          # no antes de este instante de partida (s)
+var need_army: int = 22               # soldados mínimos para lanzar la oleada
+var wave_gap: float = 240.0           # pausa entre una oleada y la siguiente
 var wave: int = 0
 var wave_active: bool = false
 var wave_start: float = 0.0
+var wave_ids: Array = []              # ids de los soldados de la oleada en curso (el resto es la reserva que defiende)
+var wave_n0: int = 0
 var target_pi: int = -1
 var last_defend: float = -100.0
+var last_reinf: float = -100.0
+var raid_ids: Array = []              # jinetes que hostigan a los aldeanos del enemigo
+var raid_at: float = 900.0
+var raid_start: float = 0.0
+var navy_at: float = 700.0
+var navy_start: float = 0.0
+var navy_out: bool = false
+var exp_cd: float = 0.0               # espera entre intentos de ampliar con otro centro urbano
+var mix: Dictionary = {}              # tipo enemigo -> cuántos se han visto cerca (elegir contrarios)
+var mix_t: float = -100.0
 var store_cd: float = 0.0
 var port_cd: float = 0.0              # espera entre búsquedas de sitio de puerto
 var port_spot_cache := Vector2i(-2, -2)
+var assign_fail: Dictionary = {}      # recurso -> instante hasta el que no se repite una búsqueda fallida (partidas largas)
 var rng := RandomNumberGenerator.new()
 
 func _init(s: Sim, idx: int, d: int) -> void:
@@ -26,8 +40,12 @@ func _init(s: Sim, idx: int, d: int) -> void:
 	diff = clampi(d, 0, 2)
 	interval = [1.4, 1.0, 0.7][diff]
 	rng.seed = s.rng.seed + idx * 131
-	attack_at = [640.0, 450.0, 330.0][diff] + rng.randf_range(0.0, 40.0)
-	need_army = [10, 12, 12][diff]
+	# La primera oleada llega con una economía ya hecha y un ejército grande; después van creciendo.
+	attack_at = [780.0, 600.0, 470.0][diff] + rng.randf_range(0.0, 50.0)
+	need_army = [16, 22, 28][diff]
+	wave_gap = [300.0, 240.0, 180.0][diff]
+	raid_at = [1e9, 900.0, 720.0][diff] + rng.randf_range(0.0, 60.0)
+	navy_at = [1e9, 700.0, 560.0][diff] + rng.randf_range(0.0, 40.0)
 	acc = rng.randf() * interval
 
 func update(dt: float) -> void:
@@ -71,19 +89,43 @@ func _think() -> void:
 		base = tc.tile + Vector2i(1, 1)
 	store_cd = maxf(0.0, store_cd - interval)
 	port_cd = maxf(0.0, port_cd - interval)
+	exp_cd = maxf(0.0, exp_cd - interval)
+	var t0 := 0
+	if sim.profiling:
+		t0 = Time.get_ticks_usec()
+	if sim.time - mix_t > 6.0:
+		_scan_mix(base, army)
+	t0 = _pt("ai_mix", t0)
 	_economy(p, vills, base, done, inprog)
+	t0 = _pt("ai_economy", t0)
 	_fishing(p, boats)
+	t0 = _pt("ai_fishing", t0)
 	_build(p, vills, base, done, inprog)
+	t0 = _pt("ai_build", t0)
+	_expand(p, vills, base, done, inprog)
+	t0 = _pt("ai_expand", t0)
 	_train(p, vills, done, boats, navy, army)
+	t0 = _pt("ai_train", t0)
 	_age(p, vills, done)
 	_military(p, army, base)
+	t0 = _pt("ai_military", t0)
+	_naval(p, navy)
+	_pt("ai_naval", t0)
+
+## Mide cuánto tarda cada parte del pensamiento de la IA (sólo con sim.profiling).
+func _pt(key: String, t0: int) -> int:
+	if not sim.profiling:
+		return 0
+	var now := Time.get_ticks_usec()
+	sim.prof[key] = int(sim.prof.get(key, 0)) + (now - t0)
+	return now
 
 # ------------------------------------------------------------------ economía
 
 func _vill_target(p: Player) -> int:
-	var t: int = [20, 28, 36][diff]
+	var t: int = [24, 34, 46][diff]
 	if p.age >= 1:
-		t += 8
+		t += 10
 	return t
 
 func _wants_age(p: Player, vills: Array, done: Dictionary) -> bool:
@@ -184,6 +226,8 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 				break
 
 func _assign(p: Player, v: Ent, kind: String, base: Vector2i) -> bool:
+	if sim.time < float(assign_fail.get(kind, -1.0)):
+		return false
 	var mask := sim.res_mask_for(kind)
 	var from := sim.tile_of(v.pos)
 	var t := sim.find_resource(from, mask, pi, v.id, 18)
@@ -202,6 +246,7 @@ func _assign(p: Player, v: Ent, kind: String, base: Vector2i) -> bool:
 	if t.x >= 0:
 		sim.cmd_gather(pi, [v.id], t)
 		return true
+	assign_fail[kind] = sim.time + (5.0 if kind == "food" else 12.0)
 	return false
 
 func _farm_spot(base: Vector2i) -> Vector2i:
@@ -365,27 +410,130 @@ func _build(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: D
 			if _far_store(p, vills, "wood") or _far_store(p, vills, "gold"):
 				store_cd = 30.0
 	# Cuartel y edificios militares
-	var barracks_target: int = [1, 2, 3][diff]
+	var grow := (1 if p.pop >= 90 else 0) + (1 if p.pop >= 150 else 0)     # más producción cuando la economía da para ello
+	var barracks_target: int = [2, 3, 4][diff] + grow
 	var min_vills: int = [12, 10, 9][diff]
 	if n >= min_vills:
 		if int(done.get("cuartel", 0)) + int(inprog.get("cuartel", 0)) < (1 if p.age == 0 else barracks_target):
 			_try_build(p, "cuartel", base, vills, 6, 13, 2)
 		if p.age >= 1 and diff >= 1 and n >= min_vills + 6:
-			if int(done.get("taller", 0)) + int(inprog.get("taller", 0)) < 1 and int(p.res.wood) >= 320:
+			if int(done.get("taller", 0)) + int(inprog.get("taller", 0)) < 1 + (1 if (diff == 2 and p.pop >= 120) else 0) and int(p.res.wood) >= 320:
 				_try_build(p, "taller", base, vills, 7, 14, 2)
 		# Puerto: sólo si hay costa con peces cerca (la comida del mar libera aldeanos de las granjas)
 		if n >= min_vills + 3 and port_cd <= 0.0 and int(done.get("puerto", 0)) + int(inprog.get("puerto", 0)) < 1 and int(p.res.wood) >= 220:
 			_try_port(p, base, vills)
 		if p.age >= 1:
-			var ranges: int = 1 if diff < 2 else 2
+			var ranges: int = [1, 2, 2][diff] + grow
 			if int(done.get("arqueria", 0)) + int(inprog.get("arqueria", 0)) < ranges:
 				_try_build(p, "arqueria", base, vills, 6, 14, 2)
 			if int(done.get("establo", 0)) + int(inprog.get("establo", 0)) < ranges:
 				_try_build(p, "establo", base, vills, 6, 14, 2)
 			# Excedentes de madera y oro: torres de defensa alrededor de la base
 			if n >= min_vills + 4 and int(p.res.wood) >= 450 and int(p.res.gold) >= 250 and int(inprog.get("torre", 0)) == 0:
-				if int(done.get("torre", 0)) < [1, 2, 4][diff]:
-					_try_build(p, "torre", base, vills, 8, 13, 2)
+				if int(done.get("torre", 0)) < [2, 4, 6][diff]:
+					_try_build(p, "torre", base, vills, 8, 14, 2)
+
+# ------------------------------------------------------------------ ampliación
+
+## Número de casillas con árboles, oro o bayas en un cuadrado de lado 2r+1 (para elegir dónde ampliar).
+func _res_score(t: Vector2i, r: int) -> int:
+	var n := 0
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var q := t + Vector2i(dx, dy)
+			if sim.in_bounds(q):
+				var rt := sim.rtype[q.y * sim.W + q.x]
+				if rt == Defs.R_TREE or rt == Defs.R_GOLD or rt == Defs.R_BERRY:
+					n += 1
+	return n
+
+## Otro centro urbano junto a recursos nuevos cuando la base ya es grande (y reconstruir el centro si lo pierde):
+## más aldeanos entrenando, más población y recursos que no se agotan en partidas largas.
+func _expand(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: Dictionary) -> void:
+	if exp_cd > 0.0 or vills.is_empty():
+		return
+	var tcs := int(done.get("centro", 0)) + int(inprog.get("centro", 0))
+	if int(inprog.get("centro", 0)) > 0:
+		return
+	var cost: Dictionary = Defs.BUILDINGS["centro"]["cost"]
+	if tcs == 0:
+		# Sin centro urbano: se reconstruye en cuanto se pueda pagar
+		if Defs.can_afford(p.res, cost):
+			exp_cd = 20.0
+			_try_build(p, "centro", base, vills, 3, 12, 3)
+		return
+	if diff == 0 or p.age < 1 or tcs >= [1, 2, 3][diff] or vills.size() < 28 or p.pop < 70:
+		return
+	if int(p.res.wood) < int(cost["wood"]) + 150 or int(p.res.gold) < int(cost["gold"]) + 50:
+		return
+	exp_cd = 60.0
+	var from := sim.nearest_free_tile(base + Vector2i(0, 3), 6)
+	var best := Vector2i(-1, -1)
+	var bs := 0
+	for i in 40:
+		var ang := rng.randf() * TAU
+		var r := rng.randf_range(17.0, 32.0)
+		var t := base + Vector2i(int(round(cos(ang) * r)), int(round(sin(ang) * r)))
+		if not sim.in_bounds(t) or not sim.can_place("centro", t) or not _spaced("centro", t):
+			continue
+		var sc := _res_score(t, 8)
+		if sc > bs:
+			bs = sc
+			best = t
+	if best.x < 0 or bs < 14 or not sim.can_reach_building(from, "centro", best):
+		exp_cd = 120.0
+		return
+	var ids := _builder_for(p, best, vills, 3)
+	if not ids.is_empty():
+		sim.cmd_build(pi, ids, "centro", best)
+
+# ------------------------------------------------------------------ elegir contrarios
+
+## Mira qué soldados enemigos hay cerca de mis edificios y de mi ejército (sólo lo que está a su alcance).
+func _scan_mix(base: Vector2i, army: Array) -> void:
+	mix_t = sim.time
+	var tally := {}
+	var seen := {}
+	var anchors: Array[Vector2] = []
+	var cnt := 0
+	for b in sim.buildings:
+		if b.alive and b.owner == pi and (b.type == "centro" or cnt < 3):
+			anchors.append(b.center())
+			cnt += 1
+	if not army.is_empty():
+		anchors.append(army[0].pos)
+		anchors.append(army[army.size() - 1].pos)
+	for a in anchors:
+		for o in sim.query(a, 18.0 * Defs.TILE):
+			if o.alive and not o.is_building and not o.naval and o.is_military() and sim.is_hostile(pi, o.owner) and not seen.has(o.id):
+				seen[o.id] = true
+				tally[o.type] = int(tally.get(o.type, 0)) + 1
+	var merged := {}
+	for k in mix:
+		merged[k] = float(mix[k]) * 0.6          # la memoria se desvanece
+	for k in tally:
+		merged[k] = float(merged.get(k, 0.0)) + float(tally[k])
+	mix = merged
+
+static func _bonus(a: String, b: String) -> float:
+	var d: Dictionary = Defs.BONUS.get(a, {})
+	return float(d.get(b, 1.0))
+
+## >1 si este tipo de soldado rinde bien contra lo que se ha visto del enemigo, <1 si rinde mal.
+func _counter_score(ut: String) -> float:
+	if diff == 0 or mix.is_empty():
+		return 1.0
+	var tot := 0.0
+	var sc := 0.0
+	for et: String in mix:
+		var c := float(mix[et])
+		if c < 0.5:
+			continue
+		sc += c * _bonus(ut, et) / maxf(0.6, _bonus(et, ut))
+		tot += c
+	if tot < 3.0:
+		return 1.0
+	return pow(clampf(sc / tot, 0.5, 2.5), 1.3 if diff == 2 else 0.7)
 
 # ------------------------------------------------------------------ entrenamiento y edad
 
@@ -418,7 +566,7 @@ func _pick_unit(b: Ent, p: Player, rams: int) -> String:
 		"establo":
 			opts = [["jinete", 0.5], ["caballero", 0.5]]
 		"taller":
-			opts = [["ariete", 1.0 if rams < [1, 2, 3][diff] else 0.0]]
+			opts = [["ariete", 1.0 if rams < [1, 2, 4][diff] else 0.0]]
 		_:
 			var tr: Array = b.def["train"]
 			opts = [[tr[0], 1.0]]
@@ -427,8 +575,9 @@ func _pick_unit(b: Ent, p: Player, rams: int) -> String:
 	for o in opts:
 		var ud: Dictionary = Defs.UNITS[o[0]]
 		if float(o[1]) > 0.0 and p.age >= int(ud["age"]) and Defs.can_afford(p.res, ud["cost"]):
-			ok.append(o)
-			total += float(o[1])
+			var w := float(o[1]) * _counter_score(o[0])
+			ok.append([o[0], w])
+			total += w
 	if ok.is_empty():
 		return ""
 	var r := rng.randf() * total
@@ -501,13 +650,6 @@ func _fishing(p: Player, boats: Array) -> void:
 
 # ------------------------------------------------------------------ militar
 
-func _my_army_idle(army: Array) -> Array:
-	var out: Array = []
-	for u in army:
-		if u.state == Sim.S_IDLE or (u.state == Sim.S_MOVE and not u.amove):
-			out.append(u.id)
-	return out
-
 func _pick_target() -> int:
 	if target_pi >= 0 and sim.players[target_pi].alive and sim.is_hostile(pi, target_pi):
 		return target_pi
@@ -534,13 +676,18 @@ func _enemy_building_tile(from: Vector2i, tpi: int) -> Vector2i:
 			var d := Vector2(b.tile).distance_to(Vector2(from))
 			if b.type == "centro":
 				d *= 0.5
+			elif b.type == "muralla" or b.type == "puerta":
+				d *= 3.0          # primero lo que importa, no los tramos de muralla
 			if d < bd:
 				bd = d
 				best = b.tile + Vector2i(b.size / 2, b.size / 2)
 	return best
 
-func _threat_pos(p: Player) -> Vector2:
+## Enemigos (de a pie o a caballo) cerca de mis edificios: cuántos y dónde.
+func _threat() -> Dictionary:
 	var checked := 0
+	var seen := {}
+	var pos := Vector2(-1, -1)
 	for b in sim.buildings:
 		if not (b.alive and b.owner == pi):
 			continue
@@ -548,60 +695,202 @@ func _threat_pos(p: Player) -> Vector2:
 			continue
 		checked += 1
 		for o in sim.query(b.center(), 12.0 * Defs.TILE):
-			if (not o.is_building) and sim.is_hostile(pi, o.owner):
-				return o.pos
-	return Vector2(-1, -1)
+			if (not o.is_building) and (not o.naval) and sim.is_hostile(pi, o.owner) and not seen.has(o.id):
+				seen[o.id] = true
+				if pos.x < 0.0:
+					pos = o.pos
+	return {"pos": pos, "n": seen.size()}
+
+func _rally_tile(base: Vector2i, enemy_tile: Vector2i) -> Vector2i:
+	var dir := Vector2.ZERO
+	if enemy_tile.x >= 0:
+		dir = (Vector2(enemy_tile) - Vector2(base)).normalized()
+	return sim.nearest_free_tile(base + Vector2i(int(dir.x * 10.0), int(dir.y * 10.0)), 6)
 
 func _military(p: Player, army: Array, base: Vector2i) -> void:
+	# Los de la oleada que siguen vivos
+	if not wave_ids.is_empty():
+		var alive: Array = []
+		for id in wave_ids:
+			var e: Ent = sim.ents.get(id)
+			if e != null and e.alive and not e.is_building:
+				alive.append(id)
+		wave_ids = alive
 	if army.is_empty():
 		wave_active = false
+		wave_ids = []
+		raid_ids = []
 		return
 	var tp := _pick_target()
-	# Defensa
-	var thr := _threat_pos(p)
-	if thr.x >= 0.0:
-		if sim.time - last_defend > 4.0:
+	var in_wave := {}
+	for id in wave_ids:
+		in_wave[id] = true
+	var reserve: Array = []              # los que se quedan en casa y defienden
+	for u in army:
+		if not in_wave.has(u.id):
+			reserve.append(u)
+	# --- Defensa: la reserva sale al encuentro; si la amenaza es mayor, también los de la oleada que aún están cerca
+	var thr := _threat()
+	if int(thr["n"]) > 0:
+		if sim.time - last_defend > 3.0:
 			last_defend = sim.time
 			var ids: Array = []
-			for u in army:
+			for u in reserve:
 				ids.append(u.id)
-			sim.cmd_move(pi, ids, sim.tile_of(thr), true)
+			if int(thr["n"]) > reserve.size():
+				for u in army:
+					if in_wave.has(u.id) and (sim.time - wave_start < 40.0 or Vector2(sim.tile_of(u.pos)).distance_to(Vector2(base)) < 28.0):
+						ids.append(u.id)
+			if not ids.is_empty():
+				sim.cmd_move(pi, ids, sim.tile_of(thr["pos"]), true)
 		return
 	if tp < 0:
 		return
 	var enemy_tile := _enemy_building_tile(base, tp)
-	# Oleada de ataque
-	if (not wave_active) and sim.time >= attack_at and army.size() >= need_army and enemy_tile.x >= 0:
-		var ids2: Array = []
-		for u in army:
-			ids2.append(u.id)
-		sim.cmd_move(pi, ids2, enemy_tile, true)
-		wave_active = true
-		wave_start = sim.time
-		wave += 1
-		need_army += 3
-		attack_at = sim.time + [220.0, 160.0, 120.0][diff]
-		return
+	_raid(p, reserve, tp, base)
+	# --- Oleada en curso
 	if wave_active:
-		if army.size() < 3 or sim.time - wave_start > 260.0:
+		var weak := wave_ids.size() < maxi(4, int(float(wave_n0) * 0.35))
+		if weak or sim.time - wave_start > 480.0 or enemy_tile.x < 0:
+			# Retirada: los supervivientes vuelven a casa y la siguiente oleada será mayor
+			if not wave_ids.is_empty():
+				sim.cmd_move(pi, wave_ids, _rally_tile(base, enemy_tile), false)
 			wave_active = false
-		elif enemy_tile.x >= 0 and sim.time - wave_start > 25.0:
-			# Los ociosos continúan hacia el siguiente edificio enemigo
+			wave_ids = []
+			attack_at = sim.time + wave_gap
+			need_army = mini(need_army + [4, 6, 8][diff], 90)
+			return
+		# Segunda línea: la reserva sobrante refuerza a los que están luchando
+		if sim.time - last_reinf > 25.0 and reserve.size() >= 10:
+			last_reinf = sim.time
+			var keep := reserve.size() / 3
+			var ids2: Array = []
+			var k := 0
+			for u in reserve:
+				k += 1
+				if k > keep and u.state == Sim.S_IDLE:
+					ids2.append(u.id)
+					wave_ids.append(u.id)
+			if not ids2.is_empty():
+				sim.cmd_move(pi, ids2, enemy_tile, true)
+		# Los ociosos continúan hacia el siguiente edificio enemigo
+		if sim.time - wave_start > 25.0:
 			var idle_ids: Array = []
 			for u in army:
-				if u.state == Sim.S_IDLE:
+				if in_wave.has(u.id) and u.state == Sim.S_IDLE:
 					idle_ids.append(u.id)
 			if not idle_ids.is_empty():
 				sim.cmd_move(pi, idle_ids, enemy_tile, true)
 		return
-	# Concentración en punto de reunión
-	var dir := Vector2.ZERO
-	if enemy_tile.x >= 0:
-		dir = (Vector2(enemy_tile) - Vector2(base)).normalized()
-	var rally := sim.nearest_free_tile(base + Vector2i(int(dir.x * 10.0), int(dir.y * 10.0)), 6)
+	# --- Lanzar una oleada: todos menos una cuarta parte, que se queda defendiendo
+	var full := p.pop >= p.pop_cap - 2 and p.pop_cap >= 100          # no se puede crecer más: hay que pelear
+	if sim.time >= attack_at and enemy_tile.x >= 0 and (army.size() >= need_army or (full and army.size() >= 12)):
+		var attackers: Array = []
+		var sorted_a := army.duplicate()
+		sorted_a.sort_custom(func(a: Ent, b: Ent) -> bool: return a.id < b.id)
+		var j := 0
+		for u in sorted_a:
+			j += 1
+			if j % 4 != 0 or army.size() < 16:
+				attackers.append(u.id)
+		wave_ids = attackers
+		wave_n0 = attackers.size()
+		sim.cmd_move(pi, attackers, enemy_tile, true)
+		wave_active = true
+		wave_start = sim.time
+		last_reinf = sim.time
+		wave += 1
+		return
+	# --- Concentración en el punto de reunión
+	var rally := _rally_tile(base, enemy_tile)
 	var gather_ids: Array = []
-	for u in army:
+	for u in reserve:
 		if u.state == Sim.S_IDLE and Vector2(sim.tile_of(u.pos)).distance_to(Vector2(rally)) > 8.0:
 			gather_ids.append(u.id)
 	if not gather_ids.is_empty():
 		sim.cmd_move(pi, gather_ids, rally, false)
+
+## Hostigamiento: unos cuantos jinetes de la reserva caen sobre los aldeanos del enemigo y vuelven.
+func _raid(p: Player, reserve: Array, tp: int, base: Vector2i) -> void:
+	if not raid_ids.is_empty():
+		var alive: Array = []
+		for id in raid_ids:
+			var e: Ent = sim.ents.get(id)
+			if e != null and e.alive:
+				alive.append(id)
+		raid_ids = alive
+		if raid_ids.size() < 2 or sim.time - raid_start > 90.0:
+			if not raid_ids.is_empty():
+				sim.cmd_move(pi, raid_ids, _rally_tile(base, Vector2i(-1, -1)), false)
+			raid_ids = []
+			raid_at = sim.time + [1e9, 300.0, 220.0][diff]
+		return
+	if sim.time < raid_at or p.age < 1 or wave_active:
+		return
+	var riders: Array = []
+	for u in reserve:
+		if (u.type == "jinete" or u.type == "caballero") and u.state == Sim.S_IDLE:
+			riders.append(u.id)
+	if riders.size() < 5:
+		return
+	var from := Vector2(base) * float(Defs.TILE)
+	var victim: Ent = null
+	var bd := 1e12
+	for u in sim.units:
+		if u.alive and u.owner == tp and u.type == "aldeano":
+			var d := u.pos.distance_squared_to(from)
+			if d < bd:
+				bd = d
+				victim = u
+	if victim == null:
+		return
+	riders = riders.slice(0, 8)
+	raid_ids = riders
+	raid_start = sim.time
+	sim.cmd_move(pi, riders, sim.tile_of(victim.pos), true)
+
+## Armada: unas galeras salen a cazar los barcos (o el puerto) del enemigo y regresan.
+func _naval(p: Player, navy: Array) -> void:
+	if navy.size() < 2:
+		navy_out = false
+		return
+	var ids: Array = []
+	for u in navy:
+		ids.append(u.id)
+	if navy_out:
+		if sim.time - navy_start > 100.0:
+			navy_out = false
+			navy_at = sim.time + [1e9, 240.0, 170.0][diff]
+			var home := Vector2i(-1, -1)
+			for b in sim.buildings:
+				if b.alive and b.owner == pi and b.type == "puerto" and b.progress >= 1.0:
+					home = b.dock_tile
+					break
+			if home.x >= 0:
+				sim.cmd_move(pi, ids, home, false)
+		return
+	if sim.time < navy_at or p.age < 1:
+		return
+	var tp := _pick_target()
+	if tp < 0:
+		return
+	var tile := Vector2i(-1, -1)
+	var bd := 1e12
+	var from := Vector2(navy[0].pos)
+	for u in sim.units:
+		if u.alive and u.naval and u.owner == tp:
+			var d := u.pos.distance_squared_to(from)
+			if d < bd:
+				bd = d
+				tile = sim.tile_of(u.pos)
+	if tile.x < 0:
+		for b in sim.buildings:
+			if b.alive and b.owner == tp and b.type == "puerto" and b.progress >= 1.0:
+				tile = b.dock_tile
+				break
+	if tile.x < 0:
+		navy_at = sim.time + 90.0
+		return
+	navy_out = true
+	navy_start = sim.time
+	sim.cmd_move(pi, ids, tile, true)

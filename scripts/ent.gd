@@ -48,6 +48,12 @@ var fail_goal: Vector2i = Vector2i(-2, -2)
 var fail_time: float = -100.0
 var ignore_until: float = 0.0
 var resume_id: int = 0                # objetivo al que volver tras romper una muralla
+var explore: bool = false             # exploración automática: va sola a lo que aún no se ha visto
+var xp_cell: int = -1                 # celda (de 4×4 casillas) hacia la que explora ahora
+var xp_t: float = 0.0                 # temporizador para comprobar si ya se vio su destino
+var xp_bad: Array = []                # celdas a las que no pudo llegar (se saltan un rato)
+var danger_pos: Vector2 = Vector2(-1, -1)   # dónde la hirieron: evita esa zona un tiempo
+var danger_t: float = -1000.0
 
 # --- edificio ---
 var progress: float = 1.0             # 0..1; 1 = completo

@@ -368,6 +368,7 @@ static func restore(data: Dictionary) -> Sim:
 			var e: Ent = by_id.get(int(id))
 			if e != null:
 				(s.buckets[i] as Array).append(e)
+	s.rebuild_bucket_masks()
 	s.events.clear()
 	return s
 

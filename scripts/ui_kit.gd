@@ -236,6 +236,12 @@ static func draw_symbol(c: CanvasItem, kind: String, r: Rect2, a: float = 1.0) -
 			c.draw_line(m + Vector2(0, -s * 0.24), m + Vector2(0, s * 0.34), ac, aw)
 			c.draw_line(m + Vector2(-s * 0.18, -s * 0.1), m + Vector2(s * 0.18, -s * 0.1), ac, aw)
 			c.draw_arc(m + Vector2(0, s * 0.1), s * 0.3, 0.15, PI - 0.15, 14, ac, aw)
+		"explore":
+			var ec := Color(0.80, 0.90, 1.0, a)
+			c.draw_arc(m, s * 0.34, 0, TAU, 20, ec, maxf(2.5, s * 0.07))
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(0, -s * 0.27), m + Vector2(s * 0.09, 0), m + Vector2(-s * 0.09, 0)]), Color(0.95, 0.35, 0.3, a))
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(0, s * 0.27), m + Vector2(s * 0.09, 0), m + Vector2(-s * 0.09, 0)]), Color(0.88, 0.9, 0.95, a))
+			c.draw_circle(m, s * 0.04, Color(0.2, 0.2, 0.25, a))
 		"ok":
 			c.draw_line(m + Vector2(-s * 0.3, 0.0), m + Vector2(-s * 0.08, s * 0.24), Color(0.4, 1, 0.5, a), maxf(4.0, s * 0.12))
 			c.draw_line(m + Vector2(-s * 0.08, s * 0.24), m + Vector2(s * 0.32, -s * 0.28), Color(0.4, 1, 0.5, a), maxf(4.0, s * 0.12))

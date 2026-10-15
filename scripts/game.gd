@@ -564,6 +564,9 @@ func _consume_events() -> void:
 				if ev["owner"] == human:
 					sfx("splash", ev["pos"])
 					hud.toast(Lang.t("toast_unloaded", [int(ev["n"])]), Color(0.7, 1, 0.7))
+			"explore_done":
+				if ev["owner"] == human:
+					hud.toast(Lang.t("toast_explore_done"), Color(0.7, 0.9, 1.0))
 			"wall_gap":
 				if ev["owner"] == human:
 					hud.toast(Lang.t("toast_wall_gap"), Color(1, 0.8, 0.45))
@@ -1276,6 +1279,24 @@ func ui_unload() -> void:
 		_err(r)
 		return
 	sfx("order")
+
+## Botón «Explorar»: activa la exploración automática de los exploradores/barcos seleccionados (si ya la tenían todos, la quita).
+func ui_explore() -> void:
+	var ids: Array = []
+	var all_on := true
+	for u in sel_own_units():
+		if bool(u.def.get("scout", false)):
+			ids.append(u.id)
+			if not u.explore:
+				all_on = false
+	if ids.is_empty():
+		hud.toast(Lang.t("toast_explore_none"), Color(1, 0.8, 0.45))
+		return
+	sim.cmd_explore(human, ids, not all_on)
+	sfx("order")
+	if not all_on:
+		hud.toast(Lang.t("toast_explore_start"), Color(0.7, 0.9, 1.0))
+	hud.refresh_now()
 
 func ui_stop() -> void:
 	var us := sel_own_units()

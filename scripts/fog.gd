@@ -58,11 +58,14 @@ func _offsets(r: int) -> PackedInt32Array:
 	return out
 
 var _changed := false
+var _sim: Sim = null            # simulación a la que cuenta lo explorado (rejilla gruesa de exploración automática)
 
 ## Recalcula lo que ve el jugador. Cada unidad o edificio revela un disco; las que están en la misma casilla y con el
 ## mismo alcance (grupos parados, edificios juntos) se cuentan una sola vez, y las casillas que pasan a verse se marcan
 ## ya al revelarlas (una pasada menos sobre toda la lista de casillas visibles).
 func update(sim: Sim, pidx: int) -> void:
+	if _sim != sim:
+		_bind(sim)
 	mark.fill(0)
 	_changed = false
 	var new_list := PackedInt32Array()
@@ -109,9 +112,23 @@ func _reveal(c: Vector2i, r: int, out: PackedInt32Array) -> void:
 			mark[idx] = 1
 			out.append(idx)
 			if state[idx] != 2:
+				if state[idx] == 0:
+					_sim.explore_known[(ny / Sim.EX_CELL) * _sim.ex_w + nx / Sim.EX_CELL] += 1
 				state[idx] = 2
 				img.set_pixel(nx, ny, Color(0, 0, 0, 0.0))
 				_changed = true
+
+## Enlaza con la simulación y cuenta lo ya explorado por celdas de 4×4 casillas (partida nueva o cargada).
+func _bind(sim: Sim) -> void:
+	_sim = sim
+	sim.ensure_explore_grid()
+	sim.explore_known.fill(0)
+	var cell := Sim.EX_CELL
+	for y in H:
+		var row := (y / cell) * sim.ex_w
+		for x in W:
+			if state[y * W + x] != 0:
+				sim.explore_known[row + x / cell] += 1
 
 func visible_at(t: Vector2i) -> bool:
 	return t.x >= 0 and t.y >= 0 and t.x < W and t.y < H and state[t.y * W + t.x] == 2
