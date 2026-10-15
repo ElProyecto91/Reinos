@@ -1,14 +1,15 @@
 class_name Art
 extends RefCounted
 ## Sprites generados por código con Painter.
-## unit_tex[tipo][equipo], building_tex[tipo][equipo], res_atlas (casillas de 32x32).
+## sheet(tipo) = hoja de fotogramas (3 capas), unit_icon(tipo, equipo), building_tex[tipo][equipo], res_atlas.
 
-const UNIT_PX := 48
 const SKIN := Color(0.96, 0.80, 0.62)
 const BROWN := Color(0.45, 0.30, 0.16)
 const OUTLINE := Color(0.08, 0.07, 0.06, 0.9)
 
-var unit_tex: Dictionary = {}
+var unit_sheets: Dictionary = {}     # tipo -> hoja con mipmaps (se carga la primera vez que hace falta)
+var _icons: Dictionary = {}
+var team_mod: Array[Color] = []        # color con el que se tiñe la capa de equipo de las hojas
 var building_tex: Dictionary = {}
 var res_atlas: ImageTexture
 var farm_tex: Array = []
@@ -16,7 +17,8 @@ var shadow_tex: ImageTexture
 
 
 func build() -> void:
-	_build_units()
+	for c: Color in Defs.PLAYER_COLORS:
+		team_mod.append(Color(minf(1.0, c.r * 1.15), minf(1.0, c.g * 1.15), minf(1.0, c.b * 1.15), 1.0))
 	_build_buildings()
 	_build_resources()
 	_build_misc()
@@ -28,73 +30,69 @@ func _new_img(w: int, h: int) -> Image:
 
 # ------------------------------------------------------------------ unidades
 
-func _o_disc(img: Image, cx: float, cy: float, r: float, col: Color) -> void:
-	Painter.disc(img, cx, cy, r + 1.3, OUTLINE)
-	Painter.disc(img, cx, cy, r, col)
+## Las hojas de unidades se dibujan una vez con tools/bake_units.gd y viajan como PNG (res://art/units).
+## Si no existe el PNG (o aún no está importado) se pintan en el momento con ArtUnits.
+func sheet(type: String) -> Texture2D:
+	var t: Texture2D = unit_sheets.get(type)
+	if t != null:
+		return t
+	var img: Image = null
+	var path := "res://art/units/%s.png" % type
+	if ResourceLoader.exists(path):
+		var src := load(path) as Texture2D
+		if src != null:
+			img = src.get_image()
+			if img != null and img.get_format() != Image.FORMAT_RGBA8:
+				img.convert(Image.FORMAT_RGBA8)
+	if img == null:
+		img = ArtUnits.build_sheet(type)
+	img.generate_mipmaps()
+	t = ImageTexture.create_from_image(img)
+	unit_sheets[type] = t
+	return t
 
-func _o_ell(img: Image, cx: float, cy: float, rx: float, ry: float, col: Color) -> void:
-	Painter.ellipse(img, cx, cy, rx + 1.3, ry + 1.3, OUTLINE)
-	Painter.ellipse(img, cx, cy, rx, ry, col)
-
-func _build_units() -> void:
-	for type in Defs.UNITS:
-		unit_tex[type] = []
-		for team in 4:
-			var img := _new_img(UNIT_PX, UNIT_PX)
-			var c: Color = Defs.PLAYER_COLORS[team]
-			match type:
-				"aldeano":
-					Painter.line(img, 34, 21, 38, 41, 3.8, OUTLINE)
-					Painter.line(img, 34, 21, 38, 41, 2.2, BROWN)
-					Painter.tri(img, 31, 20, 40, 18, 36, 25, Color(0.7, 0.7, 0.72))
-					_o_ell(img, 24, 30, 9, 11, c)
-					Painter.rect(img, 15, 33, 18, 3, Painter.shade(c, 0.7))
-					_o_disc(img, 24, 15.5, 6.6, SKIN)
-					Painter.ellipse(img, 24, 11.2, 8.4, 3.2, Color(0.78, 0.62, 0.3))
-					Painter.ellipse(img, 24, 8.8, 5.2, 4.2, Color(0.78, 0.62, 0.3))
-				"piquero":
-					Painter.line(img, 34, 4, 34, 45, 3.6, OUTLINE)
-					Painter.line(img, 34, 6, 34, 45, 2.0, BROWN)
-					Painter.tri(img, 34, 1, 31, 9, 37, 9, Color(0.85, 0.86, 0.9))
-					_o_ell(img, 25, 30, 9, 11, Painter.shade(c, 0.9))
-					_o_disc(img, 25, 15.5, 6.6, SKIN)
-					Painter.ellipse(img, 25, 12.2, 7.6, 5.4, Color(0.62, 0.64, 0.68))
-					Painter.rect(img, 24, 12, 2, 6, Color(0.5, 0.52, 0.56))
-					_o_disc(img, 16, 30, 8, Color(0.72, 0.72, 0.76))
-					Painter.disc(img, 16, 30, 3.2, c)
-				"arquero":
-					_o_ell(img, 24, 30, 9, 11, Painter.shade(c, 0.85))
-					Painter.rect(img, 15, 22, 4, 13, BROWN)
-					Painter.line(img, 16, 21, 16, 18, 1.4, Color(0.9, 0.9, 0.9))
-					Painter.line(img, 18, 21, 18, 17, 1.4, Color(0.9, 0.9, 0.9))
-					_o_disc(img, 24, 15, 7.4, Painter.shade(c, 0.7))
-					Painter.disc(img, 25.5, 16.5, 4.3, SKIN)
-					Painter.arc(img, 31, 26, 13, -1.25, 1.25, 4.0, OUTLINE)
-					Painter.arc(img, 31, 26, 13, -1.25, 1.25, 2.2, Color(0.55, 0.36, 0.18))
-					Painter.line(img, 31 + cos(-1.25) * 13, 26 + sin(-1.25) * 13, 31 + cos(1.25) * 13, 26 + sin(1.25) * 13, 1.0, Color(0.95, 0.95, 0.9))
-				"jinete":
-					var horse := Color(0.55, 0.36, 0.2)
-					for lx in [11.0, 15.0, 29.0, 33.0]:
-						Painter.line(img, lx, 32, lx + (1.0 if lx > 20 else -1.0), 43, 3.4, OUTLINE)
-						Painter.line(img, lx, 32, lx + (1.0 if lx > 20 else -1.0), 43, 2.0, Painter.shade(horse, 0.8))
-					_o_ell(img, 22, 31, 14, 7.5, horse)
-					Painter.line(img, 31, 27, 37, 16, 8.0, OUTLINE)
-					Painter.line(img, 31, 27, 37, 16, 6.0, horse)
-					_o_ell(img, 40, 15, 5.4, 3.4, horse)
-					Painter.line(img, 33, 15, 36, 26, 2.4, Color(0.2, 0.14, 0.09))
-					Painter.line(img, 8, 29, 4, 38, 2.6, Color(0.2, 0.14, 0.09))
-					Painter.line(img, 27, 21, 46, 6, 2.6, OUTLINE)
-					Painter.line(img, 27, 21, 46, 6, 1.4, Color(0.85, 0.86, 0.9))
-					_o_ell(img, 22, 20, 5.6, 7.4, c)
-					_o_disc(img, 22, 10.6, 4.6, SKIN)
-					Painter.ellipse(img, 22, 8.2, 5.2, 3.6, Color(0.62, 0.64, 0.68))
-			var tex := ImageTexture.create_from_image(img)
-			unit_tex[type].append(tex)
+## Icono cuadrado (64x64) de una unidad con el color de un equipo, para menús e informes.
+func unit_icon(type: String, team: int) -> Texture2D:
+	var key := "%s#%d" % [type, team]
+	var t: Texture2D = _icons.get(key)
+	if t != null:
+		return t
+	var sh := sheet(type).get_image()
+	var cp := ArtUnits.cell_px(type)
+	var layers: Array[Image] = []
+	for l in 3:
+		layers.append(sh.get_region(ArtUnits.frame_rect(type, 0, l)))
+	var tc: Color = Defs.PLAYER_COLORS[team % 4]
+	var tm := layers[1]
+	for y in tm.get_height():
+		for x in tm.get_width():
+			var p := tm.get_pixel(x, y)
+			if p.a > 0.0:
+				tm.set_pixel(x, y, Color(minf(1.0, p.r * tc.r * 1.15), minf(1.0, p.g * tc.g * 1.15), minf(1.0, p.b * tc.b * 1.15), p.a))
+	var out := Image.create(cp.x, cp.y, false, Image.FORMAT_RGBA8)
+	out.fill(Color(0, 0, 0, 0))
+	for l in 3:
+		out.blend_rect(layers[l], Rect2i(0, 0, cp.x, cp.y), Vector2i.ZERO)
+	var used := out.get_used_rect()
+	if used.size.x < 2 or used.size.y < 2:
+		used = Rect2i(0, 0, cp.x, cp.y)
+	var crop := out.get_region(used)
+	var side := 64
+	var k := minf(float(side - 4) / float(crop.get_width()), float(side - 4) / float(crop.get_height()))
+	var w := maxi(1, int(round(crop.get_width() * k)))
+	var h := maxi(1, int(round(crop.get_height() * k)))
+	crop.resize(w, h, Image.INTERPOLATE_LANCZOS)
+	var icon := Image.create(side, side, false, Image.FORMAT_RGBA8)
+	icon.fill(Color(0, 0, 0, 0))
+	icon.blend_rect(crop, Rect2i(0, 0, w, h), Vector2i((side - w) / 2, (side - h) / 2))
+	t = ImageTexture.create_from_image(icon)
+	_icons[key] = t
+	return t
 
 # ------------------------------------------------------------------ edificios
 
 func _build_buildings() -> void:
-	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "torre": 64, "muralla": 64, "puerta": 64}
+	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64}
 	for type in sizes:
 		var px: int = sizes[type]
 		var ss := ArtBuildings.SS

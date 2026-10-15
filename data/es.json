@@ -25,18 +25,34 @@
  "u_piquero": "Piquero",
  "u_arquero": "Arquero",
  "u_jinete": "Jinete",
+ "u_espadachin": "Espadachín",
+ "u_ballestero": "Ballestero",
+ "u_explorador": "Explorador",
+ "u_caballero": "Caballero",
+ "u_ariete": "Ariete",
+ "u_barco_pesca": "Barco de pesca",
+ "u_barco_transporte": "Barco de transporte",
+ "u_galera": "Galera de guerra",
+ "u_galeon": "Galeón",
+ "us_barco_pesca": "Pesquero",
+ "us_barco_transporte": "Transporte",
+ "us_galera": "Galera",
  "b_centro": "Centro urbano",
  "b_casa": "Casa",
  "b_almacen": "Almacén",
  "b_cuartel": "Cuartel",
  "b_arqueria": "Arquería",
  "b_establo": "Establo",
+ "b_taller": "Taller",
+ "b_puerto": "Puerto",
  "b_torre": "Torre",
  "b_granja": "Granja",
  "res_food": "comida",
  "res_wood": "madera",
  "res_gold": "oro",
  "build": "Construir",
+ "military": "Militares",
+ "unload": "Desembarcar",
  "attack_move": "Atacar",
  "stop": "Detener",
  "rally": "Reunión",
@@ -52,6 +68,7 @@
  "place_done": "Listo",
  "place_hint": "Colocar %s (%s).\nArrastra para mover y pulsa Construir.",
  "place_farm_hint": "%s: toca cada casilla donde quieras sembrar.\nPulsa Listo al terminar.",
+ "place_dock_hint": "%s (%s): colócalo en la orilla, con al menos 2 casillas de mar abierto al lado.\nArrastra para mover y pulsa Construir.",
  "queue_label": "En cola (toca para cancelar):",
  "queue_blocked": "Población al límite: ¡construye casas!",
  "tip_train": "Entrena unidades con los botones de la derecha.",
@@ -60,6 +77,8 @@
  "builders": "Constructores: %d",
  "gives_pop": "Aporta %d de población",
  "unit_stats": "Ataque %d · Alcance %.1f · Velocidad %.1f",
+ "unit_stats_peace": "No ataca · Velocidad %.1f",
+ "passengers": "Pasajeros: %d / %d",
  "n_selected": "%d unidades seleccionadas",
  "st_idle": "Inactivo",
  "st_move": "En marcha",
@@ -69,6 +88,8 @@
  "st_return": "Llevando recursos",
  "st_build": "Construyendo",
  "st_attack": "Atacando",
+ "st_board": "Subiendo a bordo",
+ "st_fish": "Pescando",
  "err_place": "No se puede colocar ahí",
  "err_cost": "Recursos insuficientes",
  "err_age": "Requiere la Edad Feudal",
@@ -76,6 +97,9 @@
  "err_nounits": "Selecciona aldeanos",
  "err_invalid": "Orden no válida",
  "err_unreachable": "No hay camino hasta ese lugar",
+ "err_noshore": "No hay orilla cerca para desembarcar",
+ "err_cant": "Esas unidades no pueden atacar a eso",
+ "err_full": "El barco va lleno",
  "toast_start": "Reúne recursos, construye casas y entrena un ejército.",
  "toast_built": "%s terminado",
  "toast_alarm": "¡Te están atacando!",
@@ -128,7 +152,7 @@
   ],
   [
    "Construir",
-   "Selecciona aldeanos, pulsa Construir, elige edificio, arrástralo hasta un sitio verde y pulsa Construir. Las granjas (60 de madera) se siembran tocando casillas y se agotan."
+   "Selecciona aldeanos y pulsa Construir. Primera página: casa, granja, almacén, Puerto y Centro urbano. «Militares»: cuartel, arquería, establo y taller. «Defensas» (Edad Feudal): murallas, puertas y torres. Arrastra el edificio hasta un sitio verde y pulsa Construir. Las granjas (60 de madera) se siembran tocando casillas y se agotan."
   ],
   [
    "Defensas",
@@ -139,20 +163,32 @@
    "Toca un edificio y usa sus botones. «Reunión» fija dónde aparecen las tropas nuevas."
   ],
   [
+   "Soldados",
+   "Cuartel: piquero (y espadachín en la Edad Feudal). Arquería: arquero y ballestero. Establo: explorador (rápido y con mucha vista), jinete y caballero (pesado). Taller: ariete."
+  ],
+  [
+   "Puerto y barcos",
+   "El Puerto se construye en la costa, junto a mar abierto. Entrena barcos de pesca (recogen el pescado y lo llevan al Puerto), barcos de transporte (8 pasajeros), galeras y galeones (Edad Feudal, con cañones). Toca un banco de peces con un barco de pesca para pescar."
+  ],
+  [
+   "Embarcar",
+   "Con tropas seleccionadas, toca un transporte tuyo: caminan hasta la orilla y suben. Con el transporte seleccionado, toca el mar para navegar y toca tierra para desembarcar allí (o usa «Desembarcar»). Si el barco se hunde, se pierde lo que lleva. Los soldados de tierra no pueden atacar barcos, pero los arqueros sí."
+  ],
+  [
    "Economía",
    "Los aldeanos llevan comida, madera y oro al Centro o al Almacén. Las Casas suben el límite de población (máximo 80)."
   ],
   [
    "Edades",
-   "La Edad Feudal (en el Centro urbano: Avanzar, 400 comida y 200 oro) desbloquea arqueros, jinetes, establos y torres."
+   "La Edad Feudal (en el Centro urbano: Avanzar, 400 comida y 200 oro) desbloquea arqueros, ballesteros, espadachines, exploradores, jinetes, caballeros, arietes, galeras, galeones y torres."
   ],
   [
    "Combate",
-   "Piquero vence a jinete, jinete vence a arquero, arquero vence a piquero. «Atacar» manda al grupo a un punto y lucharán contra lo que encuentren."
+   "Piquero y ballestero frenan a la caballería; el jinete y el caballero arrasan arqueros y ballesteros; el arquero castiga al piquero; el espadachín (Cuartel, Edad Feudal) vence al piquero y destruye arietes. El ariete (Taller) derriba edificios pero apenas se defiende: escóltalo. «Atacar» manda al grupo a un punto y lucharán contra lo que encuentren."
   ],
   [
    "Mapa",
-   "Hay continentes, islas y mar, con montañas por las que no se puede pasar y zonas de nieve y de desierto. Todas las bases están en el continente principal; las islas son decorativas por ahora (aún no hay barcos). Lo no explorado está en la niebla. Hay día y noche, y a veces llueve."
+   "Hay continentes, islas y mar, con montañas por las que no se puede pasar y zonas de nieve y de desierto. Todas las bases están en el continente principal; las islas se alcanzan en barco (gran parte del oro y las bayas está allí). Lo no explorado está en la niebla. Hay día y noche, y a veces llueve."
   ],
   [
    "Batería",
@@ -180,5 +216,8 @@
  "toast_wall_gap": "Una pieza de muralla quedó encerrada y se ha cancelado (coste devuelto)",
  "toast_built_f": "%s terminada",
  "toast_gather": "Recolectando %s",
- "toast_rally_res": "Los nuevos aldeanos recolectarán %s"
+ "toast_rally_res": "Los nuevos aldeanos recolectarán %s",
+ "toast_unloaded": "Desembarcan %d unidades",
+ "toast_unload_go": "El barco navega hacia la orilla",
+ "toast_board_go": "%d unidades suben al barco"
 }

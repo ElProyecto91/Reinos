@@ -24,12 +24,12 @@ func _init():
 		x += im.get_width() + 6
 	x = 10
 	y = 700
-	for type in ["aldeano", "piquero", "arquero", "jinete"]:
+	for type in ["aldeano", "piquero", "arquero", "jinete", "galera"]:
 		for team in 2:
-			var im: Image = art.unit_tex[type][team].get_image()
+			var im: Image = art.unit_icon(type, team).get_image()
 			im.clear_mipmaps()
-			sheet.blend_rect(im, Rect2i(0, 0, 48, 48), Vector2i(x, y))
-			x += 52
+			sheet.blend_rect(im, Rect2i(0, 0, 64, 64), Vector2i(x, y))
+			x += 68
 	var ri: Image = art.res_atlas.get_image()
 	ri.clear_mipmaps()
 	sheet.blend_rect(ri, Rect2i(0, 0, ri.get_width(), ri.get_height()), Vector2i(500, 700))

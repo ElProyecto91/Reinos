@@ -484,6 +484,19 @@ func _consume_events() -> void:
 					var dcol := Color(0.95, 0.72, 0.42) if dk == "wood" else (Color(1.0, 0.86, 0.25) if dk == "gold" else Color(1.0, 0.45, 0.4))
 					_fx({"t": "text", "p": dp + Vector2(randf_range(-10, 10), -26), "s": "+%d" % int(ev["n"]), "col": dcol, "life": 1.2})
 					sfx("deposit", dp)
+			"cannon":
+				if _seen(ev["from"]) or _seen(ev["to"]):
+					var cf: Vector2 = ev["from"]
+					var ct: Vector2 = ev["to"]
+					_fx({"t": "cannon", "p": cf + (ct - cf).normalized() * 12.0 + Vector2(0, -10), "q": ct, "life": 0.55})
+					sfx("cannon", cf)
+			"boarded":
+				if ev["owner"] == human:
+					sfx("splash", ev["pos"])
+			"unloaded":
+				if ev["owner"] == human:
+					sfx("splash", ev["pos"])
+					hud.toast(Lang.t("toast_unloaded", [int(ev["n"])]), Color(0.7, 1, 0.7))
 			"wall_gap":
 				if ev["owner"] == human:
 					hud.toast(Lang.t("toast_wall_gap"), Color(1, 0.8, 0.45))
@@ -627,8 +640,19 @@ func pick_at(wp: Vector2) -> Ent:
 	var best: Ent = null
 	var bd := 1e9
 	var probe := wp + Vector2(0, 10.0)
-	for u in sim.query(wp, 36.0):
+	for u in sim.query(wp, 50.0):
 		if u.is_building or not can_see_unit(u):
+			continue
+		if u.naval:
+			# un barco es largo: se acierta sobre el casco o los mástiles, no sólo junto al centro
+			var top := Renderer.unit_top(u)
+			var dxn := absf(wp.x - u.pos.x)
+			var dyn := absf(wp.y - (u.pos.y - top * 0.4))
+			if dxn < float(Renderer.SHIP_HALF[u.type]) + 6.0 and dyn < top * 0.5 + 8.0:
+				var dn := Vector2(dxn * 0.6, dyn).length()
+				if dn < bd:
+					bd = dn
+					best = u
 			continue
 		var d := probe.distance_to(u.pos)
 		if d < u.radius + 14.0 and d < bd:
@@ -833,6 +857,8 @@ func _tap(sp: Vector2) -> void:
 			# si se toca junto a un árbol, mina o granja, el punto de reunión se pega al recurso
 			# (los aldeanos nuevos irán a recolectarlo solos)
 			var rtile := _res_at(wp)
+			if rtile.x < 0 and b.def.get("dock", false):
+				rtile = _fish_at(wp)
 			var rl := rtile if rtile.x >= 0 else sim.tile_of(wp)
 			sim.cmd_set_rally(human, b.id, rl)
 			add_marker(sim.tile_center(rl), Color(0.5, 1, 0.5) if rtile.x >= 0 else Color(1, 1, 1))
@@ -854,6 +880,8 @@ func _tap(sp: Vector2) -> void:
 	var hit := pick_at(wp)
 	if hit != null and hit.owner == human:
 		var mine := sel_own_units()
+		if _try_board(hit, mine):
+			return
 		if hit.is_building and hit.progress < 1.0 and _count_type(mine, "aldeano") > 0:
 			sim.cmd_help_build(human, _ids_of(mine, "aldeano"), hit.id)
 			add_marker(hit.center(), Color(0.4, 1, 0.5))
@@ -874,6 +902,63 @@ func _count_type(list: Array[Ent], t: String) -> int:
 			n += 1
 	return n
 
+func _any_naval(list: Array[Ent]) -> bool:
+	for e in list:
+		if e.naval:
+			return true
+	return false
+
+func _fisher_ids(list: Array[Ent]) -> Array:
+	var out: Array = []
+	for e in list:
+		if e.def.get("fisher", false):
+			out.append(e.id)
+	return out
+
+func _cargo_ship_ids(list: Array[Ent]) -> Array:
+	var out: Array = []
+	for e in list:
+		if e.naval and not e.cargo.is_empty():
+			out.append(e.id)
+	return out
+
+## Si `hit` es un transporte propio y hay soldados/aldeanos de tierra seleccionados, ordena embarcar.
+func _try_board(hit: Ent, mine: Array[Ent]) -> bool:
+	if hit.is_building or not hit.naval or int(hit.def.get("cargo", 0)) <= 0:
+		return false
+	var land: Array = []
+	for e in mine:
+		if not e.naval:
+			land.append(e.id)
+	if land.is_empty():
+		return false
+	var r := sim.cmd_board(human, land, hit.id)
+	if r != Sim.OK:
+		_err(r)
+		return true
+	add_marker(hit.pos, Color(0.4, 0.8, 1.0))
+	hud.toast(Lang.t("toast_board_go", [land.size()]), Color(0.7, 0.9, 1.0))
+	sfx("order")
+	return true
+
+## Casilla con peces cerca del punto tocado (sólo la usan los barcos de pesca).
+func _fish_at(wp: Vector2) -> Vector2i:
+	var t := sim.tile_of(wp)
+	var best := Vector2i(-1, -1)
+	var bd := 1e9
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var q := t + Vector2i(dx, dy)
+			if not sim.in_bounds(q) or not fog.explored_at(q):
+				continue
+			if sim.rtype[q.y * sim.W + q.x] != Defs.R_FISH:
+				continue
+			var d := wp.distance_to(sim.tile_center(q))
+			if d < 34.0 and d < bd:
+				bd = d
+				best = q
+	return best
+
 func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
 	## Orden contextual con la selección actual sobre un punto del mundo.
 	if hit == null:
@@ -884,17 +969,47 @@ func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
 		if attackers.is_empty() and not hit.is_building:
 			attackers = _ids_of(mine)
 		if not attackers.is_empty():
-			sim.cmd_attack(human, attackers, hit.id)
+			if sim.cmd_attack(human, attackers, hit.id) == 0:
+				_err(Sim.ERR_CANT)
+				return
 			add_marker(hit.center(), Color(1, 0.3, 0.25))
 			sfx("order")
 			return
 		select_ents([hit])
 		return
 	if hit != null:
+		if _try_board(hit, mine):
+			return
 		select_ents([hit])
 		return
 	var tile := sim.tile_of(wp)
 	if not mine.is_empty():
+		var fishers := _fisher_ids(mine)
+		if not fishers.is_empty():
+			var ft := _fish_at(wp)
+			if ft.x >= 0:
+				sim.cmd_gather(human, fishers, ft)
+				add_marker(sim.tile_center(ft), Color(0.5, 1, 0.5))
+				hud.toast(Lang.t("toast_gather", [_res_name(ft)]), Color(0.7, 1, 0.7))
+				sfx("order")
+				return
+		if sim.terrain[tile.y * sim.W + tile.x] != Defs.T_WATER:
+			var carriers := _cargo_ship_ids(mine)
+			if not carriers.is_empty():
+				var ur := sim.cmd_unload(human, carriers, tile)
+				if ur != Sim.OK:
+					_err(ur)
+					return
+				add_marker(sim.tile_center(tile), Color(0.4, 0.8, 1.0))
+				hud.toast(Lang.t("toast_unload_go"), Color(0.7, 0.9, 1.0))
+				sfx("order")
+				var rest: Array[Ent] = []
+				for e in mine:
+					if not carriers.has(e.id):
+						rest.append(e)
+				if not rest.is_empty():
+					sim.cmd_move(human, _ids_of(rest), tile, false)
+				return
 		var rt := _res_at(wp)
 		if rt.x >= 0 and _count_type(mine, "aldeano") > 0:
 			sim.cmd_gather(human, _ids_of(mine, "aldeano"), rt)
@@ -902,7 +1017,7 @@ func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
 			hud.toast(Lang.t("toast_gather", [_res_name(rt)]), Color(0.7, 1, 0.7))
 			sfx("order")
 			return
-		if not fog.explored_at(tile) and sim.terrain[tile.y * sim.W + tile.x] == Defs.T_WATER:
+		if not fog.explored_at(tile) and sim.terrain[tile.y * sim.W + tile.x] == Defs.T_WATER and not _any_naval(mine):
 			return
 		sim.cmd_move(human, _ids_of(mine), tile, false)
 		add_marker(sim.tile_center(tile), Color(1, 1, 1))
@@ -953,6 +1068,9 @@ func err_text(code: int) -> String:
 		Sim.ERR_QUEUE: return Lang.t("err_queue")
 		Sim.ERR_NOUNITS: return Lang.t("err_nounits")
 		Sim.ERR_UNREACHABLE: return Lang.t("err_unreachable")
+		Sim.ERR_NOSHORE: return Lang.t("err_noshore")
+		Sim.ERR_CANT: return Lang.t("err_cant")
+		Sim.ERR_FULL: return Lang.t("err_full")
 	return Lang.t("err_invalid")
 
 func _err(code: int) -> void:
@@ -1079,6 +1197,17 @@ func ui_age_up() -> void:
 		hud.toast(Lang.t("toast_aging"), Color(1, 0.9, 0.5))
 	else:
 		_err(r)
+
+func ui_unload() -> void:
+	var cs := _cargo_ship_ids(sel_own_units())
+	if cs.is_empty():
+		_err(Sim.ERR_NOUNITS)
+		return
+	var r := sim.cmd_unload(human, cs, Vector2i(-1, -1))
+	if r != Sim.OK:
+		_err(r)
+		return
+	sfx("order")
 
 func ui_stop() -> void:
 	var us := sel_own_units()

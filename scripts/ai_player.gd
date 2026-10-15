@@ -16,6 +16,8 @@ var wave_start: float = 0.0
 var target_pi: int = -1
 var last_defend: float = -100.0
 var store_cd: float = 0.0
+var port_cd: float = 0.0              # espera entre búsquedas de sitio de puerto
+var port_spot_cache := Vector2i(-2, -2)
 var rng := RandomNumberGenerator.new()
 
 func _init(s: Sim, idx: int, d: int) -> void:
@@ -40,10 +42,17 @@ func _think() -> void:
 		return
 	var vills: Array = []
 	var army: Array = []
+	var boats: Array = []
+	var navy: Array = []
 	for u in sim.units:
 		if u.alive and u.owner == pi:
 			if u.type == "aldeano":
 				vills.append(u)
+			elif u.naval:
+				if bool(u.def.get("fisher", false)):
+					boats.append(u)
+				elif u.is_military():
+					navy.append(u)
 			else:
 				army.append(u)
 	var done := {}
@@ -61,9 +70,11 @@ func _think() -> void:
 	if tc != null:
 		base = tc.tile + Vector2i(1, 1)
 	store_cd = maxf(0.0, store_cd - interval)
+	port_cd = maxf(0.0, port_cd - interval)
 	_economy(p, vills, base, done, inprog)
+	_fishing(p, boats)
 	_build(p, vills, base, done, inprog)
-	_train(p, vills, done)
+	_train(p, vills, done, boats, navy, army)
 	_age(p, vills, done)
 	_military(p, army, base)
 
@@ -214,9 +225,20 @@ func _spot(type: String, base: Vector2i, rmin: int, rmax: int) -> Vector2i:
 		var ang := rng.randf() * TAU
 		var r := rng.randf_range(float(rmin), float(rmax))
 		var t := base + Vector2i(int(round(cos(ang) * r)), int(round(sin(ang) * r)))
-		if sim.can_place(type, t):
+		if sim.can_place(type, t) and _spaced(type, t):
 			return t
 	return Vector2i(-1, -1)
+
+## Deja una casilla libre alrededor de cada edificio: así las casas no forman una muralla (ni siquiera
+## tocándose por las esquinas) que deje a los aldeanos encerrados en un rincón de su propia base.
+func _spaced(type: String, t: Vector2i) -> bool:
+	var size: int = Defs.BUILDINGS[type]["size"]
+	for dy in range(-1, size + 1):
+		for dx in range(-1, size + 1):
+			var q := t + Vector2i(dx, dy)
+			if sim.in_bounds(q) and sim.occ[q.y * sim.W + q.x] != 0:
+				return false
+	return true
 
 func _builder_for(p: Player, tile: Vector2i, vills: Array, n: int = 1) -> Array:
 	var sorted_v := vills.duplicate()
@@ -253,6 +275,39 @@ func _try_build(p: Player, type: String, base: Vector2i, vills: Array, rmin: int
 		if sim.cmd_build(pi, ids, type, t) > 0:
 			return true
 	return false
+
+## Busca en la costa próxima un sitio de puerto desde el que se llegue a peces y lo construye.
+func _try_port(p: Player, base: Vector2i, vills: Array) -> void:
+	port_cd = 45.0
+	var best := Vector2i(-1, -1)
+	var bd := 1e9
+	var from := sim.nearest_free_tile(base + Vector2i(0, 3), 6)
+	for r in range(4, 30):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var t := base + Vector2i(dx, dy)
+				if not sim.in_bounds(t) or not sim.can_place("puerto", t) or not _spaced("puerto", t):
+					continue
+				var d := Vector2(dx, dy).length()
+				if d >= bd:
+					continue
+				var di := sim.dock_info(t, 3)
+				if sim.find_fish(di["spawn"], 18).x < 0:
+					continue
+				if not sim.can_reach_building(from, "puerto", t):
+					continue
+				bd = d
+				best = t
+		if best.x >= 0:
+			break
+	if best.x < 0:
+		port_cd = 120.0
+		return
+	var ids := _builder_for(p, best, vills, 2)
+	if not ids.is_empty():
+		sim.cmd_build(pi, ids, "puerto", best)
 
 func _far_store(p: Player, vills: Array, kind: String) -> bool:
 	## Si un recolector de `kind` está lejos de cualquier punto de entrega, construye almacén cerca.
@@ -315,6 +370,12 @@ func _build(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: D
 	if n >= min_vills:
 		if int(done.get("cuartel", 0)) + int(inprog.get("cuartel", 0)) < (1 if p.age == 0 else barracks_target):
 			_try_build(p, "cuartel", base, vills, 6, 13, 2)
+		if p.age >= 1 and diff >= 1 and n >= min_vills + 6:
+			if int(done.get("taller", 0)) + int(inprog.get("taller", 0)) < 1 and int(p.res.wood) >= 320:
+				_try_build(p, "taller", base, vills, 7, 14, 2)
+		# Puerto: sólo si hay costa con peces cerca (la comida del mar libera aldeanos de las granjas)
+		if n >= min_vills + 3 and port_cd <= 0.0 and int(done.get("puerto", 0)) + int(inprog.get("puerto", 0)) < 1 and int(p.res.wood) >= 220:
+			_try_port(p, base, vills)
 		if p.age >= 1:
 			var ranges: int = 1 if diff < 2 else 2
 			if int(done.get("arqueria", 0)) + int(inprog.get("arqueria", 0)) < ranges:
@@ -346,17 +407,59 @@ func _can_spend(p: Player, cost: Dictionary, saving: bool) -> bool:
 			return false
 	return true
 
-func _train(p: Player, vills: Array, done: Dictionary) -> void:
+## Elige qué soldado entrenar en un edificio (mezcla de contrarios, sólo lo que se puede pagar y permite la edad).
+func _pick_unit(b: Ent, p: Player, rams: int) -> String:
+	var opts: Array = []        # [tipo, peso]
+	match b.type:
+		"cuartel":
+			opts = [["piquero", 1.0 if p.age == 0 else 0.55], ["espadachin", 0.0 if p.age == 0 else 0.45]]
+		"arqueria":
+			opts = [["arquero", 0.6], ["ballestero", 0.4]]
+		"establo":
+			opts = [["jinete", 0.5], ["caballero", 0.5]]
+		"taller":
+			opts = [["ariete", 1.0 if rams < [1, 2, 3][diff] else 0.0]]
+		_:
+			var tr: Array = b.def["train"]
+			opts = [[tr[0], 1.0]]
+	var total := 0.0
+	var ok: Array = []
+	for o in opts:
+		var ud: Dictionary = Defs.UNITS[o[0]]
+		if float(o[1]) > 0.0 and p.age >= int(ud["age"]) and Defs.can_afford(p.res, ud["cost"]):
+			ok.append(o)
+			total += float(o[1])
+	if ok.is_empty():
+		return ""
+	var r := rng.randf() * total
+	for o in ok:
+		r -= float(o[1])
+		if r <= 0.0:
+			return o[0]
+	return ok[0][0]
+
+func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array, army: Array) -> void:
 	var n := vills.size()
 	var saving := _saving_for_age(p, vills, done)
 	var queued_v := 0
+	var queued_boats := 0
+	var queued_ships := 0
+	var rams := 0
+	for u in army:
+		if u.type == "ariete":
+			rams += 1
 	for b in sim.buildings:
 		if not (b.alive and b.owner == pi and b.progress >= 1.0):
 			continue
-		if b.type == "centro":
-			for q in b.queue:
-				if q == "aldeano":
-					queued_v += 1
+		for q in b.queue:
+			if b.type == "centro" and q == "aldeano":
+				queued_v += 1
+			elif q == "barco_pesca":
+				queued_boats += 1
+			elif q == "galera" or q == "galeon":
+				queued_ships += 1
+			elif q == "ariete":
+				rams += 1
 	for b in sim.buildings:
 		if not (b.alive and b.owner == pi and b.progress >= 1.0):
 			continue
@@ -367,11 +470,34 @@ func _train(p: Player, vills: Array, done: Dictionary) -> void:
 			if n + queued_v < _vill_target(p) and b.queue.size() < 2 and _can_spend(p, Defs.UNITS["aldeano"]["cost"], saving):
 				if sim.cmd_train(pi, b.id, "aldeano") > 0:
 					queued_v += 1
+		elif b.type == "puerto":
+			if n < [12, 10, 9][diff] or b.queue.size() >= 2 or p.pop + p.reserved + b.queue.size() >= p.pop_cap:
+				continue
+			var want_boats: int = [2, 3, 4][diff] + (1 if p.age >= 1 else 0)
+			if boats.size() + queued_boats < want_boats and sim.find_fish(b.dock_tile, 18).x >= 0 and _can_spend(p, Defs.UNITS["barco_pesca"]["cost"], saving):
+				if sim.cmd_train(pi, b.id, "barco_pesca") > 0:
+					queued_boats += 1
+			elif p.age >= 1 and navy.size() + queued_ships < [1, 2, 3][diff] and not saving:
+				var ship := "galeon" if (diff == 2 and navy.size() >= 2 and Defs.can_afford(p.res, Defs.UNITS["galeon"]["cost"])) else "galera"
+				if Defs.can_afford(p.res, Defs.UNITS[ship]["cost"]) and sim.cmd_train(pi, b.id, ship) > 0:
+					queued_ships += 1
 		else:
 			if n < [12, 10, 9][diff]:
 				continue
-			if b.queue.size() < 2 and p.pop + p.reserved + b.queue.size() < p.pop_cap and _can_spend(p, Defs.UNITS[tr[0]]["cost"], saving):
-				sim.cmd_train(pi, b.id, tr[0])
+			if b.queue.size() < 2 and p.pop + p.reserved + b.queue.size() < p.pop_cap:
+				var ut := _pick_unit(b, p, rams)
+				if ut != "" and _can_spend(p, Defs.UNITS[ut]["cost"], saving):
+					if sim.cmd_train(pi, b.id, ut) > 0 and ut == "ariete":
+						rams += 1
+
+## Los barcos de pesca ociosos buscan peces solos.
+func _fishing(p: Player, boats: Array) -> void:
+	for bt in boats:
+		if bt.state != Sim.S_IDLE:
+			continue
+		var t := sim.find_fish(sim.tile_of(bt.pos), 18)
+		if t.x >= 0:
+			sim.cmd_gather(pi, [bt.id], t)
 
 # ------------------------------------------------------------------ militar
 

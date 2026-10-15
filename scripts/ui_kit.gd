@@ -90,10 +90,10 @@ func _draw() -> void:
 			var tx := ir.end.x + 8.0
 			var tw := size.x - tx - 6.0
 			if has_sub:
-				draw_string(font, Vector2(tx, cy - 3.0), text, HORIZONTAL_ALIGNMENT_LEFT, tw, font_size, tcol)
+				draw_string(font, Vector2(tx, cy - 3.0), text, HORIZONTAL_ALIGNMENT_LEFT, tw, _fit(font, text, tw, font_size), tcol)
 				_draw_sub(font, tx, cy + sub_size + 1.0, tw, false, scol, fade)
 			else:
-				draw_string(font, Vector2(tx, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, tw, font_size, tcol)
+				draw_string(font, Vector2(tx, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, tw, _fit(font, text, tw, font_size), tcol)
 		elif show_text:
 			# icono arriba, texto abajo
 			var ih := size.y - (sub_size + font_size + 8.0 if has_sub else font_size + 10.0)
@@ -101,17 +101,17 @@ func _draw() -> void:
 			var ir := Rect2((size.x - ih) * 0.5, 4.0, ih, ih)
 			_draw_icon(ir, fade)
 			var y := ir.end.y + font_size - 2.0
-			draw_string(font, Vector2(0, y), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, font_size - 3, tcol)
+			draw_string(font, Vector2(0, y), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size - 3), tcol)
 			if has_sub:
 				_draw_sub(font, 0.0, y + sub_size, size.x, true, scol, fade)
 		else:
 			_draw_icon(Rect2((size.x - isz) * 0.5, (size.y - isz) * 0.5, isz, isz), fade)
 	else:
 		if has_sub:
-			draw_string(font, Vector2(0, cy - 2.0), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, font_size, tcol)
+			draw_string(font, Vector2(0, cy - 2.0), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size), tcol)
 			_draw_sub(font, 0.0, cy + sub_size + 2.0, size.x, true, scol, fade)
 		else:
-			draw_string(font, Vector2(0, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, font_size, tcol)
+			draw_string(font, Vector2(0, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size), tcol)
 	if badge != "":
 		var bw := maxf(26.0, 12.0 + badge.length() * 11.0)
 		var br := Rect2(size.x - bw - 3.0, 3.0, bw, 24.0)
@@ -121,6 +121,13 @@ func _draw() -> void:
 		var pr := Rect2(5, size.y - 9, size.x - 10, 5)
 		draw_rect(pr, Color(0, 0, 0, 0.6), true)
 		draw_rect(Rect2(pr.position, Vector2(pr.size.x * clampf(progress, 0.0, 1.0), pr.size.y)), Color(0.45, 0.8, 1.0), true)
+
+## Tamaño de letra reducido hasta que el texto quepa en `w` píxeles (mínimo 11).
+func _fit(font: Font, s: String, w: float, fs: int) -> int:
+	var f := fs
+	while f > 11 and font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, f).x > w:
+		f -= 1
+	return f
 
 func _draw_sub(font: Font, x: float, y: float, w: float, center: bool, col: Color, fade: float) -> void:
 	if cost.is_empty():
@@ -222,6 +229,13 @@ static func draw_symbol(c: CanvasItem, kind: String, r: Rect2, a: float = 1.0) -
 				c.draw_line(Vector2(m.x - s * 0.3, m.y - s * 0.26 + i * s * 0.17), Vector2(m.x + s * 0.3, m.y - s * 0.26 + i * s * 0.17), Color(0.6, 0.78, 0.25, a), maxf(2.5, s * 0.08))
 		"back":
 			c.draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.32, 0), m + Vector2(s * 0.05, -s * 0.32), m + Vector2(s * 0.05, -s * 0.12), m + Vector2(s * 0.34, -s * 0.12), m + Vector2(s * 0.34, s * 0.12), m + Vector2(s * 0.05, s * 0.12), m + Vector2(s * 0.05, s * 0.32)]), Color(0.95, 0.9, 0.8, a))
+		"anchor":
+			var ac := Color(0.82, 0.88, 0.95, a)
+			var aw := maxf(3.0, s * 0.09)
+			c.draw_arc(m + Vector2(0, -s * 0.32), s * 0.08, 0, TAU, 12, ac, aw * 0.7)
+			c.draw_line(m + Vector2(0, -s * 0.24), m + Vector2(0, s * 0.34), ac, aw)
+			c.draw_line(m + Vector2(-s * 0.18, -s * 0.1), m + Vector2(s * 0.18, -s * 0.1), ac, aw)
+			c.draw_arc(m + Vector2(0, s * 0.1), s * 0.3, 0.15, PI - 0.15, 14, ac, aw)
 		"ok":
 			c.draw_line(m + Vector2(-s * 0.3, 0.0), m + Vector2(-s * 0.08, s * 0.24), Color(0.4, 1, 0.5, a), maxf(4.0, s * 0.12))
 			c.draw_line(m + Vector2(-s * 0.08, s * 0.24), m + Vector2(s * 0.32, -s * 0.28), Color(0.4, 1, 0.5, a), maxf(4.0, s * 0.12))

@@ -430,6 +430,10 @@ func _update_place_bar() -> void:
 		place_ok.text = Lang.t("place_done")
 		place_ok.icon_kind = "ok"
 		place_ok.set_meta("farm", true)
+	elif t == "puerto":
+		place_label.text = Lang.t("place_dock_hint", [nm, _cost_str(cost)])
+		place_ok.text = Lang.t("place_build")
+		place_ok.icon_kind = "ok"
 	elif t == "muralla":
 		var n := maxi(1, g.place_tiles().size())
 		var tot := {}
@@ -489,6 +493,12 @@ func _update_grid(p: Player) -> void:
 		if grid[i].visible != _used[i]:
 			grid[i].visible = _used[i]
 
+## Nombre corto para los botones (las celdas son estrechas); si no hay, el nombre completo.
+func _short_name(ut: String) -> String:
+	var k := "us_" + ut
+	var s := Lang.t(k)
+	return s if s != k else Lang.t("u_" + ut)
+
 func _fill_grid(p: Player) -> int:
 	var g := game
 	if g.placing_type != "":
@@ -502,7 +512,7 @@ func _fill_grid(p: Player) -> int:
 			for ut: String in b.def["train"]:
 				var ud: Dictionary = Defs.UNITS[ut]
 				var okage := p.age >= int(ud["age"])
-				_slot(n, Lang.t("u_" + ut), g.art.unit_tex[ut][g.human % 4], "", ud["cost"], res, okage, (func() -> void: g.ui_train(ut)), false, -1.0, "" if okage else Lang.t("needs_feudal"))
+				_slot(n, _short_name(ut), g.art.unit_icon(ut, g.human % 4), "", ud["cost"], res, okage, (func() -> void: g.ui_train(ut)), false, -1.0, "" if okage else Lang.t("needs_feudal"))
 				n += 1
 			if b.type == "centro":
 				if p.aging:
@@ -518,14 +528,21 @@ func _fill_grid(p: Player) -> int:
 	if not units.is_empty():
 		var has_v := false
 		var has_m := false
+		var has_cargo := false
 		for u in units:
 			if u.type == "aldeano":
 				has_v = true
-			else:
+			elif u.def.get("military", false):
 				has_m = true
-		if has_v and (grid_mode == "build" or grid_mode == "defense"):
+			if u.naval and not u.cargo.is_empty():
+				has_cargo = true
+		if has_v and (grid_mode == "build" or grid_mode == "military" or grid_mode == "defense"):
 			var idx := 0
-			var list: Array = Defs.BUILD_MENU if grid_mode == "build" else Defs.DEFENSE_MENU
+			var list: Array = Defs.BUILD_MENU
+			if grid_mode == "military":
+				list = Defs.MILITARY_MENU
+			elif grid_mode == "defense":
+				list = Defs.DEFENSE_MENU
 			for t: String in list:
 				var cost: Dictionary = Defs.FARM_COST if t == "granja" else Defs.BUILDINGS[t]["cost"]
 				var okage := t == "granja" or p.age >= int(Defs.BUILDINGS[t]["age"])
@@ -538,6 +555,11 @@ func _fill_grid(p: Player) -> int:
 				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, "" if okage else Lang.t("needs_feudal"))
 				idx += 1
 			if grid_mode == "build":
+				_slot(idx, Lang.t("military"), g.art.building_tex["cuartel"][g.human % 4], "", {}, res, true, (func() -> void:
+					grid_mode = "military"
+					g.sfx("click")
+					refresh_now()))
+				idx += 1
 				_slot(idx, Lang.t("defenses"), g.art.building_tex["muralla"][g.human % 4], "", {}, res, p.age >= 1, (func() -> void:
 					grid_mode = "defense"
 					g.sfx("click")
@@ -552,6 +574,9 @@ func _fill_grid(p: Player) -> int:
 				grid_mode = "build"
 				g.sfx("click")
 				refresh_now()))
+			n += 1
+		if has_cargo:
+			_slot(n, Lang.t("unload"), null, "anchor", {}, res, true, (func() -> void: g.ui_unload()))
 			n += 1
 		if has_m:
 			_slot(n, Lang.t("attack_move"), null, "sword", {}, res, true, (func() -> void: g.ui_toggle_amove()), g.amove_mode)
@@ -771,7 +796,7 @@ class InfoPanel extends Control:
 			var q := qbtns[i]
 			if show and i < b.queue.size():
 				q.visible = true
-				q.icon = g.art.unit_tex[b.queue[i]][g.human % 4]
+				q.icon = g.art.unit_icon(b.queue[i], g.human % 4)
 				q.progress = (1.0 - b.train_left / maxf(b.train_total, 0.01)) if (i == 0 and b.producing) else -1.0
 				q.toggled = i == 0 and b.blocked_pop
 				q.queue_redraw()
@@ -782,10 +807,13 @@ class InfoPanel extends Control:
 		match u.state:
 			Sim.S_MOVE: return Lang.t("st_move")
 			Sim.S_GATHER_GO, Sim.S_GATHER:
+				if u.def.get("fisher", false):
+					return Lang.t("st_fish")
 				return Lang.t("st_gather_" + (u.carry_kind if u.carry_kind != "" else "wood"))
 			Sim.S_RETURN: return Lang.t("st_return")
 			Sim.S_BUILD_GO, Sim.S_BUILD: return Lang.t("st_build")
 			Sim.S_ATTACK_GO, Sim.S_ATTACK: return Lang.t("st_attack")
+			Sim.S_BOARD_GO: return Lang.t("st_board")
 		return Lang.t("st_idle")
 
 	func _hp_bar(font: Font, x: float, y: float, w: float, e: Ent) -> void:
@@ -805,7 +833,7 @@ class InfoPanel extends Control:
 		var font := get_theme_default_font()
 		if list.size() == 1:
 			var e: Ent = list[0]
-			var tex: Texture2D = g.art.building_tex[e.type][e.owner % 4] if e.is_building else g.art.unit_tex[e.type][e.owner % 4]
+			var tex: Texture2D = g.art.building_tex[e.type][e.owner % 4] if e.is_building else g.art.unit_icon(e.type, e.owner)
 			draw_texture_rect(tex, Rect2(12, 10, 64, 64), false)
 			var name_txt := Lang.t(("b_" if e.is_building else "u_") + e.type)
 			var oc: Color = Defs.PLAYER_COLORS[e.owner % 4]
@@ -831,11 +859,15 @@ class InfoPanel extends Control:
 						draw_string(font, Vector2(12, size.y - 20), Lang.t("tip_train"), HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 17, Color(0.7, 0.66, 0.55))
 			else:
 				draw_string(font, Vector2(88, 96), _state_text(e), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 21, Color(0.9, 0.85, 0.7))
-				if e.carry_amt >= 1.0 and e.type == "aldeano":
+				if e.carry_amt >= 1.0 and (e.type == "aldeano" or e.def.get("fisher", false)):
 					UiButton.draw_symbol(self, e.carry_kind, Rect2(88, 106, 26, 26))
 					draw_string(font, Vector2(120, 126), "%d" % int(e.carry_amt), HORIZONTAL_ALIGNMENT_LEFT, 80, 22, Color(0.95, 0.9, 0.8))
+				if int(e.def.get("cargo", 0)) > 0 and e.owner == g.human:
+					draw_string(font, Vector2(88, 122), Lang.t("passengers", [e.cargo.size(), int(e.def["cargo"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, Color(0.7, 0.9, 1.0))
 				var ud: Dictionary = e.def
 				var stat := Lang.t("unit_stats", [int(ud["atk"] * Defs.AGE_STAT_MULT[g.sim.players[e.owner].age]), (ud["range"] as float), (ud["speed"] as float)])
+				if float(ud["atk"]) <= 0.0:
+					stat = Lang.t("unit_stats_peace", [(ud["speed"] as float)])
 				draw_string(font, Vector2(12, size.y - 14), stat, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, Color(0.75, 0.7, 0.58))
 		else:
 			var counts: Dictionary = {}
@@ -846,7 +878,7 @@ class InfoPanel extends Control:
 			var y := 48.0
 			for t in counts:
 				var ow: int = (list[0] as Ent).owner
-				draw_texture_rect(g.art.unit_tex[t][ow % 4], Rect2(x, y, 52, 52), false)
+				draw_texture_rect(g.art.unit_icon(t, ow), Rect2(x, y, 52, 52), false)
 				draw_string(font, Vector2(x + 54, y + 34), "×%d" % counts[t], HORIZONTAL_ALIGNMENT_LEFT, 70, 26, Color(0.98, 0.94, 0.82))
 				x += 150.0
 				if x + 140.0 > size.x:

@@ -1,12 +1,14 @@
 # Reinos
 
 Estrategia en tiempo real para Android, estilo Age of Empires, **100 % en español, sin internet y sin coste**.
-Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por código: no hay ficheros de imagen ni de música.
+Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por código: no hay imágenes dibujadas a mano ni música. (Las hojas de unidades se «hornean» una vez con `tools/bake_units.gd` a `art/units/*.png` para que el juego arranque rápido; ver «Arte».)
 
 - 1 jugador contra 1–3 IAs (aliadas entre sí por defecto, o todos contra todos).
 - Mapa plano de 128×128, 192×192 o 256×256 casillas con continentes, islas y mar, cordilleras infranqueables y climas (nieve, templado, desierto).
-- Aspecto: terreno dibujado por shader (agua con olas y espuma, relieve, montañas), ciclo día/noche, nubes, lluvia ocasional, árboles por bioma, aldeanos animados y poblados a escala del mapa (el centro urbano es un ayuntamiento con campanario, no un castillo).
-- Edades Oscura y Feudal, economía (comida, madera, oro), granjas, cuartel, arquería, establo, murallas, puertas y torres.
+- Aspecto: terreno dibujado por shader (agua con olas y espuma, relieve, montañas), ciclo día/noche, nubes, lluvia ocasional, árboles por bioma, poblados a escala del mapa (el centro urbano es un ayuntamiento con campanario, no un castillo). Las personas son figuras articuladas con animación de caminar y de oficio (talar, picar, cultivar, construir, golpear, apuntar) y tres capas para teñir el uniforme con el color del equipo.
+- Edades Oscura y Feudal, economía (comida, madera, oro), granjas, cuartel, arquería, establo, taller de asedio, murallas, puertas y torres.
+- Soldados: piquero (Edad Oscura) y, en Feudal, arquero, jinete, espadachín (vence a piqueros y arietes), ballestero (daño alto, cadencia lenta, bueno contra caballería), explorador (rápido, ve lejos), caballero (caballería pesada) y ariete (asedio: casi inmune a flechas y torres, destroza edificios; se hace en el taller). Hay tabla de ventajas entre tipos (`Defs.BONUS`).
+- **Puerto y flota:** el puerto se construye en la orilla (la casilla de salida al agua se comprueba). Entrena barco de pesca (recoge los peces del mar y los lleva al puerto) y barco de transporte (8 pasajeros) desde la Edad Oscura, y galera de guerra y galeón con cañones en Feudal. Embarcar: con soldados/aldeanos seleccionados toca el transporte junto a la orilla. Desembarcar: selecciona el transporte y toca tierra (o pulsa **Desembarcar**). Los barcos se hunden con su carga.
 - Sin campaña, sin música. Solo sonidos de acción y ambiente.
 - Perfiles de batería: Ahorro (20 fps), Normal (30 fps), Alta (60 fps, resolución nativa).
 
@@ -18,9 +20,10 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 | APK | Se compila en GitHub Actions (no aquí) y, con la clave de firma configurada, se publica en *Releases*. **Sin probar en un móvil real.** Ver «Seguridad». |
 | Sonido | Sintetizado por código; **nadie lo ha escuchado**. Puede sonar mal. Se regenera con `tools/gen_audio.py`. |
 | Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. Los shaders de terreno/nubes/lluvia duplican el coste por fotograma en ese entorno; el perfil Ahorro usa una variante más ligera del terreno. Cuenta con **menos autonomía** que antes. |
-| Islas | Son decorativas: no hay barcos, así que no se puede llegar a ellas. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. |
+| Islas y barcos | Se llega a las islas con transportes. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. Barcos, pesca, embarque y combate naval están probados con pruebas automáticas y toques simulados, **no en un móvil**. |
 | Guardar/cargar partida | No existe. |
-| IA | Sube de edad, construye economía, ejército y torres, y ataca. **No usa murallas ni puertas.** |
+| IA | Sube de edad, construye economía, ejército, torres, taller (con arietes), puerto y barcos de pesca, y ataca por tierra. **No usa murallas ni puertas, y no invade por mar**: sus galeras defienden y los barcos hostiles que se acercan los ataca, pero no desembarca tropas. |
+| Rendimiento del arte nuevo | Las figuras nuevas son más detalladas que las anteriores. En el PC de pruebas (sin GPU) un fotograma con muchas unidades cuesta ~10-15 % más que antes. Las texturas de unidades ocupan unos **39 MB** como máximo (se cargan al hacer falta). Sin medir en móvil. |
 
 ## Seguridad
 
@@ -77,7 +80,8 @@ Para publicar en Google Play necesitarías un `.aab` firmado con tu propia clave
 
 - Un dedo: tocar selecciona o da órdenes; arrastrar mueve la cámara. Mantener pulsado y arrastrar: recuadro de selección.
 - Dos dedos: zoom. Minimapa (abajo a la izquierda): toca para saltar.
-- Aldeanos → **Construir** → edificio → mueve el fantasma → **Construir**. **Defensas** agrupa murallas (arrastra para trazar la línea, o toca inicio y final), puertas (sobre un tramo de muralla) y torres.
+- Aldeanos → **Construir** → edificio → mueve el fantasma → **Construir**. **Militares** agrupa cuartel, arquería, establo y taller; **Defensas** agrupa murallas (arrastra para trazar la línea, o toca inicio y final), puertas (sobre un tramo de muralla) y torres. El **Puerto** va en la orilla (el fantasma se pone verde si hay mar junto a él).
+- Barcos de pesca: tócalos y toca un banco de peces (hay que haberlo explorado navegando cerca). Con el puerto seleccionado, **Reunión** sobre un banco de peces hace que los barcos nuevos pesquen solos.
 - Pausa (☰ arriba a la derecha): velocidad ×1/×2/×3, sonido, auto-pausa, perfil de rendimiento.
 
 ## Batería
@@ -101,10 +105,13 @@ scripts/        código del juego (GDScript)
   sim.gd        simulación pura (sin dibujo): unidades, edificios, combate, murallas
   ai_player.gd  IA
   game.gd       cámara, entrada táctil, bucle; renderer.gd / art.gd / painter.gd dibujan
+  art_units.gd  figuras de personas (esqueleto, herramientas, cascos); art_mounts.gd caballos y ariete; art_ships.gd barcos
+  art_buildings.gd edificios por capas (base, equipo)
   hud.gd        interfaz táctil; ui_kit.gd botones; menu.gd menú
   settings.gd   perfiles de batería y calidad (se guardan en user://ajustes.cfg)
 data/es.json    todos los textos en español (para traducir: otro JSON y cambiar Lang.FILE)
 audio/*.wav     sonidos generados por tools/gen_audio.py
+art/units/      hojas de unidades horneadas por tools/bake_units.gd (3 capas: fondo, equipo, primer plano)
 tools/          pruebas automáticas y utilidades (no se exportan al APK)
 ```
 
@@ -117,9 +124,13 @@ Con el ejecutable de Godot 4.4.1 (`$GODOT`):
 $GODOT --headless --path . --script res://tools/sim_test.gd -- seed=3 min=14 n=3 size=192
 $GODOT --headless --path . --script res://tools/wall_test.gd
 
+# puerto, pesca, transporte, desembarco y combate naval (lógica pura; seeds 1, 2, 3, 5, 8 probadas)
+$GODOT --headless --path . --script res://tools/naval_test.gd -- seed=1
+
 # interfaz con toques simulados (necesita xvfb o pantalla)
 xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test2.tscn --rendering-driver opengl3
-# también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), ui_test6 (recolectar oro), battery_test
+# también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), ui_test6 (recolectar oro),
+# ui_test7 (puerto: construir, entrenar barcos, pescar, embarcar, desembarcar, atacar), battery_test, perf_test
 
 # aviso de actualización (necesita el servidor de pruebas en marcha)
 python3 tools/mock_release_server.py 18765 &
@@ -127,6 +138,16 @@ $GODOT --headless --path . --script res://tools/updater_test.gd -- port=18765
 
 # utilidades: capturas del mundo (world_shot, en el minimapa con at=minimap), estadísticas de mapa (map_stats),
 # alcance de recursos desde cada base (reach_dbg), depuración de la economía de la IA (ai_food_dbg)
+```
+
+## Arte
+
+Las figuras y edificios se dibujan por código (`art_units.gd`, `art_mounts.gd`, `art_ships.gd`, `art_buildings.gd`) con un rasterizador propio (`painter.gd`). Para no pagar ~3 s de arranque, las hojas de unidades están horneadas en `art/units/*.png`; si no existen se generan al vuelo (más lento). **Si cambias el dibujo de una unidad, vuelve a hornear y a importar:**
+
+```
+$GODOT --headless --path . --script res://tools/bake_units.gd
+$GODOT --headless --path . --import
+# ver cada unidad: tools/dump_units.gd → /tmp/units_<tipo>.png; captura en juego: tools/units_shot.tscn
 ```
 
 ## Licencias

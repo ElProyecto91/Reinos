@@ -441,6 +441,105 @@ static func paint_base(cv: Cv, type: String) -> void:
 			cv.rect(54, 84, 14, 3.4, INK)
 			cv.rect(54.6, 84.4, 12.8, 2.6, Color(0.44, 0.30, 0.17))
 			cv.rect(55, 84.8, 12, 1.4, Color(0.30, 0.55, 0.70))
+		"taller":
+			yard(cv, 48, 88, 45, 8, 61)
+			cast_shadow(cv, 8, 76, 88, 38)
+			side_face(cv, 76, 88, 56, 12, 7, sh(PLANK, 0.60))
+			planks(cv, 8, 56, 68, 32, sh(PLANK, 0.78), 62, true)
+			stone(cv, 8, 84, 68, 4, STONE, 63, 3.0)
+			# nave abierta con el interior en sombra
+			cv.rect(15, 61, 54, 25, INK)
+			cv.rect(16, 62, 52, 24, Color(0.17, 0.12, 0.08))
+			cv.rect(16, 62, 52, 5, Color(0, 0, 0, 0.35))
+			# ariete a medio montar sobre caballetes
+			for tx in [24.0, 54.0]:
+				cv.line(tx - 5, 86, tx, 76, 2.4, INK)
+				cv.line(tx + 5, 86, tx, 76, 2.4, INK)
+				cv.line(tx - 5, 86, tx, 76, 1.4, Color(0.52, 0.36, 0.18))
+				cv.line(tx + 5, 86, tx, 76, 1.4, Color(0.52, 0.36, 0.18))
+			cv.rect(18, 72.4, 46, 6.4, INK)
+			cv.rect(18.6, 73.0, 44.8, 5.2, Color(0.54, 0.36, 0.18))
+			cv.rect(18.6, 73.0, 44.8, 1.4, Color(0.70, 0.50, 0.26))
+			cv.rect(60, 71.6, 7, 8, INK)
+			cv.tri(60.6, 72.2, 60.6, 79.0, 67.0, 75.6, Color(0.66, 0.68, 0.74))
+			for rx in [30.0, 44.0]:
+				cv.rect(rx, 72.4, 2.4, 6.4, Color(0.30, 0.31, 0.36))
+			# rueda apoyada
+			cv.disc(24, 66, 5.4, INK)
+			cv.disc(24, 66, 4.5, Color(0.48, 0.32, 0.16))
+			cv.disc(24, 66, 1.4, INK)
+			for k in 4:
+				var ang := float(k) * PI / 4.0
+				cv.line(24 - cos(ang) * 4.2, 66 - sin(ang) * 4.2, 24 + cos(ang) * 4.2, 66 + sin(ang) * 4.2, 0.9, INK)
+			# postes
+			for px in [8.0, 42.0, 74.0]:
+				cv.rect(px - 2.4, 54, 5.0, 33, INK)
+				cv.rect(px - 1.8, 54, 3.8, 33, Color(0.50, 0.35, 0.19))
+				cv.rect(px - 1.8, 54, 1.3, 33, Color(0.66, 0.48, 0.27))
+			roof_side(cv, Vector2(82, 54), Vector2(94, 47), Vector2(78, 28), Vector2(68, 30), sh(SHINGLE, 0.62), 5)
+			tiles(cv, 3, 82, 54, 30, 14, SHINGLE, 65, 4.0)
+			cv.rect(3, 54, 79, 2.4, Color(0, 0, 0, 0.30))
+			# troncos apilados y tablones
+			for r in 3:
+				for k in range(3 - r):
+					var lx := 80.0 + k * 5.0 + r * 2.5
+					var ly := 86.0 - r * 4.4
+					cv.disc(lx, ly, 2.8, INK)
+					cv.disc(lx, ly, 2.2, Color(0.74, 0.55, 0.30))
+					cv.disc(lx, ly, 0.9, Color(0.52, 0.36, 0.18))
+			for k in 4:
+				cv.rect(70, 84 - k * 1.8, 12, 1.5, INK)
+				cv.rect(70.4, 84.3 - k * 1.8, 11.2, 0.9, sh(PLANK, 1.0 + k * 0.05))
+			barrel(cv, 12, 88, 3.2)
+		"puerto":
+			yard(cv, 48, 88, 45, 8, 71, true)
+			cast_shadow(cv, 10, 76, 88, 38)
+			var weather := Color(0.56, 0.52, 0.47)
+			side_face(cv, 76, 88, 56, 12, 7, sh(weather, 0.62))
+			stone(cv, 10, 78, 66, 10, STONE_BLUE, 72, 3.5)
+			side_face(cv, 76, 88, 78, 12, 7, sh(STONE_BLUE, 0.62))
+			planks(cv, 10, 56, 66, 22, weather, 73, true)
+			cv.rect(10, 56, 66, 4, Color(0, 0, 0, 0.30))
+			# portalón de carga y letrero con ancla
+			door(cv, 36, 62, 18, 16, PLANK, false)
+			cv.rect(32, 76, 26, 2.6, Color(0.74, 0.72, 0.68))
+			cv.line(45, 56, 45, 61, 1.2, INK)
+			cv.disc(45, 52.5, 5.4, INK)
+			cv.disc(45, 52.5, 4.6, Color(0.84, 0.80, 0.66))
+			cv.line(45, 49.5, 45, 56, 1.2, Color(0.22, 0.24, 0.30))
+			cv.line(42, 52.2, 48, 52.2, 1.1, Color(0.22, 0.24, 0.30))
+			cv.line(42.2, 54.4, 45, 56.4, 1.1, Color(0.22, 0.24, 0.30))
+			cv.line(47.8, 54.4, 45, 56.4, 1.1, Color(0.22, 0.24, 0.30))
+			cv.disc(45, 49.6, 1.0, Color(0.22, 0.24, 0.30))
+			window(cv, 16, 64, 6, 6, Color(0.28, 0.40, 0.50))
+			window(cv, 64, 64, 6, 6, Color(0.28, 0.40, 0.50))
+			roof_side(cv, Vector2(82, 56), Vector2(94, 49), Vector2(78, 28), Vector2(66, 32), sh(SLATE, 0.66), 5)
+			tiles(cv, 4, 82, 56, 30, 14, SLATE, 74, 4.0)
+			cv.rect(4, 56, 78, 2.6, Color(0, 0, 0, 0.32))
+			# grúa de carga a la derecha
+			cv.rect(86.4, 38, 3.6, 50, INK)
+			cv.rect(87.0, 38, 2.4, 50, Color(0.46, 0.31, 0.16))
+			cv.line(88, 38, 74, 47, 3.0, INK)
+			cv.line(88, 38, 74, 47, 1.8, Color(0.52, 0.36, 0.18))
+			cv.line(88, 40, 74, 48.5, 0.7, Color(0.9, 0.9, 0.85))
+			cv.line(75, 47.5, 75, 62, 0.8, Color(0.20, 0.15, 0.10))
+			crate(cv, 72, 62, 6)
+			# red tendida a secar
+			for px in [6.0, 24.0]:
+				cv.rect(px - 0.9, 70, 1.8, 18, INK)
+				cv.rect(px - 0.4, 70, 0.9, 18, Color(0.52, 0.36, 0.18))
+			cv.line(6, 72, 24, 72, 1.2, Color(0.40, 0.28, 0.14))
+			for k in 7:
+				cv.line(7.5 + k * 2.4, 72, 7.5 + k * 2.4, 82, 0.5, Color(0.55, 0.70, 0.56, 0.85))
+			for k in 5:
+				cv.line(7.0, 73 + k * 2.2, 23.0, 73.4 + k * 2.2, 0.5, Color(0.55, 0.70, 0.56, 0.85))
+			barrel(cv, 60, 87, 3.4)
+			barrel(cv, 66, 88, 3.0)
+			crate(cv, 80, 82, 5)
+			# bote varado
+			cv.ell(18, 91, 9.6, 3.2, INK)
+			cv.ell(18, 90.6, 8.8, 2.6, Color(0.50, 0.33, 0.17))
+			cv.ell(17, 89.8, 7.0, 1.0, Color(0.64, 0.46, 0.24))
 		"torre":
 			yard(cv, 32, 57, 22, 5, 51)
 			cast_shadow(cv, 16, 47, 56, 40)
@@ -515,6 +614,14 @@ static func paint_team(cv: Cv, type: String, c: Color) -> void:
 			pennant(cv, 42, 14, 24, c, 9.0, 6.0)
 			banner(cv, 24, 62, 6.0, 12.0, c)
 			cv.rect(31, 61, 22, 1.8, c)
+		"taller":
+			pennant(cv, 40, 14, 24, c, 9.0, 6.0)
+			banner(cv, 66, 66, 6.0, 12.0, c)
+			cv.rect(18, 62, 46, 1.8, c)
+		"puerto":
+			pennant(cv, 40, 12, 22, c, 9.0, 6.0)
+			banner(cv, 62, 64, 6.0, 12.0, c)
+			banner(cv, 28, 64, 6.0, 12.0, c)
 		"torre":
 			pennant(cv, 32, -2, 10, c, 9.0, 6.0)
 			cv.rect(28.4, 31.0, 7.2, 7.0, INK)

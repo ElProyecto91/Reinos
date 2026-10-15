@@ -19,6 +19,10 @@ var last_hit: float = -100.0
 var qmark: int = 0
 var off: Vector2 = Vector2.ZERO       # desvío de formación
 var face: int = 1                      # hacia dónde mira (+1 derecha, -1 izquierda); sólo dibujo
+var naval: bool = false                # barco: sólo se mueve por agua
+var stowed: bool = false               # a bordo de un barco (fuera de la partida hasta desembarcar)
+var cargo: Array = []                  # barco de transporte: unidades (Ent) a bordo
+var unload_at: Vector2i = Vector2i(-1, -1)   # barco: casilla de tierra donde desembarcar al llegar
 
 # --- unidad ---
 var state: int = 0
@@ -55,6 +59,8 @@ var blocked_pop: bool = false
 var rally: Vector2i = Vector2i(-1, -1)
 var builders: int = 0
 var bacc: int = 0
+var orient: int = 2                   # puerto: lado del agua (0 norte, 1 este, 2 sur, 3 oeste)
+var dock_tile: Vector2i = Vector2i(-1, -1)   # puerto: casilla de agua donde aparecen los barcos
 
 func center() -> Vector2:
 	if is_building:

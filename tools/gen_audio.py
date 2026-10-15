@@ -130,6 +130,31 @@ def s_crash():
     out[: len(crack)] += crack * 0.8
     return out
 
+def s_cannon():
+    # cañonazo: golpe grave que baja de tono + estampido de ruido + eco lejano
+    d = 1.1
+    t = t_(d)
+    boom = np.sin(2 * np.pi * (95 * np.exp(-t * 5.5) + 38) * t) * np.exp(-t * 4.2)
+    blast = lowpass(noise(d), 900) * np.exp(-t * 7.0) * 1.6
+    crack = highpass(noise(0.05), 2200) * env_exp(int(0.05 * SR), 90)
+    out = boom * 1.2 + blast
+    out[: len(crack)] += crack * 0.6
+    echo = np.roll(out, int(0.18 * SR)) * 0.28
+    echo[: int(0.18 * SR)] = 0
+    return out + echo
+
+def s_splash():
+    # chapoteo suave: ruido filtrado con ataque lento y burbujas
+    d = 0.55
+    t = t_(d)
+    sw = bandpass(noise(d), 300, 2400) * np.sin(np.pi * np.minimum(t / d, 1.0)) ** 0.7 * np.exp(-t * 3.0)
+    for k, f in enumerate([520, 700, 910]):
+        tt = t_(0.09)
+        b = np.sin(2 * np.pi * (f + 900 * tt) * tt) * np.exp(-tt * 45)
+        o = int((0.10 + 0.11 * k) * SR)
+        sw[o:o + len(b)] += b * 0.35
+    return sw
+
 def s_trained():
     a = bell(392.0, 0.4, 7)
     b = bell(523.25, 0.55, 6)
@@ -241,6 +266,8 @@ def make_loop(x, name, peak=0.6):
 if __name__ == "__main__" and len(sys.argv) > 1:
     # python3 tools/gen_audio.py deposit  -> solo regenera esos sonidos, sin tocar el resto
     only = {"deposit": lambda: save("deposit", s_deposit(), 0.7),
+            "cannon": lambda: save("cannon", s_cannon(), 0.9),
+            "splash": lambda: save("splash", s_splash(), 0.6),
             "rain": lambda: make_loop(amb_rain(), "rain", 0.5)}
     for a in sys.argv[1:]:
         only[a]()
@@ -260,6 +287,8 @@ elif __name__ == "__main__":
     save("victory", s_victory(), 0.85)
     save("defeat", s_defeat(), 0.8)
     save("error", s_error(), 0.6)
+    save("cannon", s_cannon(), 0.9)
+    save("splash", s_splash(), 0.6)
     make_loop(amb_wind(), "wind", 0.5)
     make_loop(amb_sea(), "sea", 0.6)
     make_loop(amb_forest(), "forest", 0.6)

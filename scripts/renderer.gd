@@ -41,8 +41,11 @@ static func draw_entities(g: Game, c: CanvasItem) -> void:
 	for u in ul:
 		if g.sel_set.has(u.id):
 			var p: Vector2 = u.ppos.lerp(u.pos, g.interp)
-			c.draw_set_transform(p + Vector2(0, 3), 0.0, Vector2(1.0, 0.55))
-			c.draw_arc(Vector2.ZERO, u.radius + 5.0, 0.0, TAU, 24, Color(0.2, 1.0, 0.3, 0.95), 2.2)
+			var rr: float = u.radius + 5.0
+			if u.naval:
+				rr = float(SHIP_HALF[u.type]) + 3.0
+			c.draw_set_transform(p + Vector2(0, 3), 0.0, Vector2(1.0, 0.55 if not u.naval else 0.30))
+			c.draw_arc(Vector2.ZERO, rr, 0.0, TAU, 24, Color(0.2, 1.0, 0.3, 0.95), 2.2)
 			c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	for u in ul:
 		_draw_unit(g, c, u)
@@ -129,10 +132,71 @@ static func _unit_target_pos(g: Game, u: Ent) -> Vector2:
 			return t.center() if t.is_building else t.pos
 	return Vector2.INF
 
+const WS_FOOT := 0.62          # píxeles de mundo por píxel lógico de la hoja (gente, caballos, ariete)
+const WS_SHIP := 0.58
+const SHADOWS := {"jinete": Vector2(46, 13), "explorador": Vector2(44, 13), "caballero": Vector2(50, 14), "ariete": Vector2(60, 14)}
+const SHIP_HALF := {"barco_pesca": 19.0, "barco_transporte": 24.0, "galera": 31.0, "galeon": 31.0}
+const RANGED := ["arquero", "ballestero"]
+
+static func ws_of(u: Ent) -> float:
+	return WS_SHIP if u.naval else WS_FOOT
+
+## Altura aproximada (px de mundo) por encima de los pies/flotación, para colocar barras de vida e iconos.
+static func unit_top(u: Ent) -> float:
+	return float(ArtUnits.CELLS[u.type][3]) * ws_of(u) * 0.86
+
+static func _trade_of(g: Game, u: Ent) -> int:
+	if u.target_tile.x >= 0:
+		match g.sim.rtype[u.target_tile.y * g.sim.W + u.target_tile.x]:
+			Defs.R_TREE:
+				return ArtUnits.TRADE_CHOP
+			Defs.R_GOLD:
+				return ArtUnits.TRADE_MINE
+			Defs.R_BERRY, Defs.R_FARM:
+				return ArtUnits.TRADE_FARM
+	match u.carry_kind:
+		"gold":
+			return ArtUnits.TRADE_MINE
+		"food":
+			return ArtUnits.TRADE_FARM
+	return ArtUnits.TRADE_CHOP
+
+## Fotograma de la hoja según lo que hace la unidad.
+static func _unit_frame(g: Game, u: Ent, moving: bool) -> int:
+	var t := g.anim_t + float(u.id) * 0.37
+	var type := u.type
+	if u.naval:
+		if moving:
+			return int(t * 5.0) % 4
+		if u.state == Sim.S_GATHER and u.def.get("fisher", false):
+			return 4 + int(t * 1.6) % 2
+		if u.state == Sim.S_ATTACK and u.def.get("military", false):
+			return 4 + int(t * 2.2) % 2
+		return int(t * 1.4) % 4
+	if moving:
+		return ArtUnits.F_WALK + int(t * float(u.def["speed"]) * 3.4) % 4
+	match u.state:
+		Sim.S_GATHER:
+			if type == "aldeano":
+				return ArtUnits.F_ACT + 2 * _trade_of(g, u) + int(t * 2.6) % 2
+		Sim.S_BUILD:
+			if type == "aldeano":
+				return ArtUnits.F_ACT + 2 * ArtUnits.TRADE_BUILD + int(t * 2.6) % 2
+		Sim.S_ATTACK:
+			if type == "aldeano":
+				return ArtUnits.F_ACT + 2 * ArtUnits.TRADE_CHOP + int(t * 3.0) % 2
+			var ph := fposmod(t * 1.7, 1.0)
+			if type in RANGED:
+				return 5 if ph < 0.25 else (7 if ph < 0.7 else 6)
+			return 5 if ph < 0.6 else 6
+	return ArtUnits.F_IDLE
+
 static func _draw_unit(g: Game, c: CanvasItem, u: Ent) -> void:
 	var p: Vector2 = u.ppos.lerp(u.pos, g.interp)
-	var tex: Texture2D = g.art.unit_tex[u.type][u.owner % 4]
-	var sz := 36.0 if u.type != "jinete" else 42.0
+	var type := u.type
+	var sheet: Texture2D = g.art.sheet(type)
+	var cell: Array = ArtUnits.CELLS[type]
+	var ws := ws_of(u)
 	# orientación: hacia donde anda o hacia lo que trabaja/ataca
 	var moving := u.ppos.distance_to(u.pos) > 0.12
 	if moving:
@@ -142,38 +206,47 @@ static func _draw_unit(g: Game, c: CanvasItem, u: Ent) -> void:
 		var tp := _unit_target_pos(g, u)
 		if tp != Vector2.INF and absf(tp.x - p.x) > 3.0:
 			u.face = 1 if tp.x > p.x else -1
-	# animación según lo que hace
-	var ph := g.anim_t * (14.0 if u.type == "jinete" else 11.0) + float(u.id) * 1.7
-	var bob := 0.0
-	var rot := 0.0
+	var fr := _unit_frame(g, u, moving)
 	var lunge := 0.0
-	if moving:
-		bob = absf(sin(ph)) * (3.0 if u.type == "jinete" else 2.3)
-		rot = sin(ph) * 0.07
-	elif u.state == Sim.S_GATHER:
-		var a := sin(ph * 0.55)
-		rot = a * 0.30 * float(u.face)
-		bob = absf(a) * 1.2
-	elif u.state == Sim.S_BUILD:
-		var a2 := absf(sin(ph * 0.7))
-		bob = a2 * 3.0
-		rot = sin(ph * 0.7) * 0.10 * float(u.face)
-	elif u.state == Sim.S_ATTACK:
-		var a3 := maxf(0.0, sin(ph * 0.6))
-		rot = a3 * 0.30 * float(u.face)
-		lunge = a3 * 4.0 * float(u.face)
-	# sombra propia (no oscila con el paso)
-	c.draw_texture_rect(g.art.shadow_tex, Rect2(p.x - 11.0 + lunge * 0.5 + 1.5, p.y - 1.0, 22.0, 9.0), false)
-	c.draw_set_transform(p + Vector2(lunge, 0.0), rot, Vector2(float(u.face), 1.0))
-	c.draw_texture_rect(tex, Rect2(-sz * 0.5, -sz * 0.72 - bob, sz, sz), false)
+	if u.state == Sim.S_ATTACK and not moving and not u.naval and fr == 6:
+		lunge = 3.0 * float(u.face)
+	var team := u.owner % 4
+	var tcol: Color = g.art.team_mod[team]
+	var cp := ArtUnits.cell_px(type)
+	var k: float = cell[4]
+	var dst := Rect2(-float(cell[2]) * ws, -float(cell[3]) * ws, float(cp.x) / k * ws, float(cp.y) / k * ws)
+	if u.naval:
+		_draw_ship_water(c, u, p, moving)
+	else:
+		var sd: Vector2 = SHADOWS.get(type, Vector2(22, 9))
+		c.draw_texture_rect(g.art.shadow_tex, Rect2(p.x - sd.x * 0.5 + lunge * 0.5 + 1.5, p.y - sd.y * 0.1, sd.x, sd.y), false)
+	c.draw_set_transform(p + Vector2(lunge, 0.0), 0.0, Vector2(float(u.face), 1.0))
+	c.draw_texture_rect_region(sheet, dst, Rect2(ArtUnits.frame_rect(type, fr, 0)))
+	c.draw_texture_rect_region(sheet, dst, Rect2(ArtUnits.frame_rect(type, fr, 1)), tcol)
+	c.draw_texture_rect_region(sheet, dst, Rect2(ArtUnits.frame_rect(type, fr, 2)))
 	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	if u.carry_amt >= 1.0 and u.type == "aldeano":
-		_draw_carry(c, p + Vector2(11, -22), u.carry_kind, clampf(u.carry_amt / 10.0, 0.0, 1.0))
+	var top := unit_top(u)
+	if u.carry_amt >= 1.0 and (type == "aldeano" or u.def.get("fisher", false)):
+		var co := Vector2(12, -top * 0.8) if type == "aldeano" else Vector2(0, -top - 7.0)
+		_draw_carry(c, p + co, u.carry_kind, clampf(u.carry_amt / (10.0 if type == "aldeano" else float(u.def["carry"])), 0.0, 1.0))
 	if u.hp < u.max_hp or g.sel_set.has(u.id):
-		var w := 24.0
+		var w := 24.0 if not u.naval else 34.0
 		var f := clampf(u.hp / u.max_hp, 0.0, 1.0)
-		c.draw_rect(Rect2(p.x - w * 0.5 - 1, p.y - sz * 0.72 - 5, w + 2, 5), Color(0, 0, 0, 0.75), true)
-		c.draw_rect(Rect2(p.x - w * 0.5, p.y - sz * 0.72 - 4, w * f, 3), Color(0.9 - 0.7 * f, 0.25 + 0.65 * f, 0.15), true)
+		c.draw_rect(Rect2(p.x - w * 0.5 - 1, p.y - top - 7, w + 2, 5), Color(0, 0, 0, 0.75), true)
+		c.draw_rect(Rect2(p.x - w * 0.5, p.y - top - 6, w * f, 3), Color(0.9 - 0.7 * f, 0.25 + 0.65 * f, 0.15), true)
+
+## Espuma en la línea de flotación y estela cuando navega.
+static func _draw_ship_water(c: CanvasItem, u: Ent, p: Vector2, moving: bool) -> void:
+	var half: float = SHIP_HALF[u.type]
+	var fc := float(u.face)
+	c.draw_set_transform(p + Vector2(0.0, 1.5), 0.0, Vector2(1.0, 0.26))
+	c.draw_arc(Vector2.ZERO, half, 0.0, TAU, 26, Color(0.10, 0.25, 0.42, 0.28), 5.0)
+	c.draw_arc(Vector2.ZERO, half - 1.0, 0.0, TAU, 26, Color(1.0, 1.0, 1.0, 0.48), 1.8)
+	if moving:
+		for i in 3:
+			c.draw_set_transform(p + Vector2(-fc * (half + 5.0 + i * 9.0), 2.0), 0.0, Vector2(1.0, 0.28))
+			c.draw_arc(Vector2.ZERO, 5.0 + i * 3.0, 0.0, TAU, 14, Color(1.0, 1.0, 1.0, 0.38 - i * 0.11), 1.6)
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 const DIRS8 := [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
 
@@ -261,6 +334,7 @@ const WINDOWS := {
 	"casa": [[14, 41, 6, 6], [40, 41, 6, 6]],
 	"centro": [[18, 68, 8, 8], [66, 68, 8, 8]],
 	"cuartel": [[16, 70, 8, 8], [60, 70, 8, 8]],
+	"puerto": [[16, 64, 6, 6], [64, 64, 6, 6]],
 }
 
 static func _draw_smoke(g: Game, c: CanvasItem, b: Ent, r: Rect2) -> void:
@@ -281,10 +355,41 @@ static func _draw_night_lights(g: Game, c: CanvasItem, b: Ent, r: Rect2) -> void
 		c.draw_rect(Rect2(wr.position.x + wr.size.x * 0.5 - 0.5, wr.position.y, 1.0, wr.size.y), Color(0.35, 0.22, 0.08, 0.7 * g.night), true)
 		c.draw_rect(Rect2(wr.position.x, wr.position.y + wr.size.y * 0.5 - 0.5, wr.size.x, 1.0), Color(0.35, 0.22, 0.08, 0.7 * g.night), true)
 
+## Muelle de madera del puerto: sale de la fachada del lado del mar, junto a la casilla donde atracan los barcos.
+static func _draw_pier(c: CanvasItem, b: Ent) -> void:
+	var dirs := [Vector2(0, -1), Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0)]
+	var dir: Vector2 = dirs[b.orient]
+	var side := Vector2(-dir.y, dir.x)
+	var k := 0
+	if b.dock_tile.x >= 0:
+		k = (b.dock_tile.x - b.tile.x) if (b.orient == 0 or b.orient == 2) else (b.dock_tile.y - b.tile.y)
+	var pk := 0 if k >= 1 else b.size - 1
+	var base := b.rect().get_center() + dir * (float(b.size) * T * 0.5) + side * ((float(pk) + 0.5 - float(b.size) * 0.5) * T)
+	var a := 1.0 if b.progress >= 1.0 else 0.5
+	var p0 := base - dir * 6.0
+	var p1 := base + dir * (T * 1.55)
+	var hw := 9.0
+	var wood := Color(0.60, 0.43, 0.24, a)
+	var dark := Color(0.30, 0.19, 0.09, a)
+	c.draw_colored_polygon(PackedVector2Array([p0 - side * (hw + 1.5), p1 - side * (hw + 1.5), p1 + side * (hw + 1.5), p0 + side * (hw + 1.5)]), dark)
+	c.draw_colored_polygon(PackedVector2Array([p0 - side * hw, p1 - side * hw, p1 + side * hw, p0 + side * hw]), wood)
+	var n := 8
+	for i in range(1, n):
+		var q := p0.lerp(p1, float(i) / float(n))
+		c.draw_line(q - side * hw, q + side * hw, Color(dark.r, dark.g, dark.b, 0.7 * a), 1.0)
+	c.draw_line(p0 - side * hw, p1 - side * hw, Color(0.80, 0.62, 0.36, a), 1.5)
+	for sgn in [-1.0, 1.0]:
+		for t in [0.35, 1.0]:
+			var pp: Vector2 = p0.lerp(p1, float(t)) + side * hw * float(sgn)
+			c.draw_circle(pp, 2.4, dark)
+			c.draw_circle(pp - Vector2(0.5, 0.5), 1.5, Color(0.52, 0.36, 0.20, a))
+
 static func _draw_building(g: Game, c: CanvasItem, b: Ent) -> void:
 	if b.def.get("wall", false):
 		_draw_wall(g, c, b)
 		return
+	if b.def.get("dock", false):
+		_draw_pier(c, b)
 	var tex: Texture2D = g.art.building_tex[b.type][b.owner % 4]
 	var r := b.rect()
 	if b.progress >= 1.0:
@@ -363,6 +468,17 @@ static func _draw_fx(c: CanvasItem, f: Dictionary) -> void:
 			c.draw_circle(p, rad, Color(0.55, 0.5, 0.45, 0.55 * (1.0 - k)))
 			c.draw_circle(p + Vector2(-rad * 0.5, -rad * 0.3), rad * 0.7, Color(0.7, 0.66, 0.6, 0.4 * (1.0 - k)))
 			c.draw_circle(p + Vector2(rad * 0.5, -rad * 0.2), rad * 0.6, Color(0.7, 0.66, 0.6, 0.4 * (1.0 - k)))
+		"cannon":
+			var p: Vector2 = f["p"]
+			var q: Vector2 = f["q"]
+			# fogonazo y humo en la boca; la bala cruza el aire rápido
+			c.draw_circle(p, 9.0 * (1.0 - k) + 2.0, Color(1.0, 0.82, 0.30, 0.9 * (1.0 - k)))
+			c.draw_circle(p + Vector2(7.0 * k, -6.0 * k), 6.0 + 12.0 * k, Color(0.78, 0.78, 0.80, 0.55 * (1.0 - k)))
+			c.draw_circle(p + Vector2(14.0 * k, -12.0 * k), 5.0 + 9.0 * k, Color(0.70, 0.70, 0.72, 0.4 * (1.0 - k)))
+			var bp := p.lerp(q, minf(1.0, k * 1.9))
+			if k < 0.53:
+				c.draw_circle(bp, 3.0, Color(0.08, 0.07, 0.07, 0.95))
+				c.draw_line(bp, bp - (q - p).normalized() * 14.0, Color(0.9, 0.9, 0.9, 0.5), 2.0)
 		"flash":
 			var p: Vector2 = f["p"]
 			c.draw_arc(p, 10.0 + 22.0 * k, 0.0, TAU, 24, Color(1, 1, 1, 0.8 * (1.0 - k)), 3.0)
