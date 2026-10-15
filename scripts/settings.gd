@@ -12,14 +12,16 @@ extends RefCounted
 const PATH := "user://ajustes.cfg"
 const BASE_SIZE := Vector2i(1280, 720)
 const IDLE_FPS := 15          # menús, pausa y fin de partida: el motor casi no hace nada
+const CALM_AFTER := 6.0       # segundos sin tocar la pantalla para pasar a los fps «tranquilos» del perfil
 
-# fps: tope de fotogramas · lowres: dibujar a ~720p y escalar · hud: segundos entre refrescos
+# fps: tope de fotogramas tocando la pantalla · fps_calm: tope tras CALM_AFTER s sin tocarla (mirando la partida);
+# al tocar vuelve a fps · lowres: dibujar a ~720p y escalar · hud: segundos entre refrescos
 # del panel · fog: segundos entre actualizaciones de niebla · idle: segundos sin tocar hasta
 # pausar solo (0 = nunca)
 const PROFILES := [
-	{"id": "ahorro", "fps": 20, "lowres": true, "hud": 0.30, "fog": 0.6, "idle": 90.0},
-	{"id": "equilibrado", "fps": 30, "lowres": true, "hud": 0.20, "fog": 0.4, "idle": 180.0},
-	{"id": "alta", "fps": 60, "lowres": false, "hud": 0.12, "fog": 0.3, "idle": 300.0},
+	{"id": "ahorro", "fps": 20, "fps_calm": 15, "lowres": true, "hud": 0.30, "fog": 0.6, "idle": 90.0},
+	{"id": "equilibrado", "fps": 30, "fps_calm": 20, "lowres": true, "hud": 0.20, "fog": 0.4, "idle": 180.0},
+	{"id": "alta", "fps": 60, "fps_calm": 30, "lowres": false, "hud": 0.12, "fog": 0.3, "idle": 300.0},
 ]
 
 static var profile := 1
@@ -93,6 +95,12 @@ static func apply_display(win: Window = null) -> void:
 	win.content_scale_size = BASE_SIZE
 	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT if bool(v("lowres")) else Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+
+## Mientras se juega: fps normales o «tranquilos» (sin tocar la pantalla; las unidades siguen interpoladas, solo
+## se dibujan menos fotogramas por segundo). Al tocar vuelve el tope normal del perfil.
+static func set_calm(calm: bool) -> void:
+	ensure_loaded()
+	Engine.max_fps = int(v("fps_calm")) if calm else int(v("fps"))
 
 ## Modo de ejecución del motor. playing = partida en marcha y sin pausa.
 static func set_playing(playing: bool) -> void:

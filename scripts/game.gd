@@ -39,6 +39,9 @@ var _autosave_t := AUTOSAVE_SEC
 # bucle
 var _acc := 0.0
 var interp := 0.0
+var _last_xf := Transform2D(Vector2(0, 0), Vector2(0, 0), Vector2(-1, -1))   # última transformación de cámara escrita
+var _tm := 0.0              # reloj de animación de los shaders (agua, nubes, lluvia); se para en pausa
+var _calm := false           # sin tocar la pantalla desde hace CALM_AFTER s: fps «tranquilos» del perfil
 var speed := 1.0
 var paused := false
 var _fog_t := 0.0
@@ -335,6 +338,10 @@ func _process(delta: float) -> void:
 			_atmosphere()
 		_step_sim(delta)
 		_check_idle()
+		var calm := (Time.get_ticks_msec() - _last_input_ms) > int(Settings.CALM_AFTER * 1000.0)
+		if calm != _calm:
+			_calm = calm
+			Settings.set_calm(calm)
 		_autosave_t -= delta
 		if _autosave_t <= 0.0:
 			_autosave_t = AUTOSAVE_SEC
@@ -351,6 +358,8 @@ func _process(delta: float) -> void:
 	if _ui_t <= 0.0:
 		_ui_t = 0.2
 		_prune_selection()
+	if not still:
+		_tick_shader_time(delta)
 	_apply_camera()
 	# Batería: en pausa o con la partida terminada solo se redibuja si algo ha cambiado.
 	var sig := Vector3(cam_pos.x, cam_pos.y, zoom)
@@ -364,6 +373,15 @@ func _process(delta: float) -> void:
 		if _end_timer < 0.0 and not _end_shown:
 			_end_shown = true
 			hud.show_end()
+
+## Los shaders del mundo no usan TIME sino este reloj propio: con TIME el motor redibuja la pantalla entera en cada
+## fotograma aunque no cambie nada (también en pausa y con la partida terminada), y eso gasta batería a cambio de nada.
+func _tick_shader_time(delta: float) -> void:
+	_tm += delta
+	terrain_mat.set_shader_parameter("tm", _tm)
+	_sky_mat.set_shader_parameter("tm", _tm)
+	if _rain_rect.visible:
+		(_rain_rect.material as ShaderMaterial).set_shader_parameter("tm", _tm)
 
 ## Ajusta el motor según el estado: en marcha = fps del perfil y pantalla encendida;
 ## en reposo (pausa, fin de partida) = pocos fps, pantalla libre para apagarse y ambiente en silencio.
@@ -379,6 +397,7 @@ func _update_run_mode() -> void:
 		audio.set_quiet(want == 0)
 	if want == 1:
 		_last_input_ms = Time.get_ticks_msec()
+		_calm = false
 		_dirty = 2
 
 func reset_run_mode() -> void:
@@ -452,7 +471,12 @@ func _apply_camera() -> void:
 			cam_pos[ax] = maxp[ax] * 0.5
 		else:
 			cam_pos[ax] = clampf(cam_pos[ax], lo, hi)
-	get_viewport().canvas_transform = Transform2D(Vector2(zoom, 0), Vector2(0, zoom), _vs * 0.5 - cam_pos * zoom)
+	# Sólo se escribe si cambia: cada escritura al servidor de dibujo cuenta como «hay cambios» y, con el modo de
+	# bajo consumo del motor, obliga a dibujar el fotograma entero aunque no se mueva nada (pausa, fin de partida).
+	var xf := Transform2D(Vector2(zoom, 0), Vector2(0, zoom), _vs * 0.5 - cam_pos * zoom)
+	if xf != _last_xf:
+		_last_xf = xf
+		get_viewport().canvas_transform = xf
 
 func screen_to_world(p: Vector2) -> Vector2:
 	return (p - _vs * 0.5) / zoom + cam_pos

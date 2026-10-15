@@ -5,6 +5,7 @@ shader_type canvas_item;
 uniform sampler2D nz1 : filter_linear_mipmap, repeat_enable;
 uniform float tile_px = 32.0;
 uniform float cover = 0.0;
+uniform float tm = 0.0;      // reloj de animación (lo escribe el juego sólo cuando corre)
 
 varying vec2 wp;
 
@@ -14,7 +15,7 @@ void vertex() {
 
 void fragment() {
 	vec2 q = wp / tile_px;
-	float t = TIME;
+	float t = tm;
 	float c1 = texture(nz1, q * 0.010 + vec2(t * 0.0022, t * 0.0011)).r;
 	float c2 = texture(nz1, q * 0.023 + vec2(-t * 0.0016, t * 0.0019) + 0.5).g;
 	float c = c1 * 0.6 + c2 * 0.4;

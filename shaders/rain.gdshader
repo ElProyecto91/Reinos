@@ -2,6 +2,7 @@ shader_type canvas_item;
 // Lluvia ligera en pantalla: dos capas de trazos que caen en diagonal. Sólo se dibuja si llueve.
 
 uniform float amount = 0.0;
+uniform float tm = 0.0;      // reloj de animación (lo escribe el juego sólo cuando corre)
 
 float hash(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -25,7 +26,7 @@ float streaks(vec2 uv, float t, float scale, float speed, float slant) {
 
 void fragment() {
 	vec2 uv = vec2(SCREEN_UV.x * (SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x), SCREEN_UV.y);
-	float s = clamp(streaks(uv, TIME, 34.0, 2.6, 0.22) * 0.9 + streaks(uv, TIME, 61.0, 3.6, 0.22) * 0.6, 0.0, 1.0);
+	float s = clamp(streaks(uv, tm, 34.0, 2.6, 0.22) * 0.9 + streaks(uv, tm, 61.0, 3.6, 0.22) * 0.6, 0.0, 1.0);
 	vec3 rgb = mix(vec3(0.05, 0.10, 0.20), vec3(0.86, 0.91, 1.0), s);
 	COLOR = vec4(rgb, mix(0.10, 0.55, s) * amount);
 }

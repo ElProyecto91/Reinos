@@ -14,6 +14,18 @@ static func draw_fog(g: Game, c: CanvasItem) -> void:
 
 # ------------------------------------------------------------------ entidades
 
+static var _bs: Array = []              # edificios ordenados por y (se reordena sólo si cambian)
+static var _bs_key := Vector3i(-1, -1, -1)
+static var _smoke: PackedFloat32Array = PackedFloat32Array()   # x, y, radio, alfa de cada bocanada del fotograma
+
+static func _sorted_buildings(sim: Sim) -> Array:
+	var key := Vector3i(sim.get_instance_id() & 0x7fffffff, sim.buildings.size(), sim.next_id)
+	if key != _bs_key:
+		_bs_key = key
+		_bs = sim.buildings.duplicate()
+		_bs.sort_custom(func(a: Ent, b: Ent) -> bool: return a.tile.y + a.size < b.tile.y + b.size)
+	return _bs
+
 static func draw_entities(g: Game, c: CanvasItem) -> void:
 	var sim := g.sim
 	var vr := g.view_rect(80.0)
@@ -24,31 +36,17 @@ static func draw_entities(g: Game, c: CanvasItem) -> void:
 		var r := Rect2(tx * T, ty * T, T, T)
 		if vr.intersects(r) and g.fog.explored_at(Vector2i(tx, ty)):
 			_draw_farm(c, r, float(sim.ramt[idx]) / float(Defs.RES_INFO[Defs.R_FARM]["amount"]), sim.rowner[idx] == g.human)
-	# Edificios (ordenados por y)
-	var bl: Array = []
-	for b in sim.buildings:
+	# Edificios (ordenados por y; la lista ordenada se reutiliza entre fotogramas)
+	_smoke.clear()
+	for b: Ent in _sorted_buildings(sim):
 		if b.alive and vr.intersects(b.rect()) and g.can_see_building(b):
-			bl.append(b)
-	bl.sort_custom(func(a: Ent, b: Ent) -> bool: return a.tile.y + a.size < b.tile.y + b.size)
-	for b in bl:
-		_draw_building(g, c, b)
-	# Unidades
-	var ul: Array = []
-	for u in sim.units:
-		if u.alive and vr.has_point(u.pos) and g.can_see_unit(u):
-			ul.append(u)
-	# selección bajo las unidades
-	for u in ul:
-		if g.sel_set.has(u.id):
-			var p: Vector2 = u.ppos.lerp(u.pos, g.interp)
-			var rr: float = u.radius + 5.0
-			if u.naval:
-				rr = float(SHIP_HALF[u.type]) + 3.0
-			c.draw_set_transform(p + Vector2(0, 3), 0.0, Vector2(1.0, 0.55 if not u.naval else 0.30))
-			c.draw_arc(Vector2.ZERO, rr, 0.0, TAU, 24, Color(0.2, 1.0, 0.3, 0.95), 2.2)
-			c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	for u in ul:
-		_draw_unit(g, c, u)
+			_draw_building(g, c, b)
+	# El humo se dibuja todo junto (una sola llamada de dibujo) por encima de los edificios
+	var sm := g.art.puff_tex
+	for i in range(0, _smoke.size(), 4):
+		var rad := _smoke[i + 2] * 1.0667
+		c.draw_texture_rect(sm, Rect2(_smoke[i] - rad, _smoke[i + 1] - rad, rad * 2.0, rad * 2.0), false, Color(0.86, 0.86, 0.88, _smoke[i + 3]))
+	_draw_units(g, c, vr)
 	# Efectos
 	for f in g.fx:
 		_draw_fx(c, f)
@@ -101,28 +99,6 @@ static func _draw_farm(c: CanvasItem, r: Rect2, frac: float, mine: bool) -> void
 		c.draw_line(Vector2(r.position.x + 4, y), Vector2(r.end.x - 4, y), crop, 3.5)
 	c.draw_rect(r.grow(-1), Color(0.2, 0.12, 0.05), false, 1.5)
 
-## Icono de lo que lleva un aldeano (madera, oro, comida) con borde oscuro para que se lea sobre el terreno.
-static func _draw_carry(c: CanvasItem, o: Vector2, kind: String, fill: float) -> void:
-	var k := 0.8 + 0.4 * fill
-	c.draw_circle(o, 8.0 * k, Color(0, 0, 0, 0.45))
-	match kind:
-		"gold":
-			var pts := PackedVector2Array([o + Vector2(-6, 3) * k, o + Vector2(-3, -4) * k, o + Vector2(2, -5) * k, o + Vector2(6, 1) * k, o + Vector2(4, 4) * k])
-			c.draw_colored_polygon(pts, Color(1.0, 0.84, 0.18))
-			c.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[0]]), Color(0.45, 0.3, 0.0), 1.5)
-			c.draw_line(o + Vector2(-3, -1) * k, o + Vector2(0, -3) * k, Color(1, 1, 0.8), 1.5)
-		"food":
-			c.draw_circle(o + Vector2(0, 1), 5.5 * k, Color(0.3, 0.05, 0.05))
-			c.draw_circle(o + Vector2(0, 1), 4.3 * k, Color(0.88, 0.15, 0.15))
-			c.draw_circle(o + Vector2(-1.5, -0.5), 1.3, Color(1, 0.7, 0.65))
-			c.draw_line(o + Vector2(0, -3) * k, o + Vector2(2, -6) * k, Color(0.2, 0.5, 0.15), 1.8)
-		_:
-			for dy in [-2.5, 2.5]:
-				var r := Rect2(o + Vector2(-6.5, dy - 2.2) * k, Vector2(13, 4.4) * k)
-				c.draw_rect(r.grow(1.0), Color(0.2, 0.1, 0.03), true)
-				c.draw_rect(r, Color(0.62, 0.4, 0.18), true)
-				c.draw_circle(Vector2(r.end.x - 1.5, r.get_center().y), 1.6 * k, Color(0.85, 0.65, 0.4))
-
 static func _unit_target_pos(g: Game, u: Ent) -> Vector2:
 	if u.state == Sim.S_GATHER and u.target_tile.x >= 0:
 		return g.sim.tile_center(u.target_tile)
@@ -161,83 +137,238 @@ static func _trade_of(g: Game, u: Ent) -> int:
 			return ArtUnits.TRADE_FARM
 	return ArtUnits.TRADE_CHOP
 
+## Datos de dibujo de cada tipo de unidad. Se calculan una vez (las hojas se cargan la primera vez que hacen falta)
+## para no repetir búsquedas en diccionarios ni recortes de hoja por cada unidad y fotograma.
+class TInfo extends RefCounted:
+	var sheet: Texture2D
+	var ws := 1.0
+	var naval := false
+	var w := 0.0               # tamaño del rectángulo de destino (px de mundo)
+	var h := 0.0
+	var ax := 0.0              # ancla (pies o flotación) respecto a la esquina del rectángulo
+	var ay := 0.0
+	var nf := 1                # fotogramas por capa
+	var rects: Array[Rect2] = []   # región de la hoja: capa * nf + fotograma
+	var shadow := Vector2(22, 9)
+	var top := 0.0
+	var half := 0.0            # barcos: semilongitud
+	var speed_k := 0.0         # ritmo de la animación de caminar
+	var vill := false
+	var fisher := false
+	var military := false
+	var ranged := false
+	var carry_max := 10.0
+
+static var _ti: Dictionary = {}
+static var _ti_art: Art = null
+static var _groups: Dictionary = {}    # tipo -> índices (Array: los vectores empaquetados se copian al sacarlos del diccionario)
+const DRAW_ORDER := ["barco_pesca", "barco_transporte", "galera", "galeon", "aldeano", "piquero", "espadachin", "arquero", "ballestero",
+		"jinete", "explorador", "caballero", "ariete"]
+static var _types: Array = []          # DRAW_ORDER y, detrás, cualquier tipo nuevo de Defs.UNITS que no esté en la lista
+
+static func _draw_types() -> Array:
+	if _types.is_empty():
+		_types = DRAW_ORDER.duplicate()
+		for t in Defs.UNITS:
+			if not _types.has(t):
+				_types.append(t)
+	return _types
+
+static func _tinfo(g: Game, type: String) -> TInfo:
+	if _ti_art != g.art:
+		_ti.clear()
+		_ti_art = g.art
+	var ti: TInfo = _ti.get(type)
+	if ti != null:
+		return ti
+	ti = TInfo.new()
+	var def: Dictionary = Defs.UNITS[type]
+	var cell: Array = ArtUnits.CELLS[type]
+	var cp := ArtUnits.cell_px(type)
+	var k: float = cell[4]
+	ti.naval = bool(def.get("naval", false))
+	ti.ws = WS_SHIP if ti.naval else WS_FOOT
+	ti.sheet = g.art.sheet(type)
+	ti.w = float(cp.x) / k * ti.ws
+	ti.h = float(cp.y) / k * ti.ws
+	ti.ax = float(cell[2]) * ti.ws
+	ti.ay = float(cell[3]) * ti.ws
+	ti.nf = int(cell[5])
+	for layer in 3:
+		for fr in ti.nf:
+			ti.rects.append(Rect2(ArtUnits.frame_rect(type, fr, layer)))
+	ti.shadow = SHADOWS.get(type, Vector2(22, 9))
+	ti.top = float(cell[3]) * ti.ws * 0.86
+	ti.half = float(SHIP_HALF.get(type, 0.0))
+	ti.speed_k = float(def["speed"]) * 3.4
+	ti.vill = type == "aldeano"
+	ti.fisher = bool(def.get("fisher", false))
+	ti.military = bool(def.get("military", false))
+	ti.ranged = type in RANGED
+	ti.carry_max = 10.0 if ti.vill else float(def.get("carry", 10.0))
+	_ti[type] = ti
+	return ti
+
 ## Fotograma de la hoja según lo que hace la unidad.
-static func _unit_frame(g: Game, u: Ent, moving: bool) -> int:
+static func _unit_frame(g: Game, u: Ent, ti: TInfo, moving: bool) -> int:
 	var t := g.anim_t + float(u.id) * 0.37
-	var type := u.type
-	if u.naval:
+	if ti.naval:
 		if moving:
 			return int(t * 5.0) % 4
-		if u.state == Sim.S_GATHER and u.def.get("fisher", false):
+		if u.state == Sim.S_GATHER and ti.fisher:
 			return 4 + int(t * 1.6) % 2
-		if u.state == Sim.S_ATTACK and u.def.get("military", false):
+		if u.state == Sim.S_ATTACK and ti.military:
 			return 4 + int(t * 2.2) % 2
 		return int(t * 1.4) % 4
 	if moving:
-		return ArtUnits.F_WALK + int(t * float(u.def["speed"]) * 3.4) % 4
+		return ArtUnits.F_WALK + int(t * ti.speed_k) % 4
 	match u.state:
 		Sim.S_GATHER:
-			if type == "aldeano":
+			if ti.vill:
 				return ArtUnits.F_ACT + 2 * _trade_of(g, u) + int(t * 2.6) % 2
 		Sim.S_BUILD:
-			if type == "aldeano":
+			if ti.vill:
 				return ArtUnits.F_ACT + 2 * ArtUnits.TRADE_BUILD + int(t * 2.6) % 2
 		Sim.S_ATTACK:
-			if type == "aldeano":
+			if ti.vill:
 				return ArtUnits.F_ACT + 2 * ArtUnits.TRADE_CHOP + int(t * 3.0) % 2
 			var ph := fposmod(t * 1.7, 1.0)
-			if type in RANGED:
+			if ti.ranged:
 				return 5 if ph < 0.25 else (7 if ph < 0.7 else 6)
 			return 5 if ph < 0.6 else 6
 	return ArtUnits.F_IDLE
 
-static func _draw_unit(g: Game, c: CanvasItem, u: Ent) -> void:
-	var p: Vector2 = u.ppos.lerp(u.pos, g.interp)
-	var type := u.type
-	var sheet: Texture2D = g.art.sheet(type)
-	var cell: Array = ArtUnits.CELLS[type]
-	var ws := ws_of(u)
-	# orientación: hacia donde anda o hacia lo que trabaja/ataca
-	var moving := u.ppos.distance_to(u.pos) > 0.12
-	if moving:
-		if absf(u.pos.x - u.ppos.x) > 0.04:
-			u.face = 1 if u.pos.x > u.ppos.x else -1
-	else:
-		var tp := _unit_target_pos(g, u)
-		if tp != Vector2.INF and absf(tp.x - p.x) > 3.0:
-			u.face = 1 if tp.x > p.x else -1
-	var fr := _unit_frame(g, u, moving)
-	var lunge := 0.0
-	if u.state == Sim.S_ATTACK and not moving and not u.naval and fr == 6:
-		lunge = 3.0 * float(u.face)
-	var team := u.owner % 4
-	var tcol: Color = g.art.team_mod[team]
-	var cp := ArtUnits.cell_px(type)
-	var k: float = cell[4]
-	var dst := Rect2(-float(cell[2]) * ws, -float(cell[3]) * ws, float(cp.x) / k * ws, float(cp.y) / k * ws)
-	if u.naval:
-		_draw_ship_water(c, u, p, moving)
-	else:
-		var sd: Vector2 = SHADOWS.get(type, Vector2(22, 9))
-		c.draw_texture_rect(g.art.shadow_tex, Rect2(p.x - sd.x * 0.5 + lunge * 0.5 + 1.5, p.y - sd.y * 0.1, sd.x, sd.y), false)
-	c.draw_set_transform(p + Vector2(lunge, 0.0), 0.0, Vector2(float(u.face), 1.0))
-	c.draw_texture_rect_region(sheet, dst, Rect2(ArtUnits.frame_rect(type, fr, 0)))
-	c.draw_texture_rect_region(sheet, dst, Rect2(ArtUnits.frame_rect(type, fr, 1)), tcol)
-	c.draw_texture_rect_region(sheet, dst, Rect2(ArtUnits.frame_rect(type, fr, 2)))
-	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var top := unit_top(u)
-	if u.carry_amt >= 1.0 and (type == "aldeano" or u.def.get("fisher", false)):
-		var co := Vector2(12, -top * 0.8) if type == "aldeano" else Vector2(0, -top - 7.0)
-		_draw_carry(c, p + co, u.carry_kind, clampf(u.carry_amt / (10.0 if type == "aldeano" else float(u.def["carry"])), 0.0, 1.0))
-	if u.hp < u.max_hp or g.sel_set.has(u.id):
-		var w := 24.0 if not u.naval else 34.0
-		var f := clampf(u.hp / u.max_hp, 0.0, 1.0)
-		c.draw_rect(Rect2(p.x - w * 0.5 - 1, p.y - top - 7, w + 2, 5), Color(0, 0, 0, 0.75), true)
-		c.draw_rect(Rect2(p.x - w * 0.5, p.y - top - 6, w * f, 3), Color(0.9 - 0.7 * f, 0.25 + 0.65 * f, 0.15), true)
+## Todas las unidades visibles. Para gastar poco (menos llamadas de dibujo y menos GDScript por fotograma):
+## una pasada calcula lo que hace falta de cada una; después se dibuja por capas y agrupando por tipo (todas las
+## unidades de un tipo comparten hoja, así que el motor las manda a la GPU de golpe) en vez de unidad por unidad.
+## Orden de pintado: anillos de selección, sombras, estela de barcos, figuras (por tipo), cargas y barras de vida.
+static func _draw_units(g: Game, c: CanvasItem, vr: Rect2) -> void:
+	var sim := g.sim
+	var art := g.art
+	var interp := g.interp
+	var sel: Dictionary = g.sel_set
+	var ul: Array[Ent] = []
+	var tis: Array[TInfo] = []
+	var pp := PackedVector2Array()
+	var pf := PackedInt32Array()
+	var pl := PackedFloat32Array()
+	var pm := PackedByteArray()
+	for k in _groups:
+		(_groups[k] as Array).clear()
+	for u in sim.units:
+		if not u.alive or not vr.has_point(u.pos) or not g.can_see_unit(u):
+			continue
+		var type := u.type
+		var ti := _tinfo(g, type)
+		var p: Vector2 = u.ppos.lerp(u.pos, interp)
+		# orientación: hacia donde anda o hacia lo que trabaja/ataca
+		var moving := u.ppos.distance_to(u.pos) > 0.12
+		if moving:
+			if absf(u.pos.x - u.ppos.x) > 0.04:
+				u.face = 1 if u.pos.x > u.ppos.x else -1
+		elif u.state >= Sim.S_GATHER_GO:
+			var tp := _unit_target_pos(g, u)
+			if tp != Vector2.INF and absf(tp.x - p.x) > 3.0:
+				u.face = 1 if tp.x > p.x else -1
+		var fr := mini(_unit_frame(g, u, ti, moving), ti.nf - 1)
+		var lunge := 0.0
+		if u.state == Sim.S_ATTACK and not moving and not ti.naval and fr == 6:
+			lunge = 3.0 * float(u.face)
+		var idx := ul.size()
+		ul.append(u)
+		tis.append(ti)
+		pp.append(p)
+		pf.append(fr)
+		pl.append(lunge)
+		pm.append(1 if moving else 0)
+		var grp: Array = _groups.get(type, [])
+		if grp.is_empty() and not _groups.has(type):
+			_groups[type] = grp
+		grp.append(idx)
+	if ul.is_empty():
+		return
+	# 1) anillos de selección (bajo todo): una textura por tamaño, así que se agrupan por tipo
+	if not sel.is_empty():
+		for type in _draw_types():
+			var grp: Array = _groups.get(type, [])
+			for i in grp:
+				var u := ul[i]
+				if sel.has(u.id):
+					var ti := tis[i]
+					var rr: float = u.radius + 5.0
+					var ky := 0.55
+					if ti.naval:
+						rr = ti.half + 3.0
+						ky = 0.30
+					var rt := art.ring_tex(rr, ky)
+					var tw := float(rt.get_width()) * 0.5
+					var th := float(rt.get_height()) * 0.5
+					c.draw_texture_rect(rt, Rect2(pp[i].x - tw * 0.5, pp[i].y + 3.0 - th * 0.5, tw, th), false)
+	# 2) sombras (una sola textura) y espuma/estela de los barcos
+	var sh := art.shadow_tex
+	for i in ul.size():
+		var ti := tis[i]
+		if ti.naval:
+			continue
+		var p := pp[i]
+		c.draw_texture_rect(sh, Rect2(p.x - ti.shadow.x * 0.5 + pl[i] * 0.5 + 1.5, p.y - ti.shadow.y * 0.1, ti.shadow.x, ti.shadow.y), false)
+	for i in ul.size():
+		if tis[i].naval:
+			_draw_ship_water(c, ul[i], tis[i], pp[i], pm[i] == 1)
+	# 3) figuras: 3 capas por unidad (fondo, equipo teñido, frente); todas las de un tipo seguidas
+	var tm := art.team_mod
+	for type in _draw_types():
+		var grp: Array = _groups.get(type, [])
+		if grp.is_empty():
+			continue
+		var ti: TInfo = _ti[type]
+		var sheet := ti.sheet
+		var rects := ti.rects
+		var nf := ti.nf
+		var w := ti.w
+		var h := ti.h
+		var ax := ti.ax
+		var ay := ti.ay
+		for i in grp:
+			var u := ul[i]
+			var p := pp[i]
+			var fr := pf[i]
+			var x := p.x + pl[i]
+			var dst: Rect2
+			if u.face >= 0:
+				dst = Rect2(x - ax, p.y - ay, w, h)
+			else:
+				dst = Rect2(x + ax - w, p.y - ay, -w, h)      # ancho negativo = espejo horizontal
+			c.draw_texture_rect_region(sheet, dst, rects[fr])
+			c.draw_texture_rect_region(sheet, dst, rects[nf + fr], tm[u.owner % 4])
+			c.draw_texture_rect_region(sheet, dst, rects[2 * nf + fr])
+	# 4) iconos de carga (un único atlas) y barras de vida
+	var catlas := art.carry_atlas
+	var cs := float(art.carry_cell)
+	for i in ul.size():
+		var u := ul[i]
+		var ti := tis[i]
+		if u.carry_amt >= 1.0 and (ti.vill or ti.fisher):
+			var p := pp[i]
+			var co := Vector2(12, -ti.top * 0.8) if ti.vill else Vector2(0, -ti.top - 7.0)
+			var fill := clampf(u.carry_amt / ti.carry_max, 0.0, 1.0)
+			var hs := Art.CARRY_HALF * (0.8 + 0.4 * fill)
+			var o := p + co
+			var ci := 0 if u.carry_kind == "gold" else (1 if u.carry_kind == "food" else 2)
+			c.draw_texture_rect_region(catlas, Rect2(o.x - hs, o.y - hs, hs * 2.0, hs * 2.0), Rect2(float(ci) * cs, 0.0, cs, cs))
+	for i in ul.size():
+		var u := ul[i]
+		if u.hp < u.max_hp or sel.has(u.id):
+			var ti := tis[i]
+			var p := pp[i]
+			var w := 24.0 if not ti.naval else 34.0
+			var f := clampf(u.hp / u.max_hp, 0.0, 1.0)
+			c.draw_rect(Rect2(p.x - w * 0.5 - 1, p.y - ti.top - 7, w + 2, 5), Color(0, 0, 0, 0.75), true)
+			c.draw_rect(Rect2(p.x - w * 0.5, p.y - ti.top - 6, w * f, 3), Color(0.9 - 0.7 * f, 0.25 + 0.65 * f, 0.15), true)
 
 ## Espuma en la línea de flotación y estela cuando navega.
-static func _draw_ship_water(c: CanvasItem, u: Ent, p: Vector2, moving: bool) -> void:
-	var half: float = SHIP_HALF[u.type]
+static func _draw_ship_water(c: CanvasItem, u: Ent, ti: TInfo, p: Vector2, moving: bool) -> void:
+	var half := ti.half
 	var fc := float(u.face)
 	c.draw_set_transform(p + Vector2(0.0, 1.5), 0.0, Vector2(1.0, 0.26))
 	c.draw_arc(Vector2.ZERO, half, 0.0, TAU, 26, Color(0.10, 0.25, 0.42, 0.28), 5.0)
@@ -337,20 +468,24 @@ const WINDOWS := {
 	"puerto": [[16, 64, 6, 6], [64, 64, 6, 6]],
 }
 
-static func _draw_smoke(g: Game, c: CanvasItem, b: Ent, r: Rect2) -> void:
+static func _draw_smoke(g: Game, b: Ent, r: Rect2) -> void:
 	var f: Vector2 = SMOKE[b.type]
 	var base := r.position + Vector2(r.size.x * f.x, r.size.y * f.y)
 	for k in 3:
 		var ph := fposmod(g.anim_t * 0.30 + float(k) / 3.0 + float(b.id) * 0.137, 1.0)
 		var p := base + Vector2(ph * 10.0 + sin(ph * 6.0 + float(b.id)) * 2.0, -ph * 32.0)
 		var a := 0.42 * (1.0 - ph) * minf(1.0, ph * 6.0)
-		c.draw_circle(p, 2.2 + ph * 6.5, Color(0.86, 0.86, 0.88, a))
+		_smoke.append(p.x)
+		_smoke.append(p.y)
+		_smoke.append(2.2 + ph * 6.5)
+		_smoke.append(a)
 
 static func _draw_night_lights(g: Game, c: CanvasItem, b: Ent, r: Rect2) -> void:
 	var sc := r.size.x / (96.0 if b.size == 3 else 64.0)
 	for w: Array in WINDOWS[b.type]:
 		var wr := Rect2(r.position + Vector2(float(w[0]), float(w[1])) * sc, Vector2(float(w[2]), float(w[3])) * sc)
-		c.draw_circle(wr.get_center(), wr.size.x * 1.5, Color(1.0, 0.78, 0.38, 0.10 * g.night))
+		var gr := wr.size.x * 1.6
+		c.draw_texture_rect(g.art.puff_tex, Rect2(wr.get_center() - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.78, 0.38, 0.10 * g.night))
 		c.draw_rect(wr, Color(1.0, 0.84, 0.45, 0.88 * g.night), true)
 		c.draw_rect(Rect2(wr.position.x + wr.size.x * 0.5 - 0.5, wr.position.y, 1.0, wr.size.y), Color(0.35, 0.22, 0.08, 0.7 * g.night), true)
 		c.draw_rect(Rect2(wr.position.x, wr.position.y + wr.size.y * 0.5 - 0.5, wr.size.x, 1.0), Color(0.35, 0.22, 0.08, 0.7 * g.night), true)
@@ -410,7 +545,7 @@ static func _draw_building(g: Game, c: CanvasItem, b: Ent) -> void:
 			c.draw_line(Vector2(r.position.x + 4, yy), Vector2(r.end.x - 4, yy), col, 1.5)
 	if b.progress >= 1.0:
 		if SMOKE.has(b.type):
-			_draw_smoke(g, c, b, r)
+			_draw_smoke(g, b, r)
 		if g.night > 0.12 and WINDOWS.has(b.type):
 			_draw_night_lights(g, c, b, r)
 	var show_bar := b.hp < b.max_hp or g.sel_set.has(b.id) or b.progress < 1.0

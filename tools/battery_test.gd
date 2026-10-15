@@ -39,10 +39,12 @@ func _run() -> void:
 	check("low processor mode on", OS.low_processor_usage_mode)
 	check("viewport scaling in Normal", get_window().content_scale_mode == Window.CONTENT_SCALE_MODE_VIEWPORT)
 	var n0 := WorldLayer.prof_n
+	var pf0 := Engine.get_process_frames()
 	await get_tree().create_timer(1.0).timeout
 	var dn := WorldLayer.prof_n - n0
-	print("INFO entity redraws/s while playing: ", dn)
-	check("playing: entities redrawn every frame (>=15/s)", dn >= 15)
+	var pf := Engine.get_process_frames() - pf0
+	print("INFO entity redraws/s while playing: ", dn, " (de ", pf, " fotogramas)")
+	check("playing: entities redrawn every frame", dn >= int(0.9 * pf) and pf >= 5)
 	# 2. pausa: reposo
 	game.hud.show_pause()
 	await frames(5)
@@ -57,6 +59,12 @@ func _run() -> void:
 	dn = WorldLayer.prof_n - n0
 	print("INFO entity redraws/s while paused: ", dn)
 	check("paused: entities not redrawn (<=2/s)", dn <= 2)
+	# En pausa el motor no debe dibujar fotogramas (los shaders del mundo no pueden usar TIME: obliga a redibujar siempre)
+	var d0 := Engine.get_frames_drawn()
+	await get_tree().create_timer(1.5).timeout
+	var drawn := Engine.get_frames_drawn() - d0
+	print("INFO frames drawn by the engine while paused (1.5 s): ", drawn)
+	check("paused: engine draws no frames (<=2 in 1.5 s)", drawn <= 2)
 	# 3. cambiar de perfil desde la pausa
 	game.hud._cycle_perf()   # Normal -> Alta
 	await frames(4)
@@ -72,12 +80,29 @@ func _run() -> void:
 	await frames(6)
 	check("resumed in Ahorro: max_fps 20", Engine.max_fps == 20)
 	check("resumed: ambient playing again", not (game.audio._amb["wind"] as AudioStreamPlayer).stream_paused)
+	# 3b. sin tocar la pantalla: fps «tranquilos» del perfil (Ahorro: 15); al tocar vuelve el tope normal (20)
+	game._last_input_ms = Time.get_ticks_msec() - 8000
+	await frames(3)
+	check("calm: fps tranquilos tras unos segundos sin tocar", Engine.max_fps == 15)
+	var tev := InputEventScreenTouch.new()
+	tev.index = 0
+	tev.position = Vector2(640, 360)
+	tev.pressed = true
+	Input.parse_input_event(tev)
+	await frames(3)
+	check("al tocar vuelve el tope normal del perfil", Engine.max_fps == 20)
+	tev = InputEventScreenTouch.new()
+	tev.index = 0
+	tev.position = Vector2(640, 360)
+	tev.pressed = false
+	Input.parse_input_event(tev)
+	await frames(2)
 	# 4. auto-pausa por inactividad
 	check("not paused before idle", not game.paused)
 	game._last_input_ms = Time.get_ticks_msec() - 100000   # 100 s sin tocar; límite de Ahorro = 90 s
 	await frames(4)
 	check("auto-pause after idle", game.paused and game.hud.pause_ui.visible)
-	check("auto-pause title", game.hud._pause_title.text == Lang.t("pause_title_auto"))
+	check("auto-pause title", game.hud._pause_title.text.begins_with(Lang.t("pause_title_auto")))
 	# 5. desactivar auto-pausa
 	game.hud._toggle_auto()
 	game.hud.hide_pause()

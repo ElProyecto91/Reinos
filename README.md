@@ -11,6 +11,7 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 - **Puerto y flota:** el puerto se construye en la orilla (la casilla de salida al agua se comprueba). Entrena barco de pesca (recoge los peces del mar y los lleva al puerto) y barco de transporte (8 pasajeros) desde la Edad Oscura, y galera de guerra y galeón con cañones en Feudal. Embarcar: con soldados/aldeanos seleccionados toca el transporte junto a la orilla. Desembarcar: selecciona el transporte y toca tierra (o pulsa **Desembarcar**). Los barcos se hunden con su carga.
 - Sin campaña, sin música. Solo sonidos de acción y ambiente.
 - Perfiles de batería: Ahorro (20 fps), Normal (30 fps), Alta (60 fps, resolución nativa).
+- Se guarda sola: **Continuar partida** en el menú retoma donde la dejaste (una sola partida guardada). Población máxima 200.
 
 ## Qué NO está comprobado (léelo antes de nada)
 
@@ -19,7 +20,7 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 | Juego completo | Probado en un PC sin tarjeta gráfica (renderizado por software) con toques simulados. **No probado en un móvil real.** |
 | APK | Se compila en GitHub Actions (no aquí) y, con la clave de firma configurada, se publica en *Releases*. **Sin probar en un móvil real.** Ver «Seguridad». |
 | Sonido | Sintetizado por código; **nadie lo ha escuchado**. Puede sonar mal. Se regenera con `tools/gen_audio.py`. |
-| Batería y rendimiento en móvil | **Sin medir.** Las medidas de fps son de PC con GPU por software. Los shaders de terreno/nubes/lluvia duplican el coste por fotograma en ese entorno; el perfil Ahorro usa una variante más ligera del terreno. Cuenta con **menos autonomía** que antes. |
+| Batería y rendimiento en móvil | **Sin medir en ningún móvil.** Se optimizó lo que se puede medir en un PC sin GPU (milisegundos de GDScript, llamadas de dibujo y fotogramas dibujados por segundo; ver «Batería»); cuánto baja el consumo real en tu Redmi Note 13 5G **no se sabe** hasta probarlo. Los shaders de terreno/nubes/lluvia siguen siendo el mayor coste de GPU; el perfil Ahorro usa una variante más ligera del terreno. |
 | Islas y barcos | Se llega a las islas con transportes. Las montañas bloquean el paso; el generador comprueba que todas las bases quedan conectadas por tierra. Barcos, pesca, embarque y combate naval están probados con pruebas automáticas y toques simulados, **no en un móvil**. |
 | Guardar/cargar partida | Una sola ranura (`user://partida.sav`). Se guarda sola cada ~90 s de juego, al pausar, al salir al menú y cuando Android manda la app a segundo plano; al terminar la partida se borra. Probado en PC: guardar → cargar → seguir da **exactamente** el mismo resultado que no haber guardado (también con barcos con pasajeros). **No probado en un móvil real**: los tiempos medidos (guardar ~15-30 ms, cargar ~0,1-0,3 s en PC) en el móvil serán varias veces mayores. Si Android mata la app a mitad de un autoguardado, queda la partida anterior (se escribe en un archivo temporal y se renombra). |
 | IA | Sube de edad, construye economía, ejército, torres, taller (con arietes), puerto y barcos de pesca, y ataca por tierra. **No usa murallas ni puertas, y no invade por mar**: sus galeras defienden y los barcos hostiles que se acercan los ataca, pero no desembarca tropas. |
@@ -89,15 +90,26 @@ Para publicar en Google Play necesitarías un `.aab` firmado con tu propia clave
 
 Lo que hace el juego para gastar poco (los números son decisiones de diseño, no mediciones):
 
-- Límite de fps por perfil (20/30/60) y, en Ahorro y Normal, dibuja a ~720p y escala a la pantalla.
+- Límite de fps por perfil (20/30/60) y, en Ahorro y Normal, dibuja a ~720p y escala a la pantalla. Si pasan 6 s sin tocar la pantalla (solo mirando) baja a 15/20/30 fps; al tocar vuelve al límite normal.
 - Menú, pausa y fin de partida: el motor baja a 15 fps y solo redibuja si cambia algo; el ambiente sonoro se detiene.
 - La pantalla solo se mantiene encendida mientras la partida corre sin pausa.
 - Auto-pausa tras 90 s (Ahorro), 180 s (Normal) o 300 s (Alta) sin tocar la pantalla; se puede desactivar.
 - Panel de recursos, niebla de guerra y minimapa se refrescan menos veces por segundo en los perfiles de ahorro.
 - La simulación va a 10 pasos por segundo con interpolación; los sonidos van a 22 kHz mono.
-- El realismo visual (shaders, día/noche, lluvia) se mantiene en todos los perfiles; Ahorro sólo simplifica el relieve del terreno. El agua se queda quieta en pausa.
+- El realismo visual (shaders, día/noche, lluvia) se mantiene en todos los perfiles; Ahorro sólo simplifica el relieve del terreno.
+- **En pausa, en el menú y con la partida terminada el motor no dibuja ningún fotograma** (medido: 0 por segundo). Antes dibujaba todos: los shaders del mundo usaban `TIME`, y con `TIME` Godot redibuja la pantalla entera aunque no cambie nada. Ahora usan un reloj propio (`tm`) que solo avanza con la partida en marcha; el agua y las nubes se quedan quietas en pausa. No vuelvas a usar `TIME` en un shader del juego (`battery_test` lo detecta).
+- Las unidades se dibujan agrupadas por textura (sombras juntas, figuras por tipo, humo y cargas en una sola llamada, anillos de selección y cargas como texturas en vez de polígonos): con 128 unidades y 20 edificios a la vista pasa de ~475 a ~195 llamadas de dibujo por fotograma y de 2,4 a 1,5 ms de GDScript (medido en PC; en el móvil cada llamada de dibujo y cada instrucción cuesta bastante más). La lista de edificios ordenada por altura se reutiliza entre fotogramas. Efecto visual: las barras de vida y las cargas quedan por encima de todas las figuras, y al solaparse dos unidades de distinto tipo las más pesadas (caballería, ariete) quedan siempre encima.
+- La niebla de guerra deduplica las unidades que comparten casilla y alcance y marca lo que pasa a verse al revelarlo: ~33 % menos de tiempo por actualización con el mismo resultado exacto (`tools/fog_test.gd` lo compara con el algoritmo original).
+- La cámara solo escribe su transformación cuando cambia.
 
-Lo que no se puede controlar desde el juego: el brillo y el tiempo de pantalla del móvil. Es, con diferencia, lo que más gasta.
+Lo que no se puede controlar desde el juego: el brillo, el tiempo de pantalla y la frecuencia de refresco del móvil. Es, con diferencia, lo que más gasta.
+
+### Redmi Note 13 5G (2400×1080, AMOLED de 120 Hz, Dimensity 6080, Mali-G57 MC2)
+
+- Perfil **Normal** (el de serie): dibuja a 1600×720 y lo escala a la pantalla (×1,5) a 30 fps. Es el punto recomendado. **Alta** dibuja a 2400×1080 y a 60 fps: sólo si te sobra batería.
+- En *Ajustes → Pantalla → Frecuencia de actualización* elige **60 Hz** (o «Estándar»): el juego va a 30 fps como mucho y el panel a 120 Hz gasta más sin que se note. El juego no puede cambiarlo por ti (en Godot no hay forma de pedirlo desde el código); el ahorro es una estimación, no está medido.
+- Brillo manual bajo: en AMOLED el brillo es el mayor consumo individual. Los negros (la niebla sin explorar) no gastan.
+- Si no vas a seguir jugando, pausa (☰): en pausa el motor deja de dibujar y la partida se guarda.
 
 ## Estructura
 
@@ -133,6 +145,15 @@ $GODOT --headless --path . --script res://tools/naval_test.gd -- seed=1
 xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test2.tscn --rendering-driver opengl3
 # también ui_test3, ui_test4 (granjas, edades...), ui_test5 (murallas y puertas), ui_test6 (recolectar oro),
 # ui_test7 (puerto: construir, entrenar barcos, pescar, embarcar, desembarcar, atacar), battery_test, perf_test
+
+# niebla de guerra: idéntica al algoritmo original y más rápida
+$GODOT --headless --path . --script res://tools/fog_test.gd -- seed=3 size=192 min=10
+
+# banco de dibujo: aldea densa (ms de GDScript y llamadas de dibujo por fotograma; con shot=… guarda una captura para comparar)
+xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/draw_bench.tscn --rendering-driver opengl3 --resolution 1280x720 -- frames=100 zoom=0.8
+# fotogramas que dibuja de verdad el motor en juego/pausa y en el menú (deben ser 0 en pausa y menú)
+xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/frames_probe.tscn --rendering-driver opengl3 --resolution 1280x720
+xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/frames_menu.tscn --rendering-driver opengl3 --resolution 1280x720
 
 # guardar y cargar (ida y vuelta idéntica, barcos con carga, archivo corrupto o de otra versión)
 $GODOT --headless --path . --script res://tools/save_test.gd -- seed=8 size=256 min=11

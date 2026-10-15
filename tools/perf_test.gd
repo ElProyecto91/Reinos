@@ -52,7 +52,12 @@ func _run() -> void:
 			game.fog.update(sim, game.human)
 			var fog_ms := (Time.get_ticks_usec() - t0) / 1000.0
 			var draw_ms := WorldLayer.prof_us / 1000.0 / maxf(WorldLayer.prof_n, 1)
-			print("t=%4ds units=%3d blds=%3d fps=%.1f proc_ms=%.1f physics=%.1f fog_ms=%.1f draw_ms=%.2f" % [int(sim.time), units, blds, Engine.get_frames_per_second(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, fog_ms, draw_ms])
+			var calls := int(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+			var vis := 0
+			for u in sim.units:
+				if u.alive and game.view_rect(80.0).has_point(u.pos):
+					vis += 1
+			print("t=%4ds units=%3d vis=%3d blds=%3d fps=%.1f proc_ms=%.1f physics=%.1f fog_ms=%.1f draw_ms=%.2f calls=%d" % [int(sim.time), units, vis, blds, Engine.get_frames_per_second(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, fog_ms, draw_ms, calls])
 			WorldLayer.prof_us = 0
 			WorldLayer.prof_n = 0
 			next_report += 60.0

@@ -12,6 +12,7 @@ uniform sampler2D nz2 : filter_linear_mipmap, repeat_enable;
 uniform vec2 map_size = vec2(192.0, 192.0);
 uniform float tile_px = 32.0;
 uniform float anim = 1.0;   // 0 = agua quieta (ahorro), 1 = olas y destellos
+uniform float tm = 0.0;     // reloj de animación: lo escribe el juego sólo cuando corre (TIME obligaría a dibujar siempre, incluso en pausa)
 uniform float full = 1.0;   // 0 = perfil Ahorro: sin relieve ni sombras de montaña (4 lecturas menos)
 
 varying vec2 wp;
@@ -34,7 +35,7 @@ void fragment() {
 	vec3 c = texture(nz2, q * 0.2).rgb;          // grano de ~12 px
 	vec3 f = texture(nz2, q * 0.9).rgb;          // grano fino
 
-	float t = TIME * anim;
+	float t = tm * anim;
 	float coast = s + (b.r - 0.5) * 0.70 + (c.g - 0.5) * 0.30;
 	vec3 col;
 

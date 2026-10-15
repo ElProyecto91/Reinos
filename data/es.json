@@ -207,7 +207,7 @@
   ],
   [
    "Batería",
-   "En el menú y en Pausa puedes elegir Ahorro (20 fps), Normal (30 fps) o Alta (60 fps, resolución nativa). En pausa el juego casi no consume y, si no tocas la pantalla durante un rato, se pausa solo (se puede desactivar)."
+   "En el menú y en Pausa puedes elegir Ahorro (20 fps), Normal (30 fps) o Alta (60 fps, resolución nativa). Si miras la partida sin tocar la pantalla unos segundos, baja a menos fps (20 en Normal) y vuelve a subir al tocar. En pausa el juego no dibuja nada y casi no consume; si no tocas la pantalla durante un rato, se pausa solo (se puede desactivar)."
   ]
  ],
  "b_muralla": "Muralla",
