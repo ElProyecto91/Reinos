@@ -242,6 +242,14 @@ static func draw_symbol(c: CanvasItem, kind: String, r: Rect2, a: float = 1.0) -
 			c.draw_colored_polygon(PackedVector2Array([m + Vector2(0, -s * 0.27), m + Vector2(s * 0.09, 0), m + Vector2(-s * 0.09, 0)]), Color(0.95, 0.35, 0.3, a))
 			c.draw_colored_polygon(PackedVector2Array([m + Vector2(0, s * 0.27), m + Vector2(s * 0.09, 0), m + Vector2(-s * 0.09, 0)]), Color(0.88, 0.9, 0.95, a))
 			c.draw_circle(m, s * 0.04, Color(0.2, 0.2, 0.25, a))
+		"abil":
+			# estrella de seis puntas: habilidad de civilización
+			var gold := Color(1.0, 0.82, 0.30, a)
+			for i in 6:
+				var an := float(i) * TAU / 6.0 - PI * 0.5
+				var an2 := an + TAU / 12.0
+				c.draw_colored_polygon(PackedVector2Array([m + Vector2(cos(an - TAU / 12.0), sin(an - TAU / 12.0)) * s * 0.12, m + Vector2(cos(an), sin(an)) * s * 0.40, m + Vector2(cos(an2), sin(an2)) * s * 0.12]), gold)
+			c.draw_circle(m, s * 0.16, Color(1.0, 0.95, 0.65, a))
 		"ok":
 			c.draw_line(m + Vector2(-s * 0.3, 0.0), m + Vector2(-s * 0.08, s * 0.24), Color(0.4, 1, 0.5, a), maxf(4.0, s * 0.12))
 			c.draw_line(m + Vector2(-s * 0.08, s * 0.24), m + Vector2(s * 0.32, -s * 0.28), Color(0.4, 1, 0.5, a), maxf(4.0, s * 0.12))

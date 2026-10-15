@@ -32,6 +32,9 @@ const ERR_NOSHORE := -8     # no hay orilla cerca para desembarcar
 const ERR_CANT := -9        # esas unidades no pueden hacer eso
 const ERR_FULL := -10       # el barco va lleno
 const ERR_REQ := -11        # falta un requisito (p. ej. edificios militares para la Edad de los Castillos)
+const ERR_COOLDOWN := -12   # la habilidad de civilización aún se está recargando
+const ERR_NOTARGET := -13   # la habilidad necesita un punto del mapa
+const ERR_POP := -14        # no cabe en la población
 
 var W: int = 0
 var H: int = 0
@@ -93,6 +96,8 @@ var wcomp := PackedInt32Array()         # masa de agua conectada (−1 = tierra)
 var wcomp_size: Array = []
 var astar_w: AStarGrid2D                # rutas de barcos
 var stowed_list: Array[Ent] = []        # unidades que acaban de subir a un barco (se retiran al final del paso)
+var civ_mods: Array = []                # por jugador: tablas de multiplicadores de su civilización (Civs.build_mods; no se guarda)
+var zones: Array = []                   # zonas de fuego activas (habilidad de los bizantinos): {p, r, dps, until, owner}
 
 # ------------------------------------------------------------------ preparación
 
@@ -136,6 +141,7 @@ func setup(cfg: Dictionary) -> bool:
 		p.res = Defs.START_RES.duplicate()
 		p.start_tile = starts[i]
 		p.gather_mult = 1.0 if p.is_human else [0.8, 1.0, 1.2][clampi(p.difficulty, 0, 2)]
+		p.civ = String(pc.get("civ", ""))
 		players.append(p)
 		if p.is_human and human_index < 0:
 			human_index = i
@@ -144,6 +150,8 @@ func setup(cfg: Dictionary) -> bool:
 		for b in players.size():
 			row.append(players[a].team != players[b].team)
 		hostile.append(row)
+	_pick_civs()
+	_setup_civs()
 	for p in players:
 		_spawn_building("centro", p.idx, p.start_tile - Vector2i(1, 1), true)
 	map_info["carved_trees"] = _ensure_routes()
@@ -157,6 +165,95 @@ func setup(cfg: Dictionary) -> bool:
 	_rebuild_buckets()
 	return true
 
+
+## "random" -> una civilización al azar (sin repetir mientras queden libres); cualquier valor no válido -> sin civilización.
+func _pick_civs() -> void:
+	var taken := {}
+	for p in players:
+		if Civs.valid(p.civ):
+			taken[p.civ] = true
+	for p in players:
+		if p.civ == "random":
+			var free: Array = []
+			for c: String in Civs.IDS:
+				if not taken.has(c):
+					free.append(c)
+			if free.is_empty():
+				free = Civs.IDS.duplicate()
+			p.civ = free[rng.randi_range(0, free.size() - 1)]
+			taken[p.civ] = true
+		elif not Civs.valid(p.civ):
+			p.civ = ""
+
+## Tablas de multiplicadores de cada jugador (se rehacen al cargar una partida: no se guardan).
+func _setup_civs() -> void:
+	civ_mods.clear()
+	for p in players:
+		civ_mods.append(Civs.build_mods(p.civ))
+
+## Fija en la unidad recién creada los multiplicadores de su civilización (vida, daño, velocidad, alcance, vista).
+func _apply_civ(e: Ent) -> void:
+	if e.owner >= civ_mods.size():
+		return
+	var cm: Dictionary = civ_mods[e.owner]
+	var f: Variant = (cm["hp"] as Dictionary).get(e.type)
+	if f != null:
+		e.max_hp *= float(f)
+		e.hp = e.max_hp
+	f = (cm["atk"] as Dictionary).get(e.type)
+	if f != null:
+		e.am = float(f)
+	f = (cm["spd"] as Dictionary).get(e.type)
+	if f != null:
+		e.sm = float(f)
+	f = (cm["rng"] as Dictionary).get(e.type)
+	if f != null:
+		e.rm = float(f)
+	f = (cm["los"] as Dictionary).get(e.type)
+	if f != null:
+		e.lb = int(f)
+
+## Coste de entrenar `utype` para este jugador (con el descuento de su civilización).
+func unit_cost(pidx: int, utype: String) -> Dictionary:
+	var base: Dictionary = Defs.UNITS[utype]["cost"]
+	if pidx < 0 or pidx >= civ_mods.size():
+		return base
+	var f: Variant = (civ_mods[pidx]["cost"] as Dictionary).get(utype)
+	if f == null:
+		return base
+	var out := {}
+	for k in base:
+		out[k] = int(round(float(base[k]) * float(f)))
+	return out
+
+## Segundos que tarda `utype` en entrenarse para este jugador.
+func unit_time(pidx: int, utype: String) -> float:
+	var base := float(Defs.UNITS[utype]["time"])
+	if pidx < 0 or pidx >= civ_mods.size():
+		return base
+	var f: Variant = (civ_mods[pidx]["time"] as Dictionary).get(utype)
+	return base * float(f) if f != null else base
+
+## Coste y duración de la siguiente edad para este jugador.
+func age_cost(pidx: int, age: int) -> Dictionary:
+	var base: Dictionary = Defs.AGES[age]["cost"]
+	var f := float(civ_mods[pidx]["age_cost"]) if pidx < civ_mods.size() else 1.0
+	if f == 1.0:
+		return base
+	var out := {}
+	for k in base:
+		out[k] = int(round(float(base[k]) * f))
+	return out
+
+func age_time(pidx: int, age: int) -> float:
+	var f := float(civ_mods[pidx]["age_time"]) if pidx < civ_mods.size() else 1.0
+	return float(Defs.AGES[age]["time"]) * f
+
+func _bld_pop(b: Ent) -> int:
+	var n := int(b.def.get("pop", 0))
+	if b.type == "casa" and b.owner < civ_mods.size():
+		n += int(civ_mods[b.owner]["pop_house"])
+	return n
 
 ## Garantiza que desde cualquier casilla libre junto al centro urbano de cada base se pueda ir andando a las demás bases.
 ## Los árboles, las minas y las bayas son sólidos, así que un bosque denso puede cortar el paso por completo (los
@@ -533,6 +630,7 @@ func _spawn_unit(type: String, owner: int, tile: Vector2i) -> Ent:
 	e.ppos = e.pos
 	e.max_hp = float(d["hp"]) * float(Defs.AGE_STAT_MULT[players[owner].age])
 	e.hp = e.max_hp
+	_apply_civ(e)
 	e.radius = d["radius"]
 	e.naval = bool(d.get("naval", false))
 	e.off = Vector2(rng.randf_range(-7.0, 7.0), rng.randf_range(-7.0, 7.0))
@@ -557,6 +655,8 @@ func _spawn_building(type: String, owner: int, tile: Vector2i, complete: bool) -
 	e.pos = e.center()
 	e.ppos = e.pos
 	e.max_hp = float(d["hp"])
+	if owner < civ_mods.size():
+		e.max_hp *= float(civ_mods[owner]["bld_hp"])
 	e.progress = 1.0 if complete else 0.0
 	e.hp = e.max_hp if complete else e.max_hp * 0.1
 	e.radius = e.size * Defs.TILE * 0.5
@@ -587,7 +687,7 @@ func _on_building_complete(b: Ent, announce: bool) -> void:
 		gate_tile[b.tile.y * W + b.tile.x] = 1
 		astar2.set_point_weight_scale(b.tile, 1.0)
 		set_solid(b.tile, false)
-	p.pop_cap = mini(Defs.MAX_POP, p.pop_cap + int(b.def.get("pop", 0)))
+	p.pop_cap = mini(Defs.MAX_POP, p.pop_cap + _bld_pop(b))
 	if announce:
 		_ev({"t": "built", "pos": b.pos, "owner": b.owner, "type": b.type})
 
@@ -686,7 +786,7 @@ func scan_enemy(e: Ent, r: float) -> Ent:
 		if o.naval and not e.naval:
 			# a los barcos sólo se les dispara desde la orilla: los de cuerpo a cuerpo no pueden, y los
 			# arqueros no salen a perseguirlos mar adentro
-			if float(e.def["range"]) <= 1.5 or o.dist_to(e.pos) > float(e.def["range"]) * Defs.TILE:
+			if float(e.def["range"]) <= 1.5 or o.dist_to(e.pos) > float(e.def["range"]) * e.rm * Defs.TILE:
 				continue
 		if bool(e.def.get("siege", false)) and not o.is_building:
 			continue
@@ -1617,7 +1717,7 @@ func cmd_train(pidx: int, bid: int, utype: String) -> int:
 	var p: Player = players[pidx]
 	if b == null or b.owner != pidx or not b.is_building or b.progress < 1.0:
 		return ERR_INVALID
-	if not (b.def["train"] as Array).has(utype):
+	if not Civs.can_train(b.type, p.civ, utype):
 		return ERR_INVALID
 	var ud: Dictionary = Defs.UNITS[utype]
 	if p.age < int(ud["age"]):
@@ -1626,9 +1726,10 @@ func cmd_train(pidx: int, bid: int, utype: String) -> int:
 		return ERR_QUEUE
 	if bool(ud.get("naval", false)) and b.dock_tile.x < 0:
 		return ERR_INVALID
-	if not Defs.can_afford(p.res, ud["cost"]):
+	var cost := unit_cost(pidx, utype)
+	if not Defs.can_afford(p.res, cost):
 		return ERR_COST
-	Defs.pay(p.res, ud["cost"])
+	Defs.pay(p.res, cost)
 	b.queue.append(utype)
 	return OK
 
@@ -1637,7 +1738,7 @@ func cmd_cancel_train(pidx: int, bid: int, index: int) -> void:
 	if b == null or b.owner != pidx or index < 0 or index >= b.queue.size():
 		return
 	var utype: String = b.queue[index]
-	Defs.refund(players[pidx].res, Defs.UNITS[utype]["cost"])
+	Defs.refund(players[pidx].res, unit_cost(pidx, utype))
 	b.queue.remove_at(index)
 	if index == 0 and b.producing:
 		b.producing = false
@@ -1661,7 +1762,8 @@ func cmd_age_up(pidx: int) -> int:
 	if p.age >= Defs.AGES.size() - 1 or p.aging:
 		return ERR_INVALID
 	var ad: Dictionary = Defs.AGES[p.age + 1]
-	if not Defs.can_afford(p.res, ad["cost"]):
+	var acost := age_cost(pidx, p.age + 1)
+	if not Defs.can_afford(p.res, acost):
 		return ERR_COST
 	if military_kinds_done(pidx) < int(ad.get("need_mil", 0)):
 		return ERR_REQ
@@ -1672,9 +1774,9 @@ func cmd_age_up(pidx: int) -> int:
 			break
 	if not has_tc:
 		return ERR_INVALID
-	Defs.pay(p.res, ad["cost"])
+	Defs.pay(p.res, acost)
 	p.aging = true
-	p.age_left = ad["time"]
+	p.age_left = age_time(pidx, p.age + 1)
 	return OK
 
 func cmd_delete(pidx: int, id: int) -> void:
@@ -1750,6 +1852,8 @@ func step() -> void:
 		if b.alive:
 			_update_building(b)
 	_update_players()
+	if not zones.is_empty():
+		_zones_tick()
 	if step_count % 10 == 0:
 		_heal_tick()
 	if profiling:
@@ -1779,9 +1883,16 @@ func _cleanup() -> void:
 ## Una vez por segundo cada monje cura a los aliados heridos que tiene cerca (los que menos vida tienen primero).
 func _heal_tick() -> void:
 	for m in units:
-		if not m.alive or float(m.def.get("heal", 0.0)) <= 0.0:
+		if not m.alive:
+			continue
+		var rg := float(m.def.get("regen", 0.0))
+		if rg > 0.0 and m.hp < m.max_hp:
+			m.hp = minf(m.max_hp, m.hp + rg)
+		if float(m.def.get("heal", 0.0)) <= 0.0:
 			continue
 		var rate: float = float(m.def["heal"])
+		if m.owner < civ_mods.size():
+			rate *= float(civ_mods[m.owner]["heal"])
 		var rpx: float = float(m.def["heal_r"]) * float(Defs.TILE)
 		var hurt: Array[Ent] = []
 		for o in query(m.pos, rpx):
@@ -1798,6 +1909,8 @@ func _heal_tick() -> void:
 
 func _update_players() -> void:
 	for p in players:
+		if p.abil_on and time >= p.abil_until:
+			_end_buff(p)
 		if p.aging:
 			p.age_left -= DT
 			if p.age_left <= 0.0:
@@ -1815,12 +1928,114 @@ func _update_players() -> void:
 							c.hp *= ratio
 				_ev({"t": "age", "owner": p.idx, "age": p.age})
 
+# ------------------------------------------------------------------ habilidad de civilización
+
+func _end_buff(p: Player) -> void:
+	p.abil_on = false
+	p.b_atk = 1.0
+	p.b_spd = 1.0
+	p.b_def = 1.0
+	p.b_rate = 1.0
+	p.b_types = {}
+	p.b_loot = false
+	_ev({"t": "abil_end", "owner": p.idx})
+
+## Daño de las zonas de fuego: cada medio segundo, a todo lo hostil que pisa la zona (los edificios sufren la mitad).
+func _zones_tick() -> void:
+	var tick := step_count % 5 == 0
+	var i := 0
+	while i < zones.size():
+		var z: Dictionary = zones[i]
+		if time >= float(z["until"]):
+			zones.remove_at(i)
+			continue
+		if tick:
+			var dmg := float(z["dps"]) * 0.5
+			var ow: int = int(z["owner"])
+			for o in query(z["p"], float(z["r"])):
+				if o.alive and o.owner != ow and hostile[ow][o.owner] and not o.naval:
+					_damage(o, dmg * (0.5 if o.is_building else 1.0), null, true)
+		i += 1
+
+func _town_center(pidx: int) -> Ent:
+	for b in buildings:
+		if b.alive and b.owner == pidx and b.type == "centro" and b.progress >= 1.0:
+			return b
+	return null
+
+## Estado de la habilidad para la interfaz: {"has", "age_ok", "ready", "cd_left", "active", "act_left", "cd_total"}.
+func ability_state(pidx: int) -> Dictionary:
+	var p: Player = players[pidx]
+	var ab := Civs.ability_of(p.civ)
+	if ab.is_empty():
+		return {"has": false}
+	var left := maxf(0.0, p.abil_ready - time)
+	return {"has": true, "age_ok": p.age >= int(ab.get("age", 1)), "ready": left <= 0.0, "cd_left": left,
+		"cd_total": float(ab["cd"]), "active": p.abil_on, "act_left": maxf(0.0, p.abil_until - time), "kind": String(ab["kind"])}
+
+## Dispara la habilidad de la civilización. `tile` sólo hace falta si apunta (fuego).
+func cmd_ability(pidx: int, tile: Vector2i = Vector2i(-1, -1)) -> int:
+	var p: Player = players[pidx]
+	if not p.alive or not Civs.valid(p.civ):
+		return ERR_INVALID
+	var ab: Dictionary = Civs.ability_of(p.civ)
+	if p.age < int(ab.get("age", 1)):
+		return ERR_AGE
+	if time < p.abil_ready:
+		return ERR_COOLDOWN
+	var kind: String = ab["kind"]
+	var tc := _town_center(pidx)
+	var at: Vector2 = tc.center() if tc != null else tile_center(p.start_tile)
+	match kind:
+		"buff", "reveal":
+			p.b_atk = float(ab.get("atk", 1.0))
+			p.b_spd = float(ab.get("spd", 1.0))
+			p.b_def = float(ab.get("def", 1.0))
+			p.b_rate = float(ab.get("rate", 1.0))
+			p.b_types = Civs.buff_types(ab)
+			p.b_loot = bool(ab.get("loot", false))
+			p.b_loot_gold = int(ab.get("loot_gold", 0))
+			p.b_loot_food = int(ab.get("loot_food", 0))
+			p.abil_on = true
+			p.abil_until = time + float(ab["dur"])
+			if kind == "reveal":
+				p.reveal_until = time + float(ab["dur"])
+		"lump":
+			var vills := 0
+			for u in units:
+				if u.alive and u.owner == pidx and u.type == "aldeano":
+					vills += 1
+			var n := clampi(vills * int(ab["per_vill"]), int(ab["min"]), int(ab["max"]))
+			for k: String in ab["kinds"]:
+				p.res[k] = int(p.res.get(k, 0)) + n
+			_ev({"t": "abil_text", "pos": at, "owner": pidx, "n": n})
+		"fire":
+			if tile.x < 0 or not in_bounds(tile):
+				return ERR_NOTARGET
+			zones.append({"p": tile_center(tile), "r": float(ab["radius"]) * Defs.TILE, "dps": float(ab["dps"]), "until": time + float(ab["dur"]), "owner": pidx})
+			at = tile_center(tile)
+		"spawn":
+			var room := p.pop_cap - p.pop - p.reserved
+			var n2 := mini(int(ab["n"]), room)
+			if n2 <= 0:
+				return ERR_POP
+			var base := tile_of(at)
+			for ft in free_tiles_around(base + Vector2i(0, 2), n2, 8):
+				_spawn_unit(String(ab["unit"]), pidx, ft)
+	p.abil_ready = time + float(ab["cd"])
+	p.abil_uses += 1
+	_ev({"t": "abil", "owner": pidx, "civ": p.civ, "kind": kind, "pos": at})
+	return OK
+
 # ------------------------------------------------------------------ unidades
 
 func _update_unit(e: Ent) -> void:
 	e.cd = maxf(0.0, e.cd - DT)
 	e.repath_t = maxf(0.0, e.repath_t - DT)
-	var step_px: float = float(e.def["speed"]) * Defs.TILE * DT
+	var step_px: float = float(e.def["speed"]) * Defs.TILE * DT * e.sm
+	var pl: Player = players[e.owner]
+	if pl.abil_on and pl.b_spd != 1.0 and pl.b_types.has(e.type):
+		step_px *= pl.b_spd
 	match e.state:
 		S_IDLE:
 			_u_idle(e)
@@ -1844,7 +2059,7 @@ func _update_unit(e: Ent) -> void:
 			_u_board_go(e, step_px)
 
 func _los_px(e: Ent) -> float:
-	return float(e.def["los"]) * Defs.TILE
+	return (float(e.def["los"]) + float(e.lb)) * Defs.TILE
 
 func _engage(e: Ent, t: Ent, auto: bool) -> void:
 	if e.state == S_IDLE:
@@ -2066,7 +2281,7 @@ func _unload(sh: Ent) -> int:
 	return n
 
 func _in_range(e: Ent, t: Ent, slack: float = 1.0) -> bool:
-	return t.dist_to(e.pos) - e.radius <= float(e.def["range"]) * Defs.TILE * slack
+	return t.dist_to(e.pos) - e.radius <= float(e.def["range"]) * e.rm * Defs.TILE * slack
 
 func _target_lost(e: Ent) -> void:
 	e.target_id = 0
@@ -2140,7 +2355,11 @@ func _u_attack(e: Ent) -> void:
 		e.repath_t = 0.0
 		return
 	if e.cd <= 0.0:
-		e.cd = float(e.def["cd"])
+		var cdv := float(e.def["cd"])
+		var pl: Player = players[e.owner]
+		if pl.abil_on and pl.b_rate != 1.0 and pl.b_types.has(e.type):
+			cdv /= pl.b_rate
+		e.cd = cdv
 		_hit(e, t)
 	if e.is_military() and t.is_building:
 		e.scan_t -= DT
@@ -2152,12 +2371,13 @@ func _u_attack(e: Ent) -> void:
 
 func _hit(a: Ent, t: Ent) -> void:
 	var p: Player = players[a.owner]
-	var dmg: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age])
+	var dmg: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]) * a.am
+	if p.abil_on and p.b_atk != 1.0 and p.b_types.has(a.type):
+		dmg *= p.b_atk
 	if t.is_building:
 		dmg *= float(a.def.get("vs_building", 0.3))
 	else:
-		var bon: Dictionary = Defs.BONUS.get(a.type, {})
-		dmg *= float(bon.get(t.type, 1.0))
+		dmg *= Defs.bonus(a.type, t.type)
 	if bool(a.def.get("cannon", false)):
 		_ev({"t": "cannon", "from": a.pos, "to": t.center(), "owner": a.owner})
 	elif bool(a.def.get("rock", false)):
@@ -2171,20 +2391,22 @@ func _hit(a: Ent, t: Ent) -> void:
 	if splash > 0.0:
 		# la piedra también golpea (a menos fuerza) a los enemigos que están junto al objetivo
 		var c := t.center()
-		var base_atk: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age])
+		var base_atk: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]) * a.am
 		for o in query(c, splash * float(Defs.TILE)):
 			if o != t and o.alive and not o.is_building and o.owner != a.owner and hostile[a.owner][o.owner]:
-				var bon2: Dictionary = Defs.BONUS.get(a.type, {})
-				_damage(o, base_atk * 0.55 * float(bon2.get(o.type, 1.0)), a)
+				_damage(o, base_atk * 0.55 * Defs.bonus(a.type, o.type), a)
 
-func _damage(t: Ent, dmg: float, attacker: Ent) -> void:
+func _damage(t: Ent, dmg: float, attacker: Ent, raw: bool = false) -> void:
+	var tp: Player = players[t.owner]
 	if not t.is_building:
-		var rres: float = float(t.def.get("rres", 1.0))
-		if rres < 1.0 and (attacker == null or float(attacker.def["range"]) > 1.5):
-			dmg *= rres            # los arietes casi no sienten flechas ni torres
+		if not raw:
+			var rres: float = float(t.def.get("rres", 1.0))
+			if rres < 1.0 and (attacker == null or float(attacker.def["range"]) > 1.5):
+				dmg *= rres            # los arietes casi no sienten flechas ni torres
+		if tp.abil_on and tp.b_def != 1.0 and tp.b_types.has(t.type):
+			dmg *= tp.b_def
 	t.hp -= dmg
 	t.last_hit = time
-	var tp: Player = players[t.owner]
 	if tp.is_human and time - tp.last_alarm > 8.0:
 		tp.last_alarm = time
 		_ev({"t": "alarm", "pos": t.center(), "owner": t.owner})
@@ -2296,7 +2518,10 @@ func _u_gather(e: Ent) -> void:
 		_request_path(e, e.target_tile)
 		return
 	var p: Player = players[e.owner]
-	e.gather_acc += float(Defs.RES_INFO[rt]["rate"]) * p.gather_mult * DT
+	var gm := p.gather_mult
+	if e.owner < civ_mods.size():
+		gm *= (civ_mods[e.owner]["gather"] as PackedFloat32Array)[rt]
+	e.gather_acc += float(Defs.RES_INFO[rt]["rate"]) * gm * DT
 	if e.gather_acc >= 1.0:
 		var n := mini(int(e.gather_acc), ramt[idx])
 		e.gather_acc -= float(n)
@@ -2450,7 +2675,7 @@ func _recount_pop_cap(p: Player) -> void:
 	var cap := 0
 	for b in buildings:
 		if b.alive and b.owner == p.idx and b.progress >= 1.0:
-			cap += int(b.def.get("pop", 0))
+			cap += _bld_pop(b)
 	p.pop_cap = mini(Defs.MAX_POP, cap)
 
 func _update_building(b: Ent) -> void:
@@ -2465,8 +2690,7 @@ func _update_building(b: Ent) -> void:
 				b.blocked_pop = false
 				b.producing = true
 				p.reserved += 1
-				var ud: Dictionary = Defs.UNITS[b.queue[0]]
-				b.train_total = float(ud["time"])
+				b.train_total = unit_time(b.owner, b.queue[0])
 				b.train_left = b.train_total
 		else:
 			b.train_left -= DT
@@ -2555,7 +2779,12 @@ func _kill(e: Ent, killer: Ent) -> void:
 	var p: Player = players[e.owner]
 	p.losses += 1
 	if killer != null:
-		players[killer.owner].kills += 1
+		var kp: Player = players[killer.owner]
+		kp.kills += 1
+		if kp.b_loot and kp.abil_on and not e.is_building and kp.b_types.has(killer.type):
+			kp.res["gold"] = int(kp.res["gold"]) + kp.b_loot_gold
+			kp.res["food"] = int(kp.res["food"]) + kp.b_loot_food
+			_ev({"t": "loot", "pos": e.pos, "owner": killer.owner, "gold": kp.b_loot_gold})
 	_ev({"t": "death", "pos": e.center(), "owner": e.owner, "building": e.is_building, "type": e.type})
 	dead.append(e)
 	if e.is_building:
@@ -2630,7 +2859,7 @@ func summary() -> Dictionary:
 			if b.alive and b.owner == p.idx:
 				bld[b.type] = int(bld.get(b.type, 0)) + (1 if b.progress >= 1.0 else 0)
 		(out["players"] as Array).append({
-			"i": p.idx, "alive": p.alive, "age": p.age, "pop": p.pop, "cap": p.pop_cap,
+			"i": p.idx, "civ": p.civ, "alive": p.alive, "age": p.age, "pop": p.pop, "cap": p.pop_cap,
 			"vill": vill, "mil": mil, "res": p.res.duplicate(), "b": bld, "kills": p.kills,
 		})
 	return out

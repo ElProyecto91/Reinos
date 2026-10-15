@@ -111,6 +111,7 @@ func _think() -> void:
 	t0 = _pt("ai_train", t0)
 	_age(p, vills, done)
 	_military(p, army, base)
+	_ability(p, vills, army, base)
 	t0 = _pt("ai_military", t0)
 	_naval(p, navy)
 	_pt("ai_naval", t0)
@@ -530,8 +531,7 @@ func _scan_mix(base: Vector2i, army: Array) -> void:
 	mix = merged
 
 static func _bonus(a: String, b: String) -> float:
-	var d: Dictionary = Defs.BONUS.get(a, {})
-	return float(d.get(b, 1.0))
+	return Defs.bonus(a, b)
 
 ## >1 si este tipo de soldado rinde bien contra lo que se ha visto del enemigo, <1 si rinde mal.
 func _counter_score(ut: String) -> float:
@@ -588,7 +588,7 @@ func _can_spend(p: Player, cost: Dictionary, saving: bool) -> bool:
 			return false
 	if not saving:
 		return true
-	var ac: Dictionary = Defs.AGES[mini(p.age + 1, Defs.AGES.size() - 1)]["cost"]
+	var ac: Dictionary = sim.age_cost(pi, mini(p.age + 1, Defs.AGES.size() - 1))
 	for k in ac:
 		if int(p.res.get(k, 0)) - int(cost.get(k, 0)) < int(ac[k]) and int(cost.get(k, 0)) > 0:
 			return false
@@ -622,6 +622,9 @@ func _pick_unit(b: Ent, p: Player, cnt: Dictionary) -> String:
 			opts = [["monje", 1.0 if int(cnt.get("monje", 0)) < [1, 3, 5][diff] else 0.0]]
 		"castillo":
 			opts = [["trabuquete", 1.0 if int(cnt.get("trabuquete", 0)) < [0, 1, 3][diff] else 0.0]]
+			var uq := Civs.unique_of(p.civ)
+			if uq != "":
+				opts.append([uq, 3.0])          # la unidad única de su civilización es lo que más entrena el castillo
 		_:
 			var tr: Array = b.def["train"]
 			opts = [[tr[0], 1.0]]
@@ -629,7 +632,7 @@ func _pick_unit(b: Ent, p: Player, cnt: Dictionary) -> String:
 	var ok: Array = []
 	for o in opts:
 		var ud: Dictionary = Defs.UNITS[o[0]]
-		if float(o[1]) > 0.0 and p.age >= int(ud["age"]) and Defs.can_afford(p.res, ud["cost"]):
+		if float(o[1]) > 0.0 and p.age >= int(ud["age"]) and Defs.can_afford(p.res, sim.unit_cost(pi, o[0])):
 			var w := float(o[1]) * _counter_score(o[0])
 			ok.append([o[0], w])
 			total += w
@@ -671,26 +674,26 @@ func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array
 		if tr.is_empty():
 			continue
 		if b.type == "centro":
-			if n + queued_v < _vill_target(p) and b.queue.size() < 2 and _can_spend(p, Defs.UNITS["aldeano"]["cost"], saving):
+			if n + queued_v < _vill_target(p) and b.queue.size() < 2 and _can_spend(p, sim.unit_cost(pi, "aldeano"), saving):
 				if sim.cmd_train(pi, b.id, "aldeano") > 0:
 					queued_v += 1
 		elif b.type == "puerto":
 			if n < [12, 10, 9][diff] or b.queue.size() >= 2 or p.pop + p.reserved + b.queue.size() >= p.pop_cap:
 				continue
 			var want_boats: int = [2, 3, 4][diff] + (1 if p.age >= 1 else 0)
-			if boats.size() + queued_boats < want_boats and sim.find_fish(b.dock_tile, 18).x >= 0 and _can_spend(p, Defs.UNITS["barco_pesca"]["cost"], saving):
+			if boats.size() + queued_boats < want_boats and sim.find_fish(b.dock_tile, 18).x >= 0 and _can_spend(p, sim.unit_cost(pi, "barco_pesca"), saving):
 				if sim.cmd_train(pi, b.id, "barco_pesca") > 0:
 					queued_boats += 1
 			elif p.age >= 1 and navy.size() + queued_ships < [1, 2, 3][diff] and not saving:
-				var ship := "galeon" if (diff == 2 and navy.size() >= 2 and Defs.can_afford(p.res, Defs.UNITS["galeon"]["cost"])) else "galera"
-				if Defs.can_afford(p.res, Defs.UNITS[ship]["cost"]) and sim.cmd_train(pi, b.id, ship) > 0:
+				var ship := "galeon" if (diff == 2 and navy.size() >= 2 and Defs.can_afford(p.res, sim.unit_cost(pi, "galeon"))) else "galera"
+				if Defs.can_afford(p.res, sim.unit_cost(pi, ship)) and sim.cmd_train(pi, b.id, ship) > 0:
 					queued_ships += 1
 		else:
 			if n < [12, 10, 9][diff]:
 				continue
 			if b.queue.size() < 2 and p.pop + p.reserved + b.queue.size() < p.pop_cap:
 				var ut := _pick_unit(b, p, cnt)
-				if ut != "" and _can_spend(p, Defs.UNITS[ut]["cost"], saving):
+				if ut != "" and _can_spend(p, sim.unit_cost(pi, ut), saving):
 					if sim.cmd_train(pi, b.id, ut) > 0 and LIMITED.has(ut):
 						cnt[ut] = int(cnt.get(ut, 0)) + 1
 
@@ -864,6 +867,53 @@ func _military(p: Player, army: Array, base: Vector2i) -> void:
 			gather_ids.append(u.id)
 	if not gather_ids.is_empty():
 		sim.cmd_move(pi, gather_ids, rally, false)
+
+## Habilidad de civilización: la IA (normal y difícil) la usa cuando sirve — bonos con el ejército peleando, recursos y
+## refuerzos en cuanto estén listos, fuego sobre el grupo enemigo más denso que tenga cerca de su gente.
+func _ability(p: Player, vills: Array, army: Array, base: Vector2i) -> void:
+	if diff == 0 or p.civ == "" or p.age < 1 or sim.time < p.abil_ready:
+		return
+	var ab: Dictionary = Civs.ability_of(p.civ)
+	match String(ab["kind"]):
+		"buff", "reveal":
+			var fighting := 0
+			for u in army:
+				if u.state == Sim.S_ATTACK or u.state == Sim.S_ATTACK_GO:
+					fighting += 1
+			if fighting >= maxi(6, army.size() / 3):
+				sim.cmd_ability(pi)
+		"lump":
+			if vills.size() >= 14:
+				sim.cmd_ability(pi)
+		"spawn":
+			if p.pop + 5 <= p.pop_cap - p.reserved and army.size() >= 6:
+				sim.cmd_ability(pi)
+		"fire":
+			var tile := _fire_target(army, base)
+			if tile.x >= 0:
+				sim.cmd_ability(pi, tile)
+
+## Casilla donde más enemigos están a la vez junto a mi ejército o mi base (>= 5 soldados), o (-1,-1).
+func _fire_target(army: Array, base: Vector2i) -> Vector2i:
+	var anchors: Array[Vector2] = [sim.tile_center(base)]
+	for i in mini(army.size(), 6):
+		anchors.append((army[i] as Ent).pos)
+	var best := Vector2i(-1, -1)
+	var best_n := 4
+	var seen := {}
+	for a in anchors:
+		for o in sim.query(a, 14.0 * Defs.TILE):
+			if not o.alive or o.is_building or o.naval or not o.is_military() or not sim.is_hostile(pi, o.owner) or seen.has(o.id):
+				continue
+			seen[o.id] = true
+			var n := 0
+			for q in sim.query(o.pos, 2.4 * Defs.TILE):
+				if not q.is_building and q.alive and sim.is_hostile(pi, q.owner):
+					n += 1
+			if n > best_n:
+				best_n = n
+				best = sim.tile_of(o.pos)
+	return best
 
 ## Hostigamiento: unos cuantos jinetes de la reserva caen sobre los aldeanos del enemigo y vuelven.
 func _raid(p: Player, reserve: Array, tp: int, base: Vector2i) -> void:

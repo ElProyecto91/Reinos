@@ -22,6 +22,7 @@ var place_cancel: UiButton
 var toasts: Toasts
 var grid: Array[UiButton] = []
 var quick: Array[UiButton] = []
+var abil_btn: UiButton
 var speed_btn: UiButton
 var menu_btn: UiButton
 var pause_ui: Control
@@ -75,6 +76,14 @@ func _ready() -> void:
 		root.add_child(b)
 		quick.append(b)
 
+	abil_btn = UiButton.new()
+	abil_btn.font_size = 16
+	abil_btn.sub_size = 15
+	abil_btn.icon_kind = "abil"
+	abil_btn.accent = Color(1.0, 0.8, 0.3)
+	abil_btn.action = func() -> void: game.ui_ability()
+	abil_btn.visible = false
+	root.add_child(abil_btn)
 	speed_btn = UiButton.new()
 	speed_btn.font_size = 22
 	speed_btn.action = _cycle_speed
@@ -132,6 +141,8 @@ func layout() -> void:
 	for i in quick.size():
 		quick[i].position = Vector2(vs.x - 80, TOP_H + 12 + i * 80)
 		quick[i].size = Vector2(72, 72)
+	abil_btn.position = Vector2(vs.x - 80, TOP_H + 12 + quick.size() * 80)
+	abil_btn.size = Vector2(72, 80)
 	toasts.position = Vector2.ZERO
 	toasts.size = vs
 	for c in [pause_ui, help_ui, end_ui, load_ui]:
@@ -402,6 +413,7 @@ func refresh_now() -> void:
 	var army := g.sim.army(g.human).size()
 	quick[1].badge = str(army) if army > 0 else ""
 	quick[1].queue_redraw()
+	_update_ability(g, p)
 	var has_sel := not g.sel.is_empty()
 	var placing := g.placing_type != ""
 	info.visible = has_sel and not placing
@@ -415,6 +427,34 @@ func refresh_now() -> void:
 	minimap.queue_redraw()
 	if pause_ui.visible:
 		_refresh_pause()
+
+## Botón de la habilidad de civilización: recargando (barra y segundos), activa (resaltado) o lista.
+func _update_ability(g: Game, p: Player) -> void:
+	var st := g.sim.ability_state(g.human)
+	var has: bool = bool(st["has"])
+	if abil_btn.visible != has:
+		abil_btn.visible = has
+	if not has:
+		return
+	abil_btn.text = Lang.t("abils_" + p.civ)
+	abil_btn.toggled = bool(st["active"]) or g.abil_mode
+	if not bool(st["age_ok"]):
+		abil_btn.enabled = false
+		abil_btn.sub = Lang.t("needs_age_1")
+		abil_btn.progress = -1.0
+	elif bool(st["active"]):
+		abil_btn.enabled = true
+		abil_btn.sub = "%ds" % int(ceil(float(st["act_left"])))
+		abil_btn.progress = -1.0
+	elif not bool(st["ready"]):
+		abil_btn.enabled = false
+		abil_btn.sub = "%ds" % int(ceil(float(st["cd_left"])))
+		abil_btn.progress = 1.0 - float(st["cd_left"]) / maxf(1.0, float(st["cd_total"]))
+	else:
+		abil_btn.enabled = true
+		abil_btn.sub = Lang.t("abil_ready")
+		abil_btn.progress = -1.0
+	abil_btn.queue_redraw()
 
 func _update_place_bar() -> void:
 	var g := game
@@ -506,19 +546,19 @@ func _fill_grid(p: Player) -> int:
 	var units := g.sel_own_units()
 	if b != null and b.owner == g.human:
 		if b.progress >= 1.0:
-			for ut: String in b.def["train"]:
+			for ut: String in Civs.train_list(b.type, p.civ):
 				var ud: Dictionary = Defs.UNITS[ut]
 				var okage := p.age >= int(ud["age"])
-				_slot(n, _short_name(ut), g.art.unit_icon(ut, g.human % 4), "", ud["cost"], res, okage, (func() -> void: g.ui_train(ut)), false, -1.0, "" if okage else Lang.t("needs_age_%d" % int(ud["age"])))
+				_slot(n, _short_name(ut), g.art.unit_icon(ut, g.human % 4), "", g.sim.unit_cost(g.human, ut), res, okage, (func() -> void: g.ui_train(ut)), false, -1.0, "" if okage else Lang.t("needs_age_%d" % int(ud["age"])))
 				n += 1
 			if b.type == "centro":
 				if p.aging:
-					_slot(n, Lang.t("aging"), null, "age", {}, res, true, (func() -> void: pass), true, 1.0 - p.age_left / float(Defs.AGES[p.age + 1]["time"]), "%ds" % int(ceil(p.age_left)))
+					_slot(n, Lang.t("aging"), null, "age", {}, res, true, (func() -> void: pass), true, 1.0 - p.age_left / g.sim.age_time(g.human, p.age + 1), "%ds" % int(ceil(p.age_left)))
 					n += 1
 				elif p.age < Defs.AGES.size() - 1:
 					var need: int = int(Defs.AGES[p.age + 1].get("need_mil", 0))
 					var have: int = g.sim.military_kinds_done(g.human) if need > 0 else 0
-					_slot(n, Lang.t("age_up"), null, "age", Defs.AGES[p.age + 1]["cost"], res, have >= need, (func() -> void: g.ui_age_up()), false, -1.0, "" if have >= need else Lang.t("needs_mil", [have, need]))
+					_slot(n, Lang.t("age_up"), null, "age", g.sim.age_cost(g.human, p.age + 1), res, have >= need, (func() -> void: g.ui_age_up()), false, -1.0, "" if have >= need else Lang.t("needs_mil", [have, need]))
 					n += 1
 			_slot(n, Lang.t("rally"), null, "flag", {}, res, true, (func() -> void: g.ui_toggle_rally()), g.rally_mode)
 			n += 1
@@ -634,6 +674,8 @@ class TopBar extends Control:
 		if p.aging:
 			age_txt = "%s ▸ %ds" % [age_txt, int(ceil(p.age_left))]
 		draw_string(font, Vector2(x, 36), age_txt, HORIZONTAL_ALIGNMENT_LEFT, 260, 22, Color(1, 0.9, 0.55))
+		if p.civ != "":
+			draw_string(font, Vector2(size.x - 64 - 70 - 100 - 235, 35), Lang.t("civ_" + p.civ), HORIZONTAL_ALIGNMENT_RIGHT, 225, 20, Color(0.85, 0.92, 1.0))
 		var secs := int(g.sim.time)
 		var tt := "%d:%02d" % [secs / 60, secs % 60]
 		draw_string(font, Vector2(size.x - 64 - 70 - 100, 36), tt, HORIZONTAL_ALIGNMENT_RIGHT, 92, 24, Color(0.85, 0.8, 0.7))
@@ -847,9 +889,12 @@ class InfoPanel extends Control:
 			var oc: Color = Defs.PLAYER_COLORS[e.owner % 4]
 			draw_string(font, Vector2(88, 36), name_txt, HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 28, Color(0.98, 0.94, 0.82))
 			var owner_name: String = g.sim.players[e.owner].name
+			var ocv: String = g.sim.players[e.owner].civ
+			if ocv != "":
+				owner_name += " · " + Lang.t("civ_" + ocv)
 			draw_circle(Vector2(96, 56), 6, oc)
-			draw_string(font, Vector2(108, 62), owner_name, HORIZONTAL_ALIGNMENT_LEFT, 150, 18, oc.lightened(0.3))
-			_hp_bar(font, 270, 44, minf(size.x - 290, 220), e)
+			draw_string(font, Vector2(108, 62), owner_name, HORIZONTAL_ALIGNMENT_LEFT, 175, 17, oc.lightened(0.3))
+			_hp_bar(font, 290, 44, minf(size.x - 310, 200), e)
 			if e.is_building:
 				if e.progress < 1.0:
 					draw_string(font, Vector2(88, 94), Lang.t("under_construction", [int(e.progress * 100.0)]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, Color(0.7, 0.85, 1.0))

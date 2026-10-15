@@ -73,11 +73,19 @@ func update(sim: Sim, pidx: int) -> void:
 	for u in sim.units:
 		if u.alive and u.owner == pidx:
 			var c := sim.tile_of(u.pos)
-			var r := int(u.def["los"])
+			var r := int(u.def["los"]) + u.lb
 			var key := ((c.y + 64) * (W + 128) + (c.x + 64)) * 64 + r
 			if not done.has(key):
 				done[key] = true
 				_reveal(c, r, new_list)
+	if sim.players[pidx].reveal_until > sim.time:
+		# Espejismo (sarracenos): se ven todos los enemigos (unidades y edificios) mientras dura
+		for u in sim.units:
+			if u.alive and sim.is_hostile(pidx, u.owner):
+				_reveal(sim.tile_of(u.pos), 3, new_list)
+		for b in sim.buildings:
+			if b.alive and sim.is_hostile(pidx, b.owner):
+				_reveal(b.tile + Vector2i(b.size / 2, b.size / 2), b.size / 2 + 2, new_list)
 	for b in sim.buildings:
 		if b.alive and b.owner == pidx:
 			var r: int = int(b.def.get("los", 5))

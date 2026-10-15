@@ -52,7 +52,13 @@ func test_defs() -> void:
 		var bt: String = ud.get("building", "")
 		ok(bt != "" and Defs.BUILDINGS.has(bt), "%s: edificio de entrenamiento inexistente (%s)" % [ut, bt])
 		if Defs.BUILDINGS.has(bt):
-			ok((Defs.BUILDINGS[bt].get("train", []) as Array).has(ut) or ut == "aldeano", "%s no está en la lista de entrenamiento de %s" % [ut, bt])
+			# las unidades únicas no están en la lista base: las añade Civs.train_list según la civilización
+			var is_unique := false
+			for cid in Civs.IDS:
+				if Civs.unique_of(cid) == ut:
+					is_unique = true
+					ok(Civs.train_list(bt, cid).has(ut), "%s no está en la lista de entrenamiento de %s (civ %s)" % [ut, bt, cid])
+			ok(is_unique or (Defs.BUILDINGS[bt].get("train", []) as Array).has(ut) or ut == "aldeano", "%s no está en la lista de entrenamiento de %s" % [ut, bt])
 		ok(int(ud["age"]) <= Defs.AGES.size() - 1, "%s: edad inexistente" % ut)
 	for bt in Defs.BUILDINGS:
 		for ut in (Defs.BUILDINGS[bt].get("train", []) as Array):

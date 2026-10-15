@@ -94,6 +94,7 @@ static func snapshot_sim(s: Sim) -> Dictionary:
 		sd[n] = (s.get(n) as Dictionary).duplicate(true)
 	sd["hostile"] = s.hostile.duplicate(true)
 	sd["path_queue"] = s.path_queue.duplicate()
+	sd["zones"] = s.zones.duplicate(true)
 	sd["rng"] = [s.rng.seed, s.rng.state]
 	var ents: Array = []
 	for e: Ent in s.ents.values():
@@ -315,6 +316,8 @@ static func restore(data: Dictionary) -> Sim:
 	s.farm_slots = (d["farm_slots"] as Dictionary).duplicate(true)
 	s.hostile = (d["hostile"] as Array).duplicate(true)
 	s.path_queue = (d["path_queue"] as Array).duplicate()
+	if d.has("zones"):
+		s.zones = (d["zones"] as Array).duplicate(true)
 	var rs: Array = d["rng"]
 	s.rng.seed = int(rs[0])
 	s.rng.state = int(rs[1])
@@ -323,6 +326,7 @@ static func restore(data: Dictionary) -> Sim:
 		var p := Player.new()
 		_dec_obj(p, pd, "Player", [])
 		s.players.append(p)
+	s._setup_civs()
 	if s.hostile.size() != s.players.size():
 		return _fail("alianzas")
 	# entidades

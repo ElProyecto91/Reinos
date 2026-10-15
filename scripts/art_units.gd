@@ -39,6 +39,15 @@ const CELLS := {
 	"barco_transporte": [104, 70, 52, 58, 1.6, 4],
 	"galera": [128, 64, 62, 46, 1.6, 6],
 	"galeon": [132, 84, 62, 74, 1.6, 6],
+	# unidades únicas de civilización (ArtCiv)
+	"hachero": [88, 76, 30, 72, 2.0, 8],
+	"arquero_largo": [80, 76, 30, 72, 2.0, 8],
+	"teutonico": [84, 76, 30, 72, 2.0, 7],
+	"berserker": [88, 76, 30, 72, 2.0, 7],
+	"conquistador": [104, 76, 40, 66, 1.6, 8],
+	"catafracta": [112, 82, 42, 70, 1.6, 7],
+	"mameluco": [104, 76, 40, 66, 1.6, 7],
+	"mangudai": [104, 76, 40, 66, 1.6, 8],
 }
 
 static func sheet_size(type: String) -> Vector2i:
@@ -568,6 +577,22 @@ static func _paint(type: String, f: int, sp: Sp) -> void:
 			ArtShips._p_galera(sp, f)
 		"galeon":
 			ArtShips._p_galeon(sp, f)
+		"hachero":
+			ArtCiv._p_hachero(sp, f)
+		"arquero_largo":
+			_p_arquero(sp, f, 1)
+		"teutonico":
+			ArtCiv._p_teutonico(sp, f)
+		"berserker":
+			ArtCiv._p_berserker(sp, f)
+		"conquistador":
+			ArtCiv._p_conquistador(sp, f)
+		"catafracta":
+			ArtCiv._p_catafracta(sp, f)
+		"mameluco":
+			ArtCiv._p_mameluco(sp, f)
+		"mangudai":
+			ArtCiv._p_mangudai(sp, f)
 		_:
 			_p_aldeano(sp, 0)
 
@@ -703,13 +728,13 @@ static func quiver(sp: Sp, j: Dictionary) -> void:
 	sp.line(a + V(-0.8, 0), b + V(-0.8, 0), 1.0, Color(0.70, 0.48, 0.24))
 	sp.line(a + V(0.5, 2.0), b + V(0.5, -1.0), 0.8, Color(0.28, 0.17, 0.08))
 
-static func bow(sp: Sp, grip: Vector2, string_hand: Vector2, drawn: bool, arrow: bool) -> void:
+static func bow(sp: Sp, grip: Vector2, string_hand: Vector2, drawn: bool, arrow: bool, k: float = 1.0) -> void:
 	sp.lay(2)
 	var wood := Color(0.55, 0.36, 0.17)
-	var top := grip + V(-2.6, -13.5)
-	var bot := grip + V(-2.6, 13.5)
-	var mt := grip + V(0.9, -7.0)
-	var mb := grip + V(0.9, 7.0)
+	var top := grip + V(-2.6, -13.5) * k
+	var bot := grip + V(-2.6, 13.5) * k
+	var mt := grip + V(0.9, -7.0) * k
+	var mb := grip + V(0.9, 7.0) * k
 	var pts := [top, mt, grip, mb, bot]
 	for i in 4:
 		sp.line(pts[i], pts[i + 1], 3.3, OUT)
@@ -854,9 +879,10 @@ static func _p_espadachin(sp: Sp, f: int) -> void:
 	var hn: Vector2 = j["hand_n"]
 	shield(sp, hn + V(2.8, -1.2), 5.6, 7.2, Color(0.80, 0.68, 0.30))
 
-static func _p_arquero(sp: Sp, f: int) -> void:
+static func _p_arquero(sp: Sp, f: int, v: int = 0) -> void:
 	sp.at(0.0, 12.0)
-	var green := Color(0.28, 0.40, 0.22)
+	var green := Color(0.28, 0.40, 0.22) if v == 0 else Color(0.20, 0.30, 0.17)
+	var bk := 1.0 if v == 0 else 1.5
 	var pose := _mk(walk_pose(f), {})
 	var lean := 0.0
 	var mode := 0        # 0 en marcha, 1 tensando, 2 suelta, 3 apuntando
@@ -894,13 +920,13 @@ static func _p_arquero(sp: Sp, f: int) -> void:
 	var gf: Vector2 = j["hand_f"]
 	match mode:
 		0:
-			bow(sp, gn + V(1.0, 0.5), gn + V(1.0, 0.5), false, false)
+			bow(sp, gn + V(1.0, 0.5), gn + V(1.0, 0.5), false, false, bk)
 		1:
-			bow(sp, gn + V(1.0, 0.0), gf, true, true)
+			bow(sp, gn + V(1.0, 0.0), gf, true, true, bk)
 		2:
-			bow(sp, gn + V(1.0, 0.0), gn + V(1.0, 0.0), false, false)
+			bow(sp, gn + V(1.0, 0.0), gn + V(1.0, 0.0), false, false, bk)
 		3:
-			bow(sp, gn + V(1.0, 0.0), gf, true, true)
+			bow(sp, gn + V(1.0, 0.0), gf, true, true, bk)
 	# la mano que tensa la cuerda va por delante
 	if mode == 1 or mode == 3:
 		hand(sp, gf, SKIN)

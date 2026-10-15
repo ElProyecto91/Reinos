@@ -131,6 +131,48 @@ const UNITS := {
 		"cost": {"gold": 90}, "time": 28.0, "building": "monasterio", "age": 2,
 		"military": false, "radius": 7.0, "vs_building": 0.0, "heal": 2.6, "heal_r": 3.6, "heal_n": 3,
 	},
+	# --- unidades únicas: una por civilización, se entrenan en el Castillo (Edad de los Castillos) ---
+	# "civ" = la civilización que puede entrenarla · "as" = a efectos de ventajas y debilidades cuenta como esa unidad
+	"conquistador": {
+		"hp": 140, "speed": 3.3, "atk": 21.0, "range": 4.5, "cd": 2.6, "los": 9,
+		"cost": {"food": 80, "gold": 95}, "time": 38.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 10.0, "vs_building": 0.25, "civ": "castellanos", "as": "arquero_caballo", "gun": true,
+	},
+	"hachero": {
+		"hp": 62, "speed": 2.5, "atk": 11.0, "range": 3.0, "cd": 1.5, "los": 7,
+		"cost": {"food": 55, "wood": 45}, "time": 26.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 8.0, "vs_building": 0.6, "civ": "francos", "as": "espadachin", "thrown": true,
+	},
+	"arquero_largo": {
+		"hp": 46, "speed": 2.2, "atk": 8.5, "range": 7.5, "cd": 1.8, "los": 9,
+		"cost": {"wood": 40, "gold": 50}, "time": 28.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 7.0, "vs_building": 0.3, "civ": "ingleses", "as": "arquero",
+	},
+	"teutonico": {
+		"hp": 175, "speed": 1.9, "atk": 10.0, "range": 0.9, "cd": 1.3, "los": 6,
+		"cost": {"food": 70, "gold": 70}, "time": 32.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 9.0, "vs_building": 0.9, "rres": 0.8, "civ": "teutones", "as": "espadachin",
+	},
+	"berserker": {
+		"hp": 68, "speed": 2.7, "atk": 7.5, "range": 0.9, "cd": 1.0, "los": 6,
+		"cost": {"food": 55, "gold": 30}, "time": 24.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 8.0, "vs_building": 0.5, "regen": 0.8, "civ": "vikingos", "as": "espadachin",
+	},
+	"catafracta": {
+		"hp": 215, "speed": 3.1, "atk": 12.0, "range": 1.0, "cd": 1.5, "los": 8,
+		"cost": {"food": 90, "gold": 140}, "time": 40.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 10.5, "vs_building": 0.6, "rres": 0.75, "civ": "bizantinos", "as": "caballero",
+	},
+	"mameluco": {
+		"hp": 125, "speed": 3.4, "atk": 10.0, "range": 1.0, "cd": 1.3, "los": 8,
+		"cost": {"food": 70, "gold": 55}, "time": 28.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 10.0, "vs_building": 0.5, "civ": "sarracenos", "as": "jinete",
+	},
+	"mangudai": {
+		"hp": 70, "speed": 4.0, "atk": 5.5, "range": 4.6, "cd": 1.0, "los": 9,
+		"cost": {"wood": 50, "gold": 55}, "time": 26.0, "building": "castillo", "age": 2,
+		"military": true, "radius": 9.5, "vs_building": 0.2, "civ": "mongoles", "as": "arquero_caballo",
+	},
 	# --- barcos (sólo navegan por agua; se entrenan en el Puerto) ---
 	"barco_pesca": {
 		"hp": 55, "speed": 2.8, "atk": 0.0, "range": 0.0, "cd": 9.0, "los": 8,
@@ -168,9 +210,29 @@ const BONUS := {
 	"jinete": {"arquero": 2.2, "ballestero": 2.0, "hostigador": 1.5, "arquero_caballo": 1.6, "aldeano": 1.3, "monje": 1.8, "ariete": 1.6, "catapulta": 1.8, "trabuquete": 1.8},
 	"explorador": {"aldeano": 1.4, "arquero": 1.4, "ariete": 1.4, "catapulta": 1.4},
 	"caballero": {"arquero": 2.2, "ballestero": 2.0, "hostigador": 1.6, "arquero_caballo": 1.6, "aldeano": 1.3, "espadachin": 1.2, "monje": 1.8, "ariete": 1.8, "catapulta": 2.0, "trabuquete": 2.0},
+	# únicas
+	"conquistador": {"piquero": 1.3, "alabardero": 1.2, "espadachin": 1.3, "arquero": 1.3, "aldeano": 1.3, "monje": 1.5},
+	"hachero": {"piquero": 1.3, "espadachin": 1.2, "alabardero": 1.2, "arquero": 1.4, "ballestero": 1.3, "aldeano": 1.3},
+	"arquero_largo": {"piquero": 1.5, "alabardero": 1.4, "espadachin": 1.3, "arquero": 1.3, "aldeano": 1.3},
+	"teutonico": {"espadachin": 1.2, "piquero": 1.2, "monje": 1.5},
+	"berserker": {"arquero": 1.3, "ballestero": 1.3, "hostigador": 1.3, "monje": 1.4, "aldeano": 1.3},
+	"catafracta": {"arquero": 2.0, "ballestero": 1.8, "hostigador": 1.5, "arquero_caballo": 1.5, "aldeano": 1.3, "monje": 1.7, "ariete": 1.6, "catapulta": 1.8, "trabuquete": 1.8},
+	"mameluco": {"jinete": 2.4, "caballero": 2.4, "explorador": 1.8, "arquero_caballo": 1.8, "monje": 1.4},
+	"mangudai": {"piquero": 1.5, "espadachin": 1.3, "alabardero": 1.2, "aldeano": 1.3, "monje": 1.4, "catapulta": 1.4},
 	"galera": {"barco_pesca": 1.6, "barco_transporte": 1.6},
 	"galeon": {"galera": 1.5, "barco_pesca": 1.6, "barco_transporte": 1.6},
 }
+
+## Multiplicador de daño de `a` contra `b`. Si la fila de `a` no nombra a `b` y `b` es una unidad única, cuenta como la
+## unidad de su campo "as" (la caballería única sigue siendo débil a las lanzas, la infantería única a las espadas, etc.).
+static func bonus(a: String, b: String) -> float:
+	var d: Dictionary = BONUS.get(a, {})
+	var v: Variant = d.get(b)
+	if v == null:
+		var asb: String = String(UNITS[b].get("as", "")) if UNITS.has(b) else ""
+		if asb != "":
+			v = d.get(asb)
+	return float(v) if v != null else 1.0
 
 # Edificios. size en casillas, time = segundos de construcción con un aldeano.
 const BUILDINGS := {

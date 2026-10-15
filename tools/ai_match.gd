@@ -11,6 +11,7 @@ func _init() -> void:
 	var verbose := false
 	var n_players := 2
 	var peace := false
+	var civs := ["", ""]
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("seed="): seed_v = int(a.substr(5))
 		elif a.begins_with("size="): size = int(a.substr(5))
@@ -22,10 +23,12 @@ func _init() -> void:
 		elif a == "v": verbose = true
 		elif a == "peace": peace = true       # nadie ataca: partida larguísima para medir deriva de rendimiento y memoria
 		elif a.begins_with("n="): n_players = int(a.substr(2))
+		elif a.begins_with("c0="): civs[0] = a.substr(3)
+		elif a.begins_with("c1="): civs[1] = a.substr(3)
 	var sim := Sim.new()
 	var plist: Array = []
 	for i in n_players:
-		plist.append({"human": false, "team": i, "diff": diffs[i]})
+		plist.append({"human": false, "team": i, "diff": diffs[i], "civ": civs[i] if i < civs.size() else ""})
 	if not sim.setup({"size": size, "seed": seed_v, "players": plist, "events": false}):
 		print("RESULT seed=%d SETUP_FAIL" % seed_v)
 		quit(1)
@@ -75,6 +78,8 @@ func _init() -> void:
 	var line2 := "RESULT seed=%d size=%d p0=%s(d%d) p1=%s(d%d) over=%s winner=%d t=%.0fs " % [seed_v, size, kinds[0], diffs[0], kinds[1], diffs[1], str(sim.game_over), sim.winner_team, sim.time]
 	for pl in sm2["players"]:
 		line2 += "| P%d %s pop %d vill %d mil %d kills %d " % [pl.i, "V" if pl.alive else "X", pl.pop, pl.vill, pl.mil, pl.kills]
+	for pl2 in sim.players:
+		line2 += "| P%d civ=%s abil=%d " % [pl2.idx, pl2.civ, pl2.abil_uses]
 	line2 += "| avg_step_us %.0f worst_step_us %d" % [float(tsum) / maxf(1.0, float(sim.step_count)), worst]
 	print(line2)
 	quit()

@@ -54,6 +54,10 @@ var xp_t: float = 0.0                 # temporizador para comprobar si ya se vio
 var xp_bad: Array = []                # celdas a las que no pudo llegar (se saltan un rato)
 var danger_pos: Vector2 = Vector2(-1, -1)   # dónde la hirieron: evita esa zona un tiempo
 var danger_t: float = -1000.0
+var am: float = 1.0                   # multiplicadores de civilización fijados al nacer: daño, velocidad, alcance
+var sm: float = 1.0
+var rm: float = 1.0
+var lb: int = 0                        # casillas extra de vista
 
 # --- edificio ---
 var progress: float = 1.0             # 0..1; 1 = completo

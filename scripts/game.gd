@@ -80,6 +80,7 @@ var wall_state := 0                     # 0 nada, 1 primer punto fijado, 2 tramo
 var rally_mode := false
 var amove_mode := false
 var select_mode := false
+var abil_mode := false                  # apuntando la habilidad de civilización (fuego): el próximo toque en el mapa la lanza
 var box_active := false
 var box_start := Vector2.ZERO
 var box_end := Vector2.ZERO
@@ -201,6 +202,9 @@ func _prepare() -> void:
 		hud.show_pause()    # la partida cargada empieza en pausa: tiempo para orientarse
 	else:
 		hud.toast(Lang.t("toast_start"), Color(1, 1, 1))
+		var mc: String = sim.players[human].civ
+		if mc != "":
+			hud.toast(Lang.t("toast_civ_you", [Lang.t("civ_" + mc)]), Color(1, 0.9, 0.5))
 
 func _build_atmosphere() -> void:
 	l_sky = _make_layer(3)
@@ -573,6 +577,23 @@ func _consume_events() -> void:
 				if ev["owner"] == human:
 					sfx("splash", ev["pos"])
 					hud.toast(Lang.t("toast_unloaded", [int(ev["n"])]), Color(0.7, 1, 0.7))
+			"abil":
+				var wa: Player = sim.players[ev["owner"]]
+				var an := Lang.t("abil_" + wa.civ)
+				if wa.is_human:
+					hud.toast(Lang.t("toast_abil_you", [an]), Color(1, 0.9, 0.5))
+					sfx("age")
+				elif _seen(ev["pos"]):
+					hud.toast(Lang.t("toast_abil_other", [wa.name, an]), Color(1, 0.75, 0.55))
+				if wa.is_human or _seen(ev["pos"]):
+					_fx({"t": "flash", "p": ev["pos"], "life": 0.9})
+					_fx({"t": "flash", "p": ev["pos"], "life": 0.6})
+			"abil_text":
+				if ev["owner"] == human:
+					_fx({"t": "text", "p": ev["pos"] + Vector2(0, -50), "s": "+%d" % int(ev["n"]), "col": Color(1, 0.9, 0.4), "life": 1.6})
+			"loot":
+				if ev["owner"] == human and _seen(ev["pos"]):
+					_fx({"t": "text", "p": ev["pos"] + Vector2(0, -16), "s": "+%d" % int(ev["gold"]), "col": Color(1.0, 0.86, 0.25), "life": 1.0})
 			"explore_done":
 				if ev["owner"] == human:
 					hud.toast(Lang.t("toast_explore_done"), Color(0.7, 0.9, 1.0))
@@ -931,6 +952,13 @@ func _tap(sp: Vector2) -> void:
 				wall_tiles = [place_tile]
 				wall_state = 1
 		return
+	if abil_mode:
+		abil_mode = false
+		var r := sim.cmd_ability(human, sim.tile_of(wp))
+		if r != Sim.OK:
+			_err(r)
+		hud.refresh_now()
+		return
 	if rally_mode:
 		var b := sel_building()
 		if b != null:
@@ -1152,6 +1180,9 @@ func err_text(code: int) -> String:
 		Sim.ERR_CANT: return Lang.t("err_cant")
 		Sim.ERR_FULL: return Lang.t("err_full")
 		Sim.ERR_REQ: return Lang.t("err_req")
+		Sim.ERR_COOLDOWN: return Lang.t("err_cooldown")
+		Sim.ERR_NOTARGET: return Lang.t("err_notarget")
+		Sim.ERR_POP: return Lang.t("err_pop")
 	return Lang.t("err_invalid")
 
 func _err(code: int) -> void:
@@ -1179,6 +1210,7 @@ func ui_begin_place(type: String) -> void:
 	rally_mode = false
 	amove_mode = false
 	select_mode = false
+	abil_mode = false
 	wall_tiles = []
 	wall_anchor = Vector2i(-1, -1)
 	wall_state = 0
@@ -1342,6 +1374,32 @@ func ui_toggle_amove() -> void:
 		hud.toast(Lang.t("toast_amove"), Color(1, 1, 1))
 	sfx("click")
 	sel_changed.emit()
+
+## Botón de la habilidad de civilización: la lanza (o, si hay que apuntar, activa el modo de apuntar).
+func ui_ability() -> void:
+	var st := sim.ability_state(human)
+	if not bool(st["has"]):
+		return
+	if not bool(st["age_ok"]):
+		_err(Sim.ERR_AGE)
+		return
+	if not bool(st["ready"]):
+		_err(Sim.ERR_COOLDOWN)
+		return
+	if String(st["kind"]) == "fire":
+		abil_mode = not abil_mode
+		rally_mode = false
+		amove_mode = false
+		if abil_mode:
+			hud.toast(Lang.t("toast_abil_aim"), Color(1, 0.7, 0.4))
+		sfx("click")
+		sel_changed.emit()
+		hud.refresh_now()
+		return
+	var r := sim.cmd_ability(human)
+	if r != Sim.OK:
+		_err(r)
+	hud.refresh_now()
 
 func ui_toggle_select_mode() -> void:
 	select_mode = not select_mode

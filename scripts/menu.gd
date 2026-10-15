@@ -21,6 +21,8 @@ var _seed_btn: UiButton
 var _upd: Updater
 var _upd_btn: UiButton
 var _help: Control
+var _civ_btn: UiButton
+var _civ_panel: Control
 var _seg: Dictionary = {}
 var _t := 0.0
 var _continue: UiButton
@@ -39,6 +41,7 @@ func _ready() -> void:
 	add_child(root)
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_add_segment("rivals", Lang.t("menu_rivals"), [["1", 1], ["2", 2], ["3", 3]], func() -> int: return rivals, func(v: int) -> void: rivals = v)
+	_add_civ_row()
 	_add_segment("size", Lang.t("menu_size"), [[Lang.t("size_128"), 128], [Lang.t("size_192"), 192], [Lang.t("size_256"), 256]], func() -> int: return map_size, func(v: int) -> void: map_size = v)
 	_add_segment("diff", Lang.t("menu_diff"), [[Lang.t("diff_0"), 0], [Lang.t("diff_1"), 1], [Lang.t("diff_2"), 2]], func() -> int: return diff, func(v: int) -> void: diff = v)
 	_add_segment("teams", Lang.t("menu_teams"), [[Lang.t("teams_allied"), 1], [Lang.t("teams_ffa"), 0]], func() -> int: return 1 if allied else 0, func(v: int) -> void: allied = v == 1)
@@ -89,6 +92,10 @@ func _ready() -> void:
 	_help = Hud.HelpPanel.new()
 	_help.visible = false
 	root.add_child(_help)
+	_civ_panel = CivPanel.new()
+	(_civ_panel as CivPanel).menu = self
+	_civ_panel.visible = false
+	root.add_child(_civ_panel)
 	_upd = Updater.new()
 	add_child(_upd)
 	_upd.update_found.connect(_on_update_found)
@@ -112,13 +119,32 @@ func _add_segment(key: String, label: String, opts: Array, getter: Callable, set
 	_seg[key] = {"label": label, "btns": btns, "opts": opts, "get": getter}
 	_rows.append(key)
 
+## Fila «Civilización»: un botón ancho con la elegida; al tocarlo se abre el selector con las ocho.
+func _add_civ_row() -> void:
+	_civ_btn = UiButton.new()
+	_civ_btn.font_size = 24
+	_civ_btn.accent = Color(1.0, 0.85, 0.45)
+	_civ_btn.action = func() -> void:
+		(_civ_panel as CivPanel).open()
+	root.add_child(_civ_btn)
+	_seg["civ"] = {"label": Lang.t("menu_civ"), "btns": [_civ_btn], "opts": [["", 0]], "get": func() -> int: return 0}
+	_rows.append("civ")
+
+func choose_civ(id: String) -> void:
+	Settings.civ = id
+	Settings.save()
+	_refresh()
+
+func _civ_name() -> String:
+	return Lang.t("civ_random") if Settings.civ == "random" else Lang.t("civ_" + Settings.civ)
+
 func _layout() -> void:
 	var vs := get_viewport().get_visible_rect().size
 	var w := 760.0
 	var x := (vs.x - w) * 0.5
-	var y := 158.0
-	var rh := 50.0      # alto de botón
-	var pitch := 56.0   # separación entre filas
+	var y := 154.0
+	var rh := 44.0      # alto de botón
+	var pitch := 50.0   # separación entre filas
 	for key in _rows:
 		var d: Dictionary = _seg[key]
 		var btns: Array = d["btns"]
@@ -133,17 +159,19 @@ func _layout() -> void:
 	_seed_btn.position = Vector2(x + w * 0.38, y)
 	_seg["seed_y"] = y - 4.0
 	if _has_save:
-		_continue.size = Vector2(w * 0.5 - 6, 74)
-		_continue.position = Vector2(x, y + 62)
-		_play.size = Vector2(w * 0.5 - 6, 74)
-		_play.position = Vector2(x + w * 0.5 + 6, y + 62)
+		_continue.size = Vector2(w * 0.5 - 6, 70)
+		_continue.position = Vector2(x, y + 54)
+		_play.size = Vector2(w * 0.5 - 6, 70)
+		_play.position = Vector2(x + w * 0.5 + 6, y + 54)
 	else:
-		_play.size = Vector2(w, 74)
-		_play.position = Vector2(x, y + 62)
-	_help_btn.size = Vector2(w * 0.5 - 6, 54)
-	_help_btn.position = Vector2(x, y + 148)
-	_quit.size = Vector2(w * 0.5 - 6, 54)
-	_quit.position = Vector2(x + w * 0.5 + 6, y + 148)
+		_play.size = Vector2(w, 70)
+		_play.position = Vector2(x, y + 54)
+	_help_btn.size = Vector2(w * 0.5 - 6, 50)
+	_help_btn.position = Vector2(x, y + 132)
+	_quit.size = Vector2(w * 0.5 - 6, 50)
+	_quit.position = Vector2(x + w * 0.5 + 6, y + 132)
+	_civ_panel.position = Vector2.ZERO
+	_civ_panel.size = vs
 	_upd_btn.size = Vector2(480, 42)
 	_upd_btn.position = Vector2(vs.x - 492, 10)
 	_help.position = Vector2.ZERO
@@ -156,6 +184,8 @@ func _on_update_found(build: int) -> void:
 	_upd_btn.queue_redraw()
 
 func _refresh() -> void:
+	_civ_btn.text = "%s  ▸" % _civ_name()
+	_civ_btn.queue_redraw()
 	for key in _rows:
 		var d: Dictionary = _seg[key]
 		var cur: int = d["get"].call()
@@ -182,9 +212,9 @@ func _on_play() -> void:
 			_play.text = Lang.t("menu_new_confirm")
 			_play.queue_redraw()
 			return
-	var plist: Array = [{"human": true, "team": 0, "diff": 1, "name": Lang.t("player_name")}]
+	var plist: Array = [{"human": true, "team": 0, "diff": 1, "name": Lang.t("player_name"), "civ": Settings.civ}]
 	for i in rivals:
-		plist.append({"human": false, "team": 1 if allied else i + 1, "diff": diff, "name": Defs.PLAYER_COLOR_NAMES[i + 1]})
+		plist.append({"human": false, "team": 1 if allied else i + 1, "diff": diff, "name": Defs.PLAYER_COLOR_NAMES[i + 1], "civ": "random"})
 	play_pressed.emit({"size": map_size, "seed": seed_val, "players": plist, "events": true})
 
 class MenuBg extends Control:
@@ -222,3 +252,119 @@ class MenuBg extends Control:
 				draw_string(font, Vector2(x, float(d["y"]) + 38), d["label"], HORIZONTAL_ALIGNMENT_LEFT, w * 0.38, 26, Color(0.95, 0.92, 0.82))
 			if menu._seg.has("seed_y"):
 				draw_string(font, Vector2(x, float(menu._seg["seed_y"]) + 36), "", HORIZONTAL_ALIGNMENT_LEFT, w * 0.38, 24, Color(0.9, 0.9, 0.8))
+
+## Colores con los que se rotula cada civilización.
+const CIV_COL := {
+	"castellanos": Color(0.96, 0.78, 0.28), "francos": Color(0.52, 0.68, 1.0), "ingleses": Color(0.95, 0.45, 0.42),
+	"teutones": Color(0.88, 0.88, 0.94), "vikingos": Color(0.62, 0.84, 0.98), "bizantinos": Color(0.78, 0.55, 0.92),
+	"sarracenos": Color(0.45, 0.88, 0.62), "mongoles": Color(0.96, 0.64, 0.32),
+}
+
+## Selector de civilización: ocho fichas con bonificaciones, unidad única y habilidad, y «Aleatoria».
+class CivPanel extends Control:
+	var menu: MenuScreen
+	var cards: Array[CivCard] = []
+	var rnd: UiButton
+	var close: UiButton
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	func _ready() -> void:
+		for id: String in Civs.IDS:
+			var c := CivCard.new()
+			c.civ = id
+			c.on_pick = func() -> void: _pick(id)
+			add_child(c)
+			cards.append(c)
+		rnd = UiButton.new()
+		rnd.text = Lang.t("civ_random")
+		rnd.font_size = 24
+		rnd.action = func() -> void: _pick("random")
+		add_child(rnd)
+		close = UiButton.new()
+		close.text = Lang.t("civ_close")
+		close.font_size = 24
+		close.action = func() -> void: visible = false
+		add_child(close)
+		resized.connect(_layout)
+		_layout()
+
+	func open() -> void:
+		visible = true
+		_layout()
+		for c in cards:
+			c.selected = c.civ == Settings.civ
+			c.queue_redraw()
+		rnd.toggled = Settings.civ == "random"
+		rnd.queue_redraw()
+
+	func _pick(id: String) -> void:
+		menu.choose_civ(id)
+		visible = false
+
+	func _layout() -> void:
+		var margin := 24.0
+		var gap := 12.0
+		var cw := minf(330.0, (size.x - margin * 2.0 - gap * 3.0) / 4.0)
+		var ch := 236.0
+		var total := cw * 4.0 + gap * 3.0
+		var x0 := (size.x - total) * 0.5
+		var y0 := 66.0
+		for i in cards.size():
+			var c := cards[i]
+			c.size = Vector2(cw, ch)
+			c.position = Vector2(x0 + (i % 4) * (cw + gap), y0 + (i / 4) * (ch + gap))
+		var by := y0 + 2.0 * ch + gap + 14.0
+		rnd.size = Vector2(total * 0.5 - 6.0, 54.0)
+		rnd.position = Vector2(x0, by)
+		close.size = Vector2(total * 0.5 - 6.0, 54.0)
+		close.position = Vector2(x0 + total * 0.5 + 6.0, by)
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.06, 0.10, 0.94), true)
+		var font := get_theme_default_font()
+		draw_string(font, Vector2(0, 44), Lang.t("civ_pick_title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 34, Color(1, 0.9, 0.5))
+		var by := 66.0 + 2.0 * 236.0 + 12.0 + 14.0 + 54.0
+		draw_multiline_string(font, Vector2(0, by + 26.0), Lang.t("civ_pick_note"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, 2, Color(0.8, 0.8, 0.72))
+
+class CivCard extends Control:
+	var civ := ""
+	var selected := false
+	var on_pick: Callable
+	var _down := false
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	func _gui_input(ev: InputEvent) -> void:
+		if ev is InputEventMouseButton and (ev as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			var mb := ev as InputEventMouseButton
+			if mb.pressed:
+				_down = true
+				queue_redraw()
+			else:
+				var inside := Rect2(Vector2.ZERO, size).grow(6.0).has_point(mb.position)
+				var fire := _down and inside
+				_down = false
+				queue_redraw()
+				if fire and on_pick.is_valid():
+					on_pick.call()
+			accept_event()
+
+	func _draw() -> void:
+		var col: Color = MenuScreen.CIV_COL.get(civ, Color.WHITE)
+		var bg := Color(0.30, 0.24, 0.15, 0.96) if _down else (Color(0.20, 0.16, 0.09, 0.96) if selected else Color(0.12, 0.10, 0.08, 0.95))
+		var border := Color(1.0, 0.85, 0.45, 1.0) if selected else Color(0.55, 0.43, 0.22, 0.95)
+		draw_style_box(UiButton.box(bg, border, 10, 3 if selected else 2), Rect2(Vector2.ZERO, size))
+		draw_rect(Rect2(10, 40, size.x - 20, 3), Color(col.r, col.g, col.b, 0.8), true)
+		var font := get_theme_default_font()
+		var w := size.x - 24.0
+		draw_string(font, Vector2(12, 33), Lang.t("civ_" + civ), HORIZONTAL_ALIGNMENT_LEFT, w, 26, col)
+		var fg := Color(0.92, 0.88, 0.78)
+		var y := 66.0
+		draw_multiline_string(font, Vector2(12, y), Lang.t("civ_%s_pas" % civ), HORIZONTAL_ALIGNMENT_LEFT, w, 15, 4, fg)
+		y += 4.0 * 17.0 + 6.0
+		draw_multiline_string(font, Vector2(12, y), "%s: %s" % [Lang.t("civ_unique_label"), Lang.t("civ_%s_uni" % civ)], HORIZONTAL_ALIGNMENT_LEFT, w, 15, 2, Color(0.75, 0.9, 1.0))
+		y += 2.0 * 17.0 + 6.0
+		draw_multiline_string(font, Vector2(12, y), "%s: %s. %s" % [Lang.t("civ_ability_label"), Lang.t("abil_" + civ), Lang.t("abil_%s_desc" % civ)], HORIZONTAL_ALIGNMENT_LEFT, w, 15, 5, Color(1.0, 0.86, 0.55))

@@ -47,6 +47,8 @@ static func draw_entities(g: Game, c: CanvasItem) -> void:
 		var rad := _smoke[i + 2] * 1.0667
 		c.draw_texture_rect(sm, Rect2(_smoke[i] - rad, _smoke[i + 1] - rad, rad * 2.0, rad * 2.0), false, Color(0.86, 0.86, 0.88, _smoke[i + 3]))
 	_draw_units(g, c, vr)
+	if not sim.zones.is_empty():
+		_draw_zones(g, c)
 	# Efectos
 	for f in g.fx:
 		_draw_fx(c, f)
@@ -81,6 +83,28 @@ static func draw_entities(g: Game, c: CanvasItem) -> void:
 		c.draw_rect(rr, Color(0.3, 1.0, 0.4, 0.15), true)
 		c.draw_rect(rr, Color(0.3, 1.0, 0.4, 0.9), false, 2.0)
 
+## Zonas de fuego (fuego griego): disco rojizo con llamas que parpadean; se apagan en el último segundo.
+static func _draw_zones(g: Game, c: CanvasItem) -> void:
+	var tt := g.anim_t
+	for z: Dictionary in g.sim.zones:
+		var p: Vector2 = z["p"]
+		if int(z["owner"]) != g.human and not g.fog.visible_at(g.sim.tile_of(p)):
+			continue
+		var r: float = z["r"]
+		var fade := clampf((float(z["until"]) - g.sim.time) / 1.2, 0.0, 1.0)
+		c.draw_set_transform(p, 0.0, Vector2(1.0, 0.7))
+		c.draw_circle(Vector2.ZERO, r, Color(0.85, 0.25, 0.05, 0.20 * fade))
+		c.draw_arc(Vector2.ZERO, r, 0.0, TAU, 40, Color(1.0, 0.55, 0.12, 0.75 * fade), 2.5)
+		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		for i in 18:
+			var ang := float(i) * 2.39996
+			var rad := r * sqrt((float(i) + 0.5) / 18.0) * 0.92
+			var b := p + Vector2(cos(ang) * rad, sin(ang) * rad * 0.7)
+			var h := (13.0 + 9.0 * sin(tt * 9.0 + float(i) * 1.7)) * fade
+			var sw := 3.5 * sin(tt * 7.0 + float(i))
+			c.draw_colored_polygon(PackedVector2Array([b + Vector2(-5.5, 0), b + Vector2(5.5, 0), b + Vector2(sw, -h)]), Color(1.0, 0.42, 0.08, 0.85 * fade))
+			c.draw_colored_polygon(PackedVector2Array([b + Vector2(-3.0, 0), b + Vector2(3.0, 0), b + Vector2(sw * 0.6, -h * 0.62)]), Color(1.0, 0.85, 0.30, 0.9 * fade))
+
 static func _corners(c: CanvasItem, r: Rect2, col: Color) -> void:
 	var l := 14.0
 	var p := r.position
@@ -110,9 +134,9 @@ static func _unit_target_pos(g: Game, u: Ent) -> Vector2:
 
 const WS_FOOT := 0.62          # píxeles de mundo por píxel lógico de la hoja (gente, caballos, ariete)
 const WS_SHIP := 0.58
-const SHADOWS := {"jinete": Vector2(46, 13), "explorador": Vector2(44, 13), "caballero": Vector2(50, 14), "ariete": Vector2(60, 14), "arquero_caballo": Vector2(46, 13), "catapulta": Vector2(54, 14), "trabuquete": Vector2(60, 15)}
+const SHADOWS := {"jinete": Vector2(46, 13), "explorador": Vector2(44, 13), "caballero": Vector2(50, 14), "ariete": Vector2(60, 14), "arquero_caballo": Vector2(46, 13), "conquistador": Vector2(48, 13), "catafracta": Vector2(52, 14), "mameluco": Vector2(46, 13), "mangudai": Vector2(46, 13), "catapulta": Vector2(54, 14), "trabuquete": Vector2(60, 15)}
 const SHIP_HALF := {"barco_pesca": 19.0, "barco_transporte": 24.0, "galera": 31.0, "galeon": 31.0}
-const RANGED := ["arquero", "ballestero", "hostigador", "arquero_caballo"]
+const RANGED := ["arquero", "ballestero", "hostigador", "arquero_caballo", "conquistador", "hachero", "arquero_largo", "mangudai"]
 
 static func ws_of(u: Ent) -> float:
 	return WS_SHIP if u.naval else WS_FOOT
@@ -163,7 +187,8 @@ static var _ti: Dictionary = {}
 static var _ti_art: Art = null
 static var _groups: Dictionary = {}    # tipo -> índices (Array: los vectores empaquetados se copian al sacarlos del diccionario)
 const DRAW_ORDER := ["barco_pesca", "barco_transporte", "galera", "galeon", "aldeano", "piquero", "espadachin", "arquero", "ballestero",
-		"jinete", "explorador", "caballero", "arquero_caballo", "alabardero", "hostigador", "monje", "ariete", "catapulta", "trabuquete"]
+		"jinete", "explorador", "caballero", "arquero_caballo", "alabardero", "hostigador", "monje", "ariete", "catapulta", "trabuquete",
+		"hachero", "arquero_largo", "teutonico", "berserker", "conquistador", "catafracta", "mameluco", "mangudai"]
 static var _types: Array = []          # DRAW_ORDER y, detrás, cualquier tipo nuevo de Defs.UNITS que no esté en la lista
 
 static func _draw_types() -> Array:
