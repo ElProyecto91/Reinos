@@ -39,6 +39,7 @@ func _init() -> void:
 	var fg := _down(fg2, 432)
 	bg.save_png(ProjectSettings.globalize_path("res://art/icon/ic_bg_432.png"))
 	fg.save_png(ProjectSettings.globalize_path("res://art/icon/ic_fg_432.png"))
+	_mono(fg).save_png(ProjectSettings.globalize_path("res://art/icon/ic_mono_432.png"))
 	# iconos "completos" (clásico 192 y principal 512): fondo + castillo, algo más cerca y con esquinas redondeadas
 	var main512 := compose_full(512, 1.36, 1296)
 	main512.save_png(ProjectSettings.globalize_path("res://icon.png"))
@@ -49,6 +50,24 @@ func _init() -> void:
 		_sheet(bg, fg, main512, main192).save_png(preview)
 		print("hoja ", preview)
 	quit()
+
+## Capa monocroma (iconos temáticos de Android 13+): silueta del castillo en blanco; sólo cuenta el alfa.
+## Las ventanas, la puerta y las rendijas se vacían para conservar el detalle. Sin loma ni camino.
+func _mono(fg: Image) -> Image:
+	var out := Image.create(432, 432, false, Image.FORMAT_RGBA8)
+	out.fill(Color(0, 0, 0, 0))
+	for y in 335:
+		for x in range(112, 321):                    # sólo el castillo (sin pinos de las laderas)
+			var c := fg.get_pixel(x, y)
+			if c.a < 0.01:
+				continue
+			var lum := 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+			var a := c.a * smoothstep(0.07, 0.17, lum)
+			if c.r > 0.75:
+				a *= 1.0 - clampf((c.r - c.b - 0.28) / 0.22, 0.0, 1.0)      # ventanas encendidas
+			if a > 0.003:
+				out.set_pixel(x, y, Color(1, 1, 1, a))
+	return out
 
 ## Reducción exacta 2x (caja 2x2) ponderando el color por el alfa: sin halos oscuros en los bordes transparentes.
 func _down(img: Image, n: int) -> Image:
@@ -404,16 +423,18 @@ func _cone(cv: ArtBuildings.Cv, cx: float, apex_y: float, base_y: float, rw: flo
 
 func _castle(cv: ArtBuildings.Cv) -> void:
 	# loma de hierba al atardecer bajo el castillo: cálida a la izquierda, fría a la derecha
-	var x := CX - 182.0
-	while x <= CX + 182.0:
-		var d := absf(x - CX) / 182.0
+	var x := -4.0
+	while x <= D + 4.0:
+		var dx := absf(x - CX)
+		var d := minf(dx / 182.0, 1.0)
 		var y := 329.0 + 27.0 * pow(d, 2.2) + 1.6 * sin(x * 0.09) * d
 		var u := clampf((x - 34.0) / 364.0, 0.0, 1.0)
 		var top := _tinted(Color(0.36, 0.44, 0.27), _light(u, 1), 1.0)
+		top = top.lerp(Color(0.07, 0.08, 0.15), clampf((dx - 150.0) / 80.0, 0.0, 0.88))       # se funde con el suelo lejano
 		var h := 436.0 - y
 		for s in 6:
 			cv.rect(x - 0.6, y + h * float(s) / 6.0, 2.4, h / 6.0 + 0.6, top.lerp(Color(0.04, 0.05, 0.10), minf(1.0, 0.10 + float(s) * 0.22)))
-		cv.rect(x - 0.6, y, 2.4, 1.7, top.lerp(Color(1.0, 0.78, 0.48), 0.55 * (1.0 - u)))
+		cv.rect(x - 0.6, y, 2.4, 1.7, top.lerp(Color(1.0, 0.78, 0.48), 0.55 * (1.0 - u) * (1.0 - clampf((dx - 150.0) / 60.0, 0.0, 1.0))))
 		x += 1.0
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
