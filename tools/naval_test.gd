@@ -21,9 +21,9 @@ func _init() -> void:
 	check("setup", ok)
 	sim.ais.clear()
 	var p: Player = sim.players[0]
-	p.res = {"food": 3000, "wood": 3000, "gold": 3000}
+	p.res = {"food": 3000, "wood": 3000, "gold": 3000, "stone": 3000}
 	p.pop_cap = 80
-	sim.players[1].res = {"food": 3000, "wood": 3000, "gold": 3000}
+	sim.players[1].res = {"food": 3000, "wood": 3000, "gold": 3000, "stone": 3000}
 	sim.players[1].pop_cap = 80
 	p.age = 1
 	var base: Vector2i = p.start_tile

@@ -101,7 +101,7 @@ func unit_icon(type: String, team: int) -> Texture2D:
 # ------------------------------------------------------------------ edificios
 
 func _build_buildings() -> void:
-	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64, "monasterio": 96, "castillo": 128}
+	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64, "monasterio": 96, "castillo": 128, "herreria": 96, "mercado": 96}
 	for type in sizes:
 		var px: int = sizes[type]
 		var ss := ArtBuildings.SS
@@ -132,7 +132,12 @@ const TREE_PALM := 8
 const TREE_DRY := 9
 const TREE_AUTUMN := 10
 const TREE_PINE_B := 11
-const ATLAS_N := 12
+const RES_STONE := 12
+const RES_DEER0 := 13        # ciervo parado / en marcha
+const RES_DEER1 := 14
+const RES_BOAR0 := 15        # jabalí parado / en marcha
+const RES_BOAR1 := 16
+const ATLAS_N := 17
 
 func _build_resources() -> void:
 	var atlas := _new_img(RES_CELL * ATLAS_N, RES_CELL)
@@ -149,6 +154,11 @@ func _build_resources() -> void:
 	put.call(TREE_PALM, func(t: Image) -> void: _paint_palm(t))
 	put.call(TREE_DRY, func(t: Image) -> void: _paint_dry(t))
 	put.call(RES_GOLD, func(t: Image) -> void: _paint_gold(t))
+	put.call(RES_STONE, func(t: Image) -> void: _paint_stone(t))
+	put.call(RES_DEER0, func(t: Image) -> void: _paint_animal(t, 0, 0))
+	put.call(RES_DEER1, func(t: Image) -> void: _paint_animal(t, 0, 1))
+	put.call(RES_BOAR0, func(t: Image) -> void: _paint_animal(t, 1, 0))
+	put.call(RES_BOAR1, func(t: Image) -> void: _paint_animal(t, 1, 1))
 	# bayas y peces se dibujan en 32x32 y se centran en la casilla de 64
 	var small := func(idx: int, painter: Callable) -> void:
 		var s := _new_img(32, 32)
@@ -292,6 +302,101 @@ func _paint_gold(img: Image) -> void:
 		Painter.disc(img, n.x, n.y, n.z, Color(0.96, 0.76, 0.12))
 		Painter.disc(img, n.x - n.z * 0.28, n.y - n.z * 0.30, n.z * 0.62, Color(1.0, 0.88, 0.28))
 		Painter.disc(img, n.x - n.z * 0.38, n.y - n.z * 0.42, n.z * 0.28, Color(1.0, 0.98, 0.78))
+
+## Cantera: peñascos gris azulado con facetas claras, grietas y alguna lasca suelta (se distingue del oro por no tener pepitas).
+func _paint_stone(img: Image) -> void:
+	Painter.ellipse(img, 33, 47, 21, 6.0, Color(0, 0, 0, 0.30))
+	var rock := Color(0.60, 0.63, 0.68)
+	var blobs := [Vector3(32, 36, 14), Vector3(19, 41, 9.5), Vector3(45, 41, 10), Vector3(26, 27, 9.5), Vector3(40, 28, 9)]
+	for b: Vector3 in blobs:
+		Painter.disc(img, b.x, b.y, b.z + 1.4, Color(0.06, 0.07, 0.09, 0.9))
+	for b: Vector3 in blobs:
+		Painter.disc(img, b.x, b.y, b.z, Painter.shade(rock, 0.68))
+	for b: Vector3 in blobs:
+		Painter.disc(img, b.x - 1.6, b.y - 2.2, b.z * 0.82, rock)
+	for b: Vector3 in blobs:
+		Painter.disc(img, b.x - 3.2, b.y - 4.0, b.z * 0.44, Painter.shade(rock, 1.26))
+	# facetas talladas y grietas
+	Painter.tri(img, 24, 30, 33, 22, 36, 34, Painter.shade(rock, 1.12))
+	Painter.tri(img, 36, 34, 33, 22, 46, 30, Painter.shade(rock, 0.84))
+	Painter.line(img, 30, 26, 28, 40, 1.0, Color(0.10, 0.11, 0.14, 0.75))
+	Painter.line(img, 28, 40, 33, 46, 1.0, Color(0.10, 0.11, 0.14, 0.75))
+	Painter.line(img, 41, 33, 44, 44, 0.9, Color(0.10, 0.11, 0.14, 0.7))
+	Painter.line(img, 17, 38, 22, 45, 0.9, Color(0.10, 0.11, 0.14, 0.7))
+	# lascas sueltas y musgo en la base
+	Painter.disc(img, 52, 46, 2.6, Color(0.08, 0.09, 0.11, 0.9))
+	Painter.disc(img, 52, 45.6, 2.1, Painter.shade(rock, 0.9))
+	Painter.disc(img, 12, 47, 2.2, Color(0.08, 0.09, 0.11, 0.9))
+	Painter.disc(img, 12, 46.7, 1.8, Painter.shade(rock, 0.8))
+	Painter.ellipse(img, 22, 46, 4, 1.6, Color(0.24, 0.40, 0.20, 0.7))
+
+## Animal de caza mirando a la derecha: kind 0 ciervo, 1 jabalí; f 0 parado, 1 en marcha (patas abiertas).
+func _paint_animal(img: Image, kind: int, f: int) -> void:
+	Painter.ellipse(img, 32, 50, 18 if kind == 0 else 17, 4.6, Color(0, 0, 0, 0.30))
+	var sw := 3.4 if f == 1 else 0.0
+	if kind == 0:
+		var fur := Color(0.62, 0.42, 0.22)
+		var dark := Color(0.28, 0.18, 0.10)
+		var belly := Color(0.84, 0.70, 0.50)
+		# patas (las del fondo, más oscuras)
+		Painter.line(img, 27, 40, 27 - sw, 50, 2.0, Painter.shade(dark, 0.8))
+		Painter.line(img, 41, 40, 41 + sw, 50, 2.0, Painter.shade(dark, 0.8))
+		Painter.line(img, 22, 40, 22 + sw, 50, 2.4, dark)
+		Painter.line(img, 37, 40, 37 - sw, 50, 2.4, dark)
+		# cuerpo, grupa blanca y cola
+		Painter.ellipse(img, 31, 36, 15, 8.2, Color(0.10, 0.06, 0.03, 0.9))
+		Painter.ellipse(img, 31, 36, 14, 7.4, fur)
+		Painter.ellipse(img, 31, 40, 11, 3.6, belly)
+		Painter.ellipse(img, 29, 32.6, 11, 3.2, Painter.shade(fur, 1.18))
+		Painter.disc(img, 19, 35, 3.4, Color(0.94, 0.88, 0.76))
+		Painter.tri(img, 17, 32, 13, 30, 17.6, 37, Color(0.92, 0.84, 0.70))
+		for sp in [Vector2(25, 32), Vector2(31, 30.4), Vector2(36, 33), Vector2(28, 36)]:
+			Painter.disc(img, sp.x, sp.y, 0.9, Color(0.96, 0.9, 0.78, 0.8))
+		# cuello, cabeza, hocico y oreja
+		Painter.line(img, 40, 32, 46, 21, 6.4, Color(0.10, 0.06, 0.03, 0.9))
+		Painter.line(img, 40, 32, 46, 21, 5.4, fur)
+		Painter.ellipse(img, 48, 19, 5.6, 3.9, Color(0.10, 0.06, 0.03, 0.9))
+		Painter.ellipse(img, 48, 19, 4.8, 3.2, fur)
+		Painter.ellipse(img, 53, 21, 3.0, 2.0, Painter.shade(fur, 0.82))
+		Painter.disc(img, 55.4, 21, 1.1, Color(0.08, 0.05, 0.04))
+		Painter.disc(img, 49.6, 18, 0.9, Color(0.08, 0.05, 0.04))
+		Painter.tri(img, 44.6, 16, 42.4, 11.5, 47.6, 15.4, Painter.shade(fur, 0.9))
+		# cornamenta
+		var ant := Color(0.88, 0.82, 0.64)
+		Painter.line(img, 47, 16, 45.6, 7, 1.5, ant)
+		Painter.line(img, 45.9, 11, 42.6, 8, 1.2, ant)
+		Painter.line(img, 45.7, 8.6, 48.6, 5, 1.2, ant)
+		Painter.line(img, 49.6, 16, 51.4, 7.4, 1.5, ant)
+		Painter.line(img, 51, 10, 54.4, 7.6, 1.2, ant)
+		Painter.line(img, 51.2, 8.4, 49, 4.6, 1.2, ant)
+	else:
+		var fur2 := Color(0.36, 0.27, 0.20)
+		var dark2 := Color(0.17, 0.12, 0.09)
+		Painter.line(img, 25, 44, 25 - sw * 0.8, 50, 2.6, Painter.shade(dark2, 0.8))
+		Painter.line(img, 41, 44, 41 + sw * 0.8, 50, 2.6, Painter.shade(dark2, 0.8))
+		Painter.line(img, 20, 44, 20 + sw * 0.8, 50, 3.0, dark2)
+		Painter.line(img, 36, 44, 36 - sw * 0.8, 50, 3.0, dark2)
+		Painter.ellipse(img, 30, 39, 16.5, 10.2, Color(0.08, 0.05, 0.03, 0.9))
+		Painter.ellipse(img, 30, 39, 15.5, 9.2, fur2)
+		Painter.ellipse(img, 35, 38, 9, 6.6, Painter.shade(fur2, 1.22))
+		Painter.ellipse(img, 29, 45, 12, 3.4, Painter.shade(fur2, 0.8))
+		# cerdas del lomo
+		for i in 8:
+			var bx := 17.0 + float(i) * 3.4
+			Painter.tri(img, bx - 1.8, 31.4 + absf(float(i) - 3.5) * 0.9, bx, 27.4 + absf(float(i) - 3.5) * 0.8, bx + 1.8, 31.6 + absf(float(i) - 3.5) * 0.9, dark2)
+		# cola rizada
+		Painter.line(img, 15, 37, 11.4, 34, 1.4, dark2)
+		Painter.line(img, 11.4, 34, 12.6, 31.6, 1.2, dark2)
+		# cabeza baja, hocico, colmillos y oreja
+		Painter.ellipse(img, 46, 40, 8, 6.4, Color(0.08, 0.05, 0.03, 0.9))
+		Painter.ellipse(img, 46, 40, 7.2, 5.6, Painter.shade(fur2, 1.05))
+		Painter.ellipse(img, 53, 42.4, 3.8, 3.0, Color(0.56, 0.42, 0.38))
+		Painter.disc(img, 56, 42, 1.3, Color(0.10, 0.06, 0.05))
+		Painter.tri(img, 49.4, 44.6, 53.2, 44.6, 52.6, 49.4, Color(0.96, 0.94, 0.84))
+		Painter.tri(img, 46.4, 45, 49.6, 44.8, 48.4, 48.8, Color(0.90, 0.88, 0.78))
+		Painter.disc(img, 47.6, 37.6, 1.0, Color(0.95, 0.85, 0.5))
+		Painter.disc(img, 47.8, 37.6, 0.55, Color(0.05, 0.03, 0.03))
+		Painter.tri(img, 42.6, 35.4, 41, 30.4, 46.4, 35, dark2)
 
 func _paint_berry(img: Image) -> void:
 	Painter.ellipse(img, 17, 27, 12, 3.4, Color(0, 0, 0, 0.28))

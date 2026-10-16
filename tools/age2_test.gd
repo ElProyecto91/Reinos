@@ -104,7 +104,7 @@ func test_training_and_age_gate() -> void:
 		ok((Defs.BUILDINGS[bt]["train"] as Array) == expect[bt], "lista de %s: %s" % [bt, str(Defs.BUILDINGS[bt]["train"])])
 		for ut in expect[bt]:
 			var need: int = Defs.UNITS[ut]["age"]
-			p.res = {"food": 9999, "wood": 9999, "gold": 9999}
+			p.res = {"food": 9999, "wood": 9999, "gold": 9999, "stone": 9999}
 			if need > 0:
 				p.age = need - 1
 				ok(sim.cmd_train(0, b.id, ut) == Sim.ERR_AGE, "%s debería exigir edad %d" % [ut, need])
@@ -113,7 +113,7 @@ func test_training_and_age_gate() -> void:
 			sim.cmd_cancel_train(0, b.id, b.queue.size() - 1)
 	# entrenar de verdad y comprobar que sale con la vida de su edad
 	p.age = 2
-	p.res = {"food": 9999, "wood": 9999, "gold": 9999}
+	p.res = {"food": 9999, "wood": 9999, "gold": 9999, "stone": 9999}
 	p.pop_cap = 100
 	var b: Ent = made.get("cuartel")
 	if b != null:
@@ -132,12 +132,12 @@ func test_training_and_age_gate() -> void:
 func test_age_up_requirements() -> void:
 	var sim := make_sim()
 	var p: Player = sim.players[0]
-	p.res = {"food": 9999, "wood": 9999, "gold": 9999}
+	p.res = {"food": 9999, "wood": 9999, "gold": 9999, "stone": 9999}
 	ok(sim.cmd_age_up(0) == Sim.OK, "edad 0→1 sin edificios militares")
 	for s in int(Defs.AGES[1]["time"] / Sim.DT) + 5:
 		sim.step()
 	ok(p.age == 1, "edad 1 alcanzada")
-	p.res = {"food": 9999, "wood": 9999, "gold": 9999}
+	p.res = {"food": 9999, "wood": 9999, "gold": 9999, "stone": 9999}
 	ok(sim.cmd_age_up(0) == Sim.ERR_REQ, "edad 1→2 sin edificios militares debe dar ERR_REQ")
 	var base: Vector2i = p.start_tile
 	var t1 := free_near(sim, base + Vector2i(-6, 6), "cuartel", 0)
@@ -154,9 +154,9 @@ func test_age_up_requirements() -> void:
 	ok(sim.cmd_age_up(0) == Sim.ERR_REQ, "arquería a medias no basta")
 	inc.progress = 1.0
 	ok(sim.military_kinds_done(0) == 2, "dos tipos militares")
-	p.res = {"food": 100, "wood": 9999, "gold": 9999}
+	p.res = {"food": 100, "wood": 9999, "gold": 9999, "stone": 9999}
 	ok(sim.cmd_age_up(0) == Sim.ERR_COST, "sin comida: ERR_COST")
-	p.res = {"food": 9999, "wood": 9999, "gold": 9999}
+	p.res = {"food": 9999, "wood": 9999, "gold": 9999, "stone": 9999}
 	ok(sim.cmd_age_up(0) == Sim.OK, "edad 1→2 con 2 tipos militares")
 	ok(sim.cmd_age_up(0) == Sim.ERR_INVALID, "ya está subiendo de edad")
 	for s in int(Defs.AGES[2]["time"] / Sim.DT) + 5:
@@ -284,7 +284,7 @@ func test_save_age2() -> void:
 	sim.ais.append(AiPlayer.new(sim, 0, 2))       # una IA juega el puesto del humano, como en save_test
 	for p in sim.players:
 		p.age = 2
-		p.res = {"food": 3000, "wood": 3000, "gold": 3000}
+		p.res = {"food": 3000, "wood": 3000, "gold": 3000, "stone": 3000}
 	for a in sim.ais:
 		a.attack_at = 1e12
 		a.raid_at = 1e12

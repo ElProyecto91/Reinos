@@ -243,8 +243,21 @@ static func _try(size: int, sd: int, n: int, attempt: int) -> Dictionary:
 			_place_cluster(rtype, ramt, terrain, reserved, size, bc, 4 if area < 60 else 6, Defs.R_GOLD, rng, 1.6)
 			if area >= 40:
 				_place_cluster(rtype, ramt, terrain, reserved, size, bc + Vector2(2, 2), 5, Defs.R_BERRY, rng, 2.0)
+	# Canteras de piedra (con otro generador de números aleatorios: así el resto del mapa no cambia respecto a versiones sin piedra)
+	var rng2 := RandomNumberGenerator.new()
+	rng2.seed = sd * 7919 + 4421
+	for s in starts:
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, Vector2.from_angle(rng2.randf() * TAU) * 11.5, 5, 3, Defs.R_STONE, rng2, 1.7)
+	_scatter(rtype, ramt, terrain, dw, reserved, size, maxi(3, size / 20), Defs.R_STONE, 4, rng2, starts)
 	# Pasillos: los bosques densos no pueden aislar unas bases de otras
 	_carve_corridors(rtype, ramt, terrain, size, starts)
+	# Caza: unos ciervos (y algún jabalí) cerca de cada base y manadas repartidas por las tierras
+	for s in starts:
+		var sa := rng2.randf() * TAU
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, Vector2.from_angle(sa) * 15.0, 4, 3, Defs.R_DEER, rng2, 2.4)
+		_start_cluster(rtype, ramt, terrain, reserved, size, s, Vector2.from_angle(sa + 2.4) * 19.0, 2, 1, Defs.R_BOAR, rng2, 1.6)
+	_scatter(rtype, ramt, terrain, dw, reserved, size, maxi(4, size / 16), Defs.R_DEER, 4, rng2, starts)
+	_scatter(rtype, ramt, terrain, dw, reserved, size, maxi(2, size / 32), Defs.R_BOAR, 2, rng2, starts)
 	# Peces en aguas poco profundas
 	var fish_clusters := maxi(6, size / 9)
 	var tries := 0
@@ -533,7 +546,7 @@ static func _carve_corridors(rtype: PackedByteArray, ramt: PackedInt32Array, ter
 			g.set_point_solid(pt, true)
 		elif rt == Defs.R_TREE:
 			g.set_point_weight_scale(pt, 12.0)
-		elif rt == Defs.R_GOLD or rt == Defs.R_BERRY:
+		elif rt == Defs.R_GOLD or rt == Defs.R_BERRY or rt == Defs.R_STONE:
 			g.set_point_weight_scale(pt, 30.0)
 	for i in starts.size():
 		for j in range(i + 1, starts.size()):

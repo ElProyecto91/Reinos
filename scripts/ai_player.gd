@@ -33,7 +33,11 @@ var port_cd: float = 0.0              # espera entre búsquedas de sitio de puer
 var port_spot_cache := Vector2i(-2, -2)
 var reserve: Dictionary = {}          # recursos que el entrenamiento no debe gastar (próximo edificio de la 3ª edad)
 var assign_fail: Dictionary = {}      # recurso -> instante hasta el que no se repite una búsqueda fallida (partidas largas)
+var bell_t: float = -100.0            # último instante en que había enemigos junto a la base con el rebato sonando
+var mkt_cd: float = 0.0               # espera entre operaciones en el mercado
+var gar_v: int = 0                    # aldeanos refugiados dentro de edificios (no están en sim.units)
 var rng := RandomNumberGenerator.new()
+const KINDS := ["food", "wood", "gold", "stone"]
 const LIMITED := ["ariete", "catapulta", "trabuquete", "monje"]   # tipos que la IA no acumula sin límite
 
 func _init(s: Sim, idx: int, d: int) -> void:
@@ -52,6 +56,8 @@ func _init(s: Sim, idx: int, d: int) -> void:
 	raid_at = [1e9, 1260.0, 840.0][diff] + rng.randf_range(0.0, 60.0)
 	navy_at = [1e9, 1000.0, 660.0][diff] + rng.randf_range(0.0, 40.0)
 	acc = rng.randf() * interval
+	if idx < s.players.size():
+		s.players[idx].formation = Sim.FM_LINE if diff >= 1 else Sim.FM_FREE       # los ejércitos de Normal y Difícil marchan en línea
 
 ## Soldados que la IA llega a juntar mientras espera para atacar (sin límite en Difícil).
 func _army_cap() -> int:
@@ -85,8 +91,12 @@ func _think() -> void:
 	var done := {}
 	var inprog := {}
 	var tc: Ent = null
+	gar_v = 0
 	for b in sim.buildings:
 		if b.alive and b.owner == pi:
+			for c: Ent in b.cargo:
+				if c.type == "aldeano":
+					gar_v += 1
 			if b.progress >= 1.0:
 				done[b.type] = int(done.get(b.type, 0)) + 1
 				if b.type == "centro" and tc == null:
@@ -111,12 +121,15 @@ func _think() -> void:
 	t0 = _pt("ai_fishing", t0)
 	_build(p, vills, base, done, inprog)
 	_plan_reserve(p, vills, done, inprog)
+	_research(p, vills, done, army)
+	_market(p)
 	t0 = _pt("ai_build", t0)
 	_expand(p, vills, base, done, inprog)
 	t0 = _pt("ai_expand", t0)
 	_train(p, vills, done, boats, navy, army)
 	t0 = _pt("ai_train", t0)
 	_age(p, vills, done)
+	_bell(p)
 	_military(p, army, base)
 	_ability(p, vills, army, base)
 	t0 = _pt("ai_military", t0)
@@ -151,7 +164,7 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 	var n := vills.size()
 	if n == 0:
 		return
-	var counts := {"food": 0, "wood": 0, "gold": 0}
+	var counts := {"food": 0, "wood": 0, "gold": 0, "stone": 0}
 	var idle: Array = []
 	for v in vills:
 		if v.state == Sim.S_IDLE:
@@ -173,10 +186,10 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 		wf = 0.30
 		ww = 0.35
 		wg = 0.35
-	var want := {"food": wf, "wood": ww, "gold": wg}
+	var want := {"food": wf, "wood": ww, "gold": wg, "stone": _stone_weight(p, n)}
 	# Ajuste por existencias: menos gente en lo que sobra, más en lo que falta
 	var tot := 0.0
-	for k in ["food", "wood", "gold"]:
+	for k in KINDS:
 		var stock := float(p.res.get(k, 0))
 		var m := 1.0
 		if stock > 1500.0:
@@ -188,12 +201,12 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 		want[k] = float(want[k]) * m
 		tot += float(want[k])
 	if tot > 0.0:
-		for k in ["food", "wood", "gold"]:
+		for k in KINDS:
 			want[k] = float(want[k]) / tot
 	for v in idle:
 		var best := "wood"
 		var bdef := -1e9
-		for k in ["food", "wood", "gold"]:
+		for k in KINDS:
 			var deficit: float = float(want[k]) * n - float(counts[k])
 			if float(want[k]) <= 0.0:
 				continue
@@ -203,7 +216,7 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 		if _assign(p, v, best, base):
 			counts[best] = int(counts[best]) + 1
 		else:
-			for k in ["wood", "food", "gold"]:
+			for k in ["wood", "food", "gold", "stone"]:
 				if k != best and float(want[k]) > 0.0 and _assign(p, v, k, base):
 					counts[k] = int(counts[k]) + 1
 					break
@@ -212,7 +225,7 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 	var under := ""
 	var over_v := -1e9
 	var under_v := 1e9
-	for k in ["food", "wood", "gold"]:
+	for k in KINDS:
 		var diff_k: float = float(counts[k]) - float(want[k]) * n
 		if diff_k > over_v:
 			over_v = diff_k
@@ -240,6 +253,17 @@ func _economy(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog:
 				if ft.x >= 0:
 					sim.cmd_build(pi, [v.id], "granja", ft)
 				break
+
+## Fracción de aldeanos que debe picar piedra: nada hasta la Edad Feudal; después lo justo para torres y, sobre todo, para el
+## castillo que tiene planeado (reserve).
+func _stone_weight(p: Player, n: int) -> float:
+	if p.age < 1 or n < 14:
+		return 0.0
+	var need := int(reserve.get("stone", 0))
+	var have := int(p.res.get("stone", 0))
+	if need > 0 and have < need:
+		return 0.22
+	return 0.07 if have < 250 else 0.0
 
 func _assign(p: Player, v: Ent, kind: String, base: Vector2i) -> bool:
 	if sim.time < float(assign_fail.get(kind, -1.0)):
@@ -423,7 +447,7 @@ func _build(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: D
 	# Almacén cerca de recursos lejanos
 	if store_cd <= 0.0 and int(inprog.get("almacen", 0)) == 0 and int(done.get("almacen", 0)) < 4:
 		if int(p.res.wood) >= 100:
-			if _far_store(p, vills, "wood") or _far_store(p, vills, "gold"):
+			if _far_store(p, vills, "wood") or _far_store(p, vills, "gold") or _far_store(p, vills, "stone"):
 				store_cd = 30.0
 	# Cuartel y edificios militares
 	var grow := (1 if p.pop >= 90 else 0) + (1 if p.pop >= 150 else 0)     # más producción cuando la economía da para ello
@@ -438,6 +462,12 @@ func _build(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: D
 		# Puerto: sólo si hay costa con peces cerca (la comida del mar libera aldeanos de las granjas)
 		if n >= min_vills + 3 and port_cd <= 0.0 and int(done.get("puerto", 0)) + int(inprog.get("puerto", 0)) < 1 and int(p.res.wood) >= 220:
 			_try_port(p, base, vills)
+		if p.age >= 1 and diff >= 1 and n >= min_vills + 4 and int(p.res.wood) >= 260:
+			if int(done.get("herreria", 0)) + int(inprog.get("herreria", 0)) < 1:
+				_try_build(p, "herreria", base, vills, 7, 14, 2)
+		if p.age >= 1 and diff == 2 and n >= min_vills + 10 and int(p.res.wood) >= 320:
+			if int(done.get("mercado", 0)) + int(inprog.get("mercado", 0)) < 1:
+				_try_build(p, "mercado", base, vills, 7, 14, 2)
 		if p.age >= 1:
 			var ranges: int = [1, 2, 2][diff] + grow
 			if int(done.get("arqueria", 0)) + int(inprog.get("arqueria", 0)) < ranges:
@@ -450,10 +480,82 @@ func _build(p: Player, vills: Array, base: Vector2i, done: Dictionary, inprog: D
 				_try_build(p, "monasterio", base, vills, 7, 15, 2)
 			elif nb == "castillo":
 				_try_build(p, "castillo", base, vills, 9, 16, 3)
-			# Excedentes de madera y oro: torres de defensa alrededor de la base
-			if n >= min_vills + 4 and int(p.res.wood) >= 450 and int(p.res.gold) >= 250 and int(inprog.get("torre", 0)) == 0:
+			# Excedentes de madera y piedra: torres de defensa alrededor de la base (sin tocar la piedra del castillo planeado)
+			if n >= min_vills + 4 and int(p.res.wood) >= 300 and int(p.res.get("stone", 0)) >= 90 + int(reserve.get("stone", 0)) and int(inprog.get("torre", 0)) == 0:
 				if int(done.get("torre", 0)) < [2, 4, 6][diff]:
 					_try_build(p, "torre", base, vills, 8, 14, 2)
+
+# ------------------------------------------------------------------ mejoras, mercado y rebato
+
+## Mejoras que investiga cada edificio y en qué orden, según la dificultad (Fácil sólo economía básica).
+func _tech_order(btype: String) -> Array:
+	match btype:
+		"centro":
+			return [["telar", "arado"], ["telar", "arado", "carretilla", "arado_2"], ["telar", "arado", "carretilla", "arado_2"]][diff]
+		"almacen":
+			return [["hacha"], ["hacha", "pico", "sierra"], ["hacha", "pico", "sierra", "pico_2"]][diff]
+		"herreria":
+			return [[], ["forja_1", "arm_inf_1", "flechas_1", "arm_arc_1", "arm_cav_1"],
+				["forja_1", "arm_inf_1", "flechas_1", "arm_arc_1", "arm_cav_1", "forja_2", "flechas_2", "arm_inf_2", "arm_arc_2", "arm_cav_2"]][diff]
+	return []
+
+## Una investigación nueva por edificio libre y por pensamiento. El Centro sólo investiga cuando ya tiene casi todos los
+## aldeanos que quiere (mientras investiga no entrena), y la Herrería cuando ya hay ejército que se beneficie.
+func _research(p: Player, vills: Array, done: Dictionary, army: Array) -> void:
+	var n := vills.size() + gar_v
+	var saving := _saving_for_age(p, vills, done)
+	for b in sim.buildings:
+		if not (b.alive and b.owner == pi and b.progress >= 1.0) or not b.queue.is_empty():
+			continue
+		var order := _tech_order(b.type)
+		if order.is_empty():
+			continue
+		match b.type:
+			"centro":
+				if n < 16 or n < _vill_target(p) - 8:
+					continue
+			"almacen":
+				if n < 14:
+					continue
+			"herreria":
+				if army.size() < (6 if diff == 1 else 8):
+					continue
+		for tid: String in order:
+			var st := sim.tech_status(pi, tid)
+			if st == Sim.ERR_DONE or st == Sim.ERR_AGE or st == Sim.ERR_REQ:
+				continue
+			if st == Sim.OK and _can_spend(p, Defs.TECHS[tid]["cost"], saving):
+				sim.cmd_research(pi, b.id, tid)
+			break
+
+## Sólo la IA difícil comercia: compra la piedra que le falta para el castillo y vende lo que le sobra.
+func _market(p: Player) -> void:
+	if diff < 2 or sim.time < mkt_cd or not sim.has_market(pi):
+		return
+	mkt_cd = sim.time + 4.0
+	var need := int(reserve.get("stone", 0))
+	if need > 0 and int(p.res.get("stone", 0)) < need and int(p.res.get("gold", 0)) >= 350:
+		sim.cmd_trade(pi, "stone", true)
+		return
+	for k in ["food", "wood"]:
+		if int(p.res.get(k, 0)) > 1400:
+			sim.cmd_trade(pi, k, false)
+			return
+
+## Rebato: cuando hay enemigos sobre la base los aldeanos se refugian (los edificios con guarnición disparan más); pasado el
+## peligro, a trabajar. Fácil no lo usa.
+func _bell(p: Player) -> void:
+	if diff == 0:
+		return
+	var n := int(_threat()["n"])
+	if not p.bell:
+		if n >= (4 if diff == 1 else 3) and sim.cmd_bell(pi, true) == Sim.OK:
+			bell_t = sim.time
+	else:
+		if n > 0:
+			bell_t = sim.time
+		elif sim.time - bell_t > 10.0:
+			sim.cmd_bell(pi, false)
 
 # ------------------------------------------------------------------ ampliación
 
@@ -681,7 +783,7 @@ func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array
 		if tr.is_empty():
 			continue
 		if b.type == "centro":
-			if n + queued_v < _vill_target(p) and b.queue.size() < 2 and _can_spend(p, sim.unit_cost(pi, "aldeano"), saving):
+			if n + gar_v + queued_v < _vill_target(p) and b.queue.size() < 2 and _can_spend(p, sim.unit_cost(pi, "aldeano"), saving):
 				if sim.cmd_train(pi, b.id, "aldeano") > 0:
 					queued_v += 1
 		elif b.type == "puerto":

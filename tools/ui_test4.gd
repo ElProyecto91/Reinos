@@ -60,7 +60,7 @@ func _run() -> void:
 	for b in sim.buildings:
 		if b.owner == h:
 			tc = b
-	p.res = {"food": 2000, "wood": 2000, "gold": 2000}
+	p.res = {"food": 2000, "wood": 2000, "gold": 2000, "stone": 2000}
 	var vl: Array = []
 	for u in sim.units:
 		if u.owner == h:

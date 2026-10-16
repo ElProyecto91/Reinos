@@ -79,7 +79,7 @@ func _run() -> void:
 	for b in sim.buildings:
 		if b.owner == h and b.type == "centro":
 			tc = b
-	p.res = {"food": 5000, "wood": 5000, "gold": 5000}
+	p.res = {"food": 5000, "wood": 5000, "gold": 5000, "stone": 5000}
 	p.age = 1
 	p.pop_cap = 200
 	# --- 1. sin edificios militares el botón avisa y no sube de edad

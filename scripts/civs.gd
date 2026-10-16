@@ -128,7 +128,7 @@ static func _mult(rules: Dictionary, type: String) -> float:
 ##           "age_cost": ×, "age_time": ×, "heal": ×}
 static func build_mods(id: String) -> Dictionary:
 	var out := {"hp": {}, "atk": {}, "spd": {}, "rng": {}, "los": {}, "cost": {}, "time": {},
-		"gather": PackedFloat32Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+		"gather": PackedFloat32Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
 		"bld_hp": 1.0, "pop_house": 0, "age_cost": 1.0, "age_time": 1.0, "heal": 1.0}
 	if not DATA.has(id):
 		return out
@@ -151,7 +151,7 @@ static func build_mods(id: String) -> Dictionary:
 			(out["los"] as Dictionary)[t] = add
 	var gm: Dictionary = c.get("gather", {})
 	var g: PackedFloat32Array = out["gather"]
-	for rt in [Defs.R_TREE, Defs.R_GOLD, Defs.R_BERRY, Defs.R_FARM, Defs.R_FISH]:
+	for rt in [Defs.R_TREE, Defs.R_GOLD, Defs.R_BERRY, Defs.R_FARM, Defs.R_FISH, Defs.R_STONE, Defs.R_DEER, Defs.R_BOAR]:
 		var kind: String = String(Defs.RES_INFO[rt]["kind"])
 		var m := float(gm.get(kind, 1.0))
 		if rt == Defs.R_FISH:

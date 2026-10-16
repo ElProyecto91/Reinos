@@ -23,6 +23,7 @@ var toasts: Toasts
 var grid: Array[UiButton] = []
 var quick: Array[UiButton] = []
 var abil_btn: UiButton
+var bell_btn: UiButton
 var speed_btn: UiButton
 var menu_btn: UiButton
 var pause_ui: Control
@@ -84,6 +85,13 @@ func _ready() -> void:
 	abil_btn.action = func() -> void: game.ui_ability()
 	abil_btn.visible = false
 	root.add_child(abil_btn)
+	bell_btn = UiButton.new()
+	bell_btn.font_size = 16
+	bell_btn.icon_kind = "bell"
+	bell_btn.text = Lang.t("bell")
+	bell_btn.accent = Color(1.0, 0.55, 0.3)
+	bell_btn.action = func() -> void: game.ui_bell()
+	root.add_child(bell_btn)
 	speed_btn = UiButton.new()
 	speed_btn.font_size = 22
 	speed_btn.action = _cycle_speed
@@ -143,6 +151,8 @@ func layout() -> void:
 		quick[i].size = Vector2(72, 72)
 	abil_btn.position = Vector2(vs.x - 80, TOP_H + 12 + quick.size() * 80)
 	abil_btn.size = Vector2(72, 80)
+	bell_btn.position = Vector2(vs.x - 80, TOP_H + 12 + quick.size() * 80 + (88 if abil_btn.visible else 0))
+	bell_btn.size = Vector2(72, 72)
 	toasts.position = Vector2.ZERO
 	toasts.size = vs
 	for c in [pause_ui, help_ui, end_ui, load_ui]:
@@ -414,6 +424,7 @@ func refresh_now() -> void:
 	quick[1].badge = str(army) if army > 0 else ""
 	quick[1].queue_redraw()
 	_update_ability(g, p)
+	_update_bell(p)
 	var has_sel := not g.sel.is_empty()
 	var placing := g.placing_type != ""
 	info.visible = has_sel and not placing
@@ -456,6 +467,15 @@ func _update_ability(g: Game, p: Player) -> void:
 		abil_btn.progress = -1.0
 	abil_btn.queue_redraw()
 
+## Botón del rebato: encendido mientras los aldeanos se refugian; baja bajo el de la habilidad cuando ésta se muestra.
+func _update_bell(p: Player) -> void:
+	var y := TOP_H + 12 + quick.size() * 80 + (88 if abil_btn.visible else 0)
+	if absf(bell_btn.position.y - y) > 0.5:
+		bell_btn.position = Vector2(bell_btn.position.x, y)
+	if bell_btn.toggled != p.bell:
+		bell_btn.toggled = p.bell
+		bell_btn.queue_redraw()
+
 func _update_place_bar() -> void:
 	var g := game
 	var t := g.placing_type
@@ -492,8 +512,8 @@ func _update_place_bar() -> void:
 
 func _cost_str(cost: Dictionary) -> String:
 	var parts: Array[String] = []
-	var names := {"food": Lang.t("res_food"), "wood": Lang.t("res_wood"), "gold": Lang.t("res_gold")}
-	for k in ["food", "wood", "gold"]:
+	var names := {"food": Lang.t("res_food"), "wood": Lang.t("res_wood"), "gold": Lang.t("res_gold"), "stone": Lang.t("res_stone")}
+	for k in ["food", "wood", "gold", "stone"]:
 		if cost.has(k) and int(cost[k]) > 0:
 			parts.append("%d %s" % [int(cost[k]), names[k]])
 	return ", ".join(parts)
@@ -545,6 +565,8 @@ func _fill_grid(p: Player) -> int:
 	var b := g.sel_building()
 	var units := g.sel_own_units()
 	if b != null and b.owner == g.human:
+		if b.progress >= 1.0 and bool(b.def.get("market", false)):
+			return _fill_market(p)
 		if b.progress >= 1.0:
 			for ut: String in Civs.train_list(b.type, p.civ):
 				var ud: Dictionary = Defs.UNITS[ut]
@@ -560,6 +582,10 @@ func _fill_grid(p: Player) -> int:
 					var have: int = g.sim.military_kinds_done(g.human) if need > 0 else 0
 					_slot(n, Lang.t("age_up"), null, "age", g.sim.age_cost(g.human, p.age + 1), res, have >= need, (func() -> void: g.ui_age_up()), false, -1.0, "" if have >= need else Lang.t("needs_mil", [have, need]))
 					n += 1
+			n = _fill_techs(n, p, b)
+			if g.sim.garrison_cap(b) > 0 and not b.cargo.is_empty():
+				_slot(n, Lang.t("ungarrison"), null, "exit", {}, res, true, (func() -> void: g.ui_ungarrison()), false, -1.0, "%d/%d" % [b.cargo.size(), g.sim.garrison_cap(b)])
+				n += 1
 			_slot(n, Lang.t("rally"), null, "flag", {}, res, true, (func() -> void: g.ui_toggle_rally()), g.rally_mode)
 			n += 1
 		_slot(n, Lang.t("delete") if Time.get_ticks_msec() / 1000.0 - _del_confirm > 3.0 else Lang.t("confirm"), null, "trash", {}, res, true, _delete_pressed)
@@ -570,11 +596,17 @@ func _fill_grid(p: Player) -> int:
 		var has_cargo := false
 		var has_scout := false
 		var all_exploring := true
+		var has_land := false
+		var stance0 := -1
 		for u in units:
+			if not u.naval and not bool(u.def.get("siege", false)):
+				has_land = true
 			if u.type == "aldeano":
 				has_v = true
 			elif u.def.get("military", false):
 				has_m = true
+				if stance0 < 0:
+					stance0 = u.stance
 			if u.naval and not u.cargo.is_empty():
 				has_cargo = true
 			elif bool(u.def.get("scout", false)):
@@ -629,9 +661,53 @@ func _fill_grid(p: Player) -> int:
 		if has_m:
 			_slot(n, Lang.t("attack_move"), null, "sword", {}, res, true, (func() -> void: g.ui_toggle_amove()), g.amove_mode)
 			n += 1
+			_slot(n, Lang.t("stance"), null, "stance", {}, res, true, (func() -> void: g.ui_cycle_stance()), stance0 > 0, -1.0, Lang.t("stance_%d" % maxi(stance0, 0)))
+			n += 1
+			_slot(n, Lang.t("formation"), null, "formation", {}, res, true, (func() -> void: g.ui_cycle_formation()), p.formation != 0, -1.0, Lang.t("formation_%d" % p.formation))
+			n += 1
+		if has_land:
+			_slot(n, Lang.t("garrison"), null, "garrison", {}, res, true, (func() -> void: g.ui_toggle_garrison()), g.garrison_mode)
+			n += 1
 		_slot(n, Lang.t("stop"), null, "stop", {}, res, true, (func() -> void: g.ui_stop()))
 		return n + 1
 	return 0
+
+## Mejoras que ofrece el edificio: de cada cadena (Hacha → Sierra…) sólo el siguiente escalón.
+func _fill_techs(n: int, p: Player, b: Ent) -> int:
+	var g := game
+	for tid: String in Defs.techs_of(b.type):
+		if n >= COLS * 2 - 2:
+			break
+		var t: Dictionary = Defs.TECHS[tid]
+		if p.techs.has(tid):
+			continue
+		var req := String(t.get("req", ""))
+		if req != "" and not p.techs.has(req):
+			continue
+		var queued := g.sim.tech_queued(g.human, tid)
+		var okage := p.age >= int(t["age"])
+		var sub := ""
+		if queued:
+			sub = Lang.t("tech_queued")
+		elif not okage:
+			sub = Lang.t("needs_age_%d" % int(t["age"]))
+		var prog := -1.0
+		if queued and not b.queue.is_empty() and String(b.queue[0]) == "tech:" + tid and b.producing:
+			prog = 1.0 - b.train_left / maxf(b.train_total, 0.01)
+		_slot(n, Lang.t("t_" + tid), null, "tech", {} if queued else t["cost"], p.res, okage and not queued, (func() -> void: g.ui_research(b.id, tid)), queued, prog, sub)
+		n += 1
+	return n
+
+## Mercado: comprar (fila de arriba) y vender (fila de abajo) 100 de comida, madera o piedra.
+func _fill_market(p: Player) -> int:
+	var g := game
+	var kinds := ["food", "wood", "stone"]
+	for i in kinds.size():
+		var k: String = kinds[i]
+		_slot(i, Lang.t("buy"), null, k, {"gold": g.sim.market_buy_cost(g.human, k)}, p.res, true, (func() -> void: g.ui_trade(k, true)))
+		_slot(COLS + i, Lang.t("sell"), null, k, {}, p.res, int(p.res.get(k, 0)) >= Sim.MKT_LOT, (func() -> void: g.ui_trade(k, false)), false, -1.0, "+%d %s" % [g.sim.market_sell_gain(g.human, k), Lang.t("res_gold")])
+	_slot(COLS * 2 - 1, Lang.t("delete") if Time.get_ticks_msec() / 1000.0 - _del_confirm > 3.0 else Lang.t("confirm"), null, "trash", {}, p.res, true, _delete_pressed)
+	return COLS * 2
 
 func _delete_pressed() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
@@ -661,15 +737,15 @@ class TopBar extends Control:
 		var p: Player = g.sim.players[g.human]
 		var font := get_theme_default_font()
 		var x := 10.0
-		for k in ["food", "wood", "gold"]:
+		for k in ["food", "wood", "gold", "stone"]:
 			UiButton.draw_symbol(self, k, Rect2(x, 10, 36, 36))
-			var v := int(p.res[k])
-			draw_string(font, Vector2(x + 42, 38), str(v), HORIZONTAL_ALIGNMENT_LEFT, 90, 26, Color(0.98, 0.94, 0.82))
-			x += 128.0
+			var v := int(p.res.get(k, 0))
+			draw_string(font, Vector2(x + 42, 38), str(v), HORIZONTAL_ALIGNMENT_LEFT, 70, 26, Color(0.98, 0.94, 0.82))
+			x += 116.0
 		UiButton.draw_symbol(self, "pop", Rect2(x, 10, 36, 36))
 		var full := p.pop >= p.pop_cap
 		draw_string(font, Vector2(x + 40, 38), "%d/%d" % [p.pop, p.pop_cap], HORIZONTAL_ALIGNMENT_LEFT, 110, 26, Color(1, 0.5, 0.45) if full else Color(0.98, 0.94, 0.82))
-		x += 140.0
+		x += 132.0
 		var age_txt := Lang.t("age_%d" % p.age)
 		if p.aging:
 			age_txt = "%s ▸ %ds" % [age_txt, int(ceil(p.age_left))]
@@ -693,7 +769,7 @@ class Toasts extends Control:
 			list.remove_at(0)
 		queue_redraw()
 	func has_content() -> bool:
-		return not list.is_empty() or hud.game.rally_mode or hud.game.amove_mode or hud.game.select_mode
+		return not list.is_empty() or hud.game.rally_mode or hud.game.amove_mode or hud.game.select_mode or hud.game.garrison_mode
 	func _process(delta: float) -> void:
 		var i := 0
 		while i < list.size():
@@ -711,6 +787,8 @@ class Toasts extends Control:
 			banner = Lang.t("banner_rally")
 		elif g.amove_mode:
 			banner = Lang.t("banner_amove")
+		elif g.garrison_mode:
+			banner = Lang.t("banner_garrison")
 		elif g.select_mode:
 			banner = Lang.t("banner_select")
 		if banner != "":
@@ -768,6 +846,8 @@ class Minimap extends Control:
 						c = Color(1.0, 0.85, 0.15)
 					Defs.R_BERRY:
 						c = Color(0.85, 0.2, 0.3)
+					Defs.R_STONE:
+						c = Color(0.72, 0.76, 0.84)
 				img.set_pixel(x, y, c)
 		img_tex = ImageTexture.create_from_image(img)
 		_built = true
@@ -846,7 +926,12 @@ class InfoPanel extends Control:
 			var q := qbtns[i]
 			if show and i < b.queue.size():
 				q.visible = true
-				q.icon = g.art.unit_icon(b.queue[i], g.human % 4)
+				if Defs.is_tech_item(String(b.queue[i])):
+					q.icon = null
+					q.icon_kind = "tech"
+				else:
+					q.icon = g.art.unit_icon(b.queue[i], g.human % 4)
+					q.icon_kind = ""
 				q.progress = (1.0 - b.train_left / maxf(b.train_total, 0.01)) if (i == 0 and b.producing) else -1.0
 				q.toggled = i == 0 and b.blocked_pop
 				q.queue_redraw()
@@ -903,11 +988,19 @@ class InfoPanel extends Control:
 				elif e.owner == g.human:
 					if e.queue.size() > 0:
 						var line := Lang.t("queue_label")
+						if Defs.is_tech_item(String(e.queue[0])):
+							line = Lang.t("researching", [Lang.t("t_" + Defs.tech_of_item(String(e.queue[0])))])
 						if e.blocked_pop:
 							line = Lang.t("queue_blocked")
 						draw_string(font, Vector2(12, size.y - 68), line, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, Color(1, 0.6, 0.5) if e.blocked_pop else Color(0.85, 0.8, 0.7))
 					elif e.def.get("pop", 0) > 0:
 						draw_string(font, Vector2(88, 100), Lang.t("gives_pop", [int(e.def["pop"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 19, Color(0.85, 0.8, 0.7))
+					if e.queue.is_empty() and bool(e.def.get("market", false)):
+						var sm := g.sim
+						draw_multiline_string(font, Vector2(88, 86), Lang.t("market_info", [sm.market_price(g.human, "food"), sm.market_price(g.human, "wood"), sm.market_price(g.human, "stone")]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 17, 3, Color(0.85, 0.8, 0.7))
+					var gcap := g.sim.garrison_cap(e)
+					if gcap > 0:
+						draw_string(font, Vector2(88, 122) if e.queue.is_empty() else Vector2(size.x - 190, 62), Lang.t("garrison_label", [e.cargo.size(), gcap]), HORIZONTAL_ALIGNMENT_LEFT, 180, 18, Color(0.7, 0.95, 0.75))
 					if e.queue.is_empty() and (e.def["train"] as Array).size() > 0:
 						draw_string(font, Vector2(12, size.y - 20), Lang.t("tip_train"), HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 17, Color(0.7, 0.66, 0.55))
 			else:
@@ -915,6 +1008,8 @@ class InfoPanel extends Control:
 				if e.carry_amt >= 1.0 and (e.type == "aldeano" or e.def.get("fisher", false)):
 					UiButton.draw_symbol(self, e.carry_kind, Rect2(88, 106, 26, 26))
 					draw_string(font, Vector2(120, 126), "%d" % int(e.carry_amt), HORIZONTAL_ALIGNMENT_LEFT, 80, 22, Color(0.95, 0.9, 0.8))
+				if e.owner == g.human and e.is_military():
+					draw_string(font, Vector2(88, 122), Lang.t("stance_line", [Lang.t("stance_%d" % e.stance)]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 19, Color(0.75, 0.88, 1.0))
 				if int(e.def.get("cargo", 0)) > 0 and e.owner == g.human:
 					draw_string(font, Vector2(88, 122), Lang.t("passengers", [e.cargo.size(), int(e.def["cargo"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, Color(0.7, 0.9, 1.0))
 				var ud: Dictionary = e.def
@@ -1044,7 +1139,7 @@ class EndPanel extends Control:
 			Lang.t("end_time", ["%d:%02d" % [secs / 60, secs % 60]]),
 			Lang.t("end_kills", [p.kills]),
 			Lang.t("end_losses", [p.losses]),
-			Lang.t("end_gathered", [int(p.gathered["food"]), int(p.gathered["wood"]), int(p.gathered["gold"])]),
+			Lang.t("end_gathered", [int(p.gathered.get("food", 0)), int(p.gathered.get("wood", 0)), int(p.gathered.get("gold", 0)), int(p.gathered.get("stone", 0))]),
 		]
 		var y := r.position.y + 150.0
 		for l in lines:

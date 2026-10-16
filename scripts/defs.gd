@@ -6,7 +6,7 @@ extends RefCounted
 const TILE := 32
 const MAX_POP := 200
 
-const KINDS := ["food", "wood", "gold"]
+const KINDS := ["food", "wood", "gold", "stone"]
 
 # Terreno
 const T_WATER := 0
@@ -21,6 +21,10 @@ const R_GOLD := 2
 const R_BERRY := 3
 const R_FARM := 4
 const R_FISH := 5
+const R_STONE := 6     # cantera: piedra para torres, murallas y castillos
+const R_DEER := 7      # ciervo: caza (comida rápida); vaga por el mapa mientras nadie se acerca
+const R_BOAR := 8      # jabalí: más carne que el ciervo
+const RES_N := 9       # número de tipos de recurso (tamaño de las tablas indexadas por tipo)
 
 const RES_INFO := {
 	1: {"kind": "wood", "amount": 100, "rate": 0.8},
@@ -28,9 +32,19 @@ const RES_INFO := {
 	3: {"kind": "food", "amount": 200, "rate": 1.0},
 	4: {"kind": "food", "amount": 250, "rate": 0.55},
 	5: {"kind": "food", "amount": 400, "rate": 1.2},
+	6: {"kind": "stone", "amount": 500, "rate": 0.65},
+	7: {"kind": "food", "amount": 140, "rate": 1.5, "animal": true},
+	8: {"kind": "food", "amount": 300, "rate": 1.25, "animal": true},
 }
 
-const START_RES := {"food": 300, "wood": 300, "gold": 120}
+## Recursos sólidos (no se puede pasar por encima): árboles, minas, bayas. Los animales y las granjas no lo son.
+static func solid_res(rt: int) -> bool:
+	return rt == R_TREE or rt == R_GOLD or rt == R_BERRY or rt == R_STONE
+
+static func is_animal(rt: int) -> bool:
+	return rt == R_DEER or rt == R_BOAR
+
+const START_RES := {"food": 300, "wood": 300, "gold": 120, "stone": 0}
 
 const PLAYER_COLORS := [
 	Color("2f6fdc"), # azul
@@ -239,7 +253,7 @@ const BUILDINGS := {
 	"centro": {
 		"size": 3, "hp": 1500, "cost": {"wood": 300, "gold": 150}, "time": 90.0,
 		"pop": 10, "drop": true, "train": ["aldeano"], "los": 10, "age": 0,
-		"atk": 6.0, "range": 7.0, "cd": 2.0,
+		"atk": 6.0, "range": 7.0, "cd": 2.0, "garrison": 15,
 	},
 	"casa": {
 		"size": 2, "hp": 350, "cost": {"wood": 30}, "time": 16.0,
@@ -272,9 +286,9 @@ const BUILDINGS := {
 		"train": ["barco_pesca", "barco_transporte", "galera", "galeon"], "los": 8, "age": 0,
 	},
 	"torre": {
-		"size": 2, "hp": 700, "cost": {"wood": 100, "gold": 50}, "time": 36.0,
+		"size": 2, "hp": 700, "cost": {"wood": 60, "stone": 90}, "time": 36.0,
 		"pop": 0, "drop": false, "train": [], "los": 9, "age": 1,
-		"atk": 8.0, "range": 8.0, "cd": 1.6,
+		"atk": 8.0, "range": 8.0, "cd": 1.6, "garrison": 5,
 	},
 	# Edad de los Castillos
 	"monasterio": {
@@ -282,18 +296,28 @@ const BUILDINGS := {
 		"pop": 0, "drop": false, "train": ["monje"], "los": 6, "age": 2,
 	},
 	"castillo": {
-		"size": 4, "hp": 3200, "cost": {"wood": 300, "gold": 300}, "time": 120.0,
+		"size": 4, "hp": 3200, "cost": {"wood": 150, "stone": 350}, "time": 120.0,
 		"pop": 0, "drop": false, "train": ["trabuquete"], "los": 12, "age": 2,
-		"atk": 15.0, "range": 10.0, "cd": 1.1,
+		"atk": 15.0, "range": 10.0, "cd": 1.1, "garrison": 20,
 	},
 	# Murallas y puertas: 1x1, se trazan en línea. La puerta deja pasar a los aliados y no al enemigo.
 	"muralla": {
-		"size": 1, "hp": 550, "cost": {"wood": 8}, "time": 6.0,
+		"size": 1, "hp": 550, "cost": {"stone": 4}, "time": 6.0,
 		"pop": 0, "drop": false, "train": [], "los": 2, "age": 1, "wall": true,
 	},
 	"puerta": {
-		"size": 1, "hp": 800, "cost": {"wood": 50}, "time": 14.0,
+		"size": 1, "hp": 800, "cost": {"wood": 30, "stone": 25}, "time": 14.0,
 		"pop": 0, "drop": false, "train": [], "los": 3, "age": 1, "wall": true, "gate": true,
+	},
+	# Herrería: investiga mejoras de ataque, alcance y armadura del ejército (ver TECHS)
+	"herreria": {
+		"size": 3, "hp": 900, "cost": {"wood": 150}, "time": 40.0,
+		"pop": 0, "drop": false, "train": [], "los": 5, "age": 1,
+	},
+	# Mercado: compra y vende comida, madera y piedra a cambio de oro (precios que suben y bajan con el uso)
+	"mercado": {
+		"size": 3, "hp": 1000, "cost": {"wood": 175}, "time": 45.0,
+		"pop": 0, "drop": false, "train": [], "los": 6, "age": 1, "market": true,
 	},
 }
 
@@ -301,11 +325,52 @@ const BUILDINGS := {
 const FARM_COST := {"wood": 60}
 
 # Orden de los botones de construcción
-const BUILD_MENU := ["casa", "granja", "almacen", "puerto", "centro"]
-const MILITARY_MENU := ["cuartel", "arqueria", "establo", "taller", "monasterio"]
+const BUILD_MENU := ["casa", "granja", "almacen", "mercado", "puerto", "centro"]
+const MILITARY_MENU := ["cuartel", "arqueria", "establo", "taller", "herreria", "monasterio"]
 const DEFENSE_MENU := ["muralla", "puerta", "torre", "castillo"]
 const WALL_MAX_LINE := 40
 const MIN_SEA := 40        # una masa de agua menor que esto no sirve de puerto (charcas)
+
+# ---------------------------------------------------------------- mejoras (se investigan en la cola del edificio)
+# b = edificio donde se investiga · age = edad mínima · req = mejora previa · cost/time = coste y segundos
+# Efectos (se suman entre mejoras): gather {recurso: +fracción} (wood, gold, stone, farm, berry, hunt, fish) ·
+# atk {clase: +fracción de daño} · arm {clase: −fracción de daño recibido} · rng {clase: +casillas de alcance} ·
+# hp {tipo o clase: +fracción de vida} · carry (+unidades que carga un aldeano). Las clases son las de Civs.CLS.
+const TECHS := {
+	"telar": {"b": "centro", "age": 0, "cost": {"food": 50, "gold": 50}, "time": 25.0, "hp": {"aldeano": 0.40}},
+	"arado": {"b": "centro", "age": 0, "cost": {"food": 100, "wood": 50}, "time": 30.0, "gather": {"farm": 0.20}},
+	"arado_2": {"b": "centro", "age": 1, "req": "arado", "cost": {"food": 200, "wood": 100}, "time": 40.0, "gather": {"farm": 0.20}},
+	"carretilla": {"b": "centro", "age": 1, "cost": {"food": 150, "wood": 100}, "time": 35.0, "carry": 5},
+	"hacha": {"b": "almacen", "age": 0, "cost": {"food": 100, "wood": 50}, "time": 25.0, "gather": {"wood": 0.20}},
+	"sierra": {"b": "almacen", "age": 1, "req": "hacha", "cost": {"food": 150, "wood": 100}, "time": 35.0, "gather": {"wood": 0.20}},
+	"pico": {"b": "almacen", "age": 0, "cost": {"food": 100, "wood": 75}, "time": 30.0, "gather": {"gold": 0.15, "stone": 0.15}},
+	"pico_2": {"b": "almacen", "age": 1, "req": "pico", "cost": {"food": 180, "wood": 120}, "time": 40.0, "gather": {"gold": 0.15, "stone": 0.15}},
+	"forja_1": {"b": "herreria", "age": 1, "cost": {"food": 150, "gold": 50}, "time": 35.0, "atk": {"inf": 0.10, "cav": 0.10}},
+	"forja_2": {"b": "herreria", "age": 2, "req": "forja_1", "cost": {"food": 220, "gold": 120}, "time": 45.0, "atk": {"inf": 0.10, "cav": 0.10}},
+	"flechas_1": {"b": "herreria", "age": 1, "cost": {"food": 100, "gold": 50}, "time": 35.0, "atk": {"arc": 0.10, "marc": 0.10}, "rng": {"arc": 0.5, "marc": 0.5}},
+	"flechas_2": {"b": "herreria", "age": 2, "req": "flechas_1", "cost": {"food": 200, "gold": 100}, "time": 45.0, "atk": {"arc": 0.10, "marc": 0.10}, "rng": {"arc": 0.5, "marc": 0.5}},
+	"arm_inf_1": {"b": "herreria", "age": 1, "cost": {"food": 100, "gold": 50}, "time": 35.0, "arm": {"inf": 0.10}},
+	"arm_inf_2": {"b": "herreria", "age": 2, "req": "arm_inf_1", "cost": {"food": 200, "gold": 100}, "time": 45.0, "arm": {"inf": 0.10}},
+	"arm_arc_1": {"b": "herreria", "age": 1, "cost": {"food": 100, "gold": 50}, "time": 35.0, "arm": {"arc": 0.10, "marc": 0.10}},
+	"arm_arc_2": {"b": "herreria", "age": 2, "req": "arm_arc_1", "cost": {"food": 200, "gold": 100}, "time": 45.0, "arm": {"arc": 0.10, "marc": 0.10}},
+	"arm_cav_1": {"b": "herreria", "age": 1, "cost": {"food": 100, "gold": 50}, "time": 35.0, "arm": {"cav": 0.10}},
+	"arm_cav_2": {"b": "herreria", "age": 2, "req": "arm_cav_1", "cost": {"food": 200, "gold": 100}, "time": 45.0, "arm": {"cav": 0.10}},
+}
+
+## Mejoras de un edificio en el orden en que se ofrecen.
+static func techs_of(btype: String) -> Array:
+	var out: Array = []
+	for id: String in TECHS:
+		if String(TECHS[id]["b"]) == btype:
+			out.append(id)
+	return out
+
+## Regla de la cola: las mejoras viajan como "tech:<id>" entre los tipos de unidad.
+static func is_tech_item(item: String) -> bool:
+	return item.begins_with("tech:")
+
+static func tech_of_item(item: String) -> String:
+	return item.substr(5)
 
 static func can_afford(res: Dictionary, cost: Dictionary) -> bool:
 	for k in cost:

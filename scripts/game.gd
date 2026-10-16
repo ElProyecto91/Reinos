@@ -80,6 +80,7 @@ var wall_state := 0                     # 0 nada, 1 primer punto fijado, 2 tramo
 var rally_mode := false
 var amove_mode := false
 var select_mode := false
+var garrison_mode := false              # eligiendo el edificio donde refugiar a la selección
 var abil_mode := false                  # apuntando la habilidad de civilización (fuego): el próximo toque en el mapa la lanza
 var box_active := false
 var box_start := Vector2.ZERO
@@ -91,6 +92,7 @@ var markers: Array = []
 var alarm_pos := Vector2(-1, -1)
 var alarm_time := -100.0
 var _alarm_toast := -100.0
+var _flee_toast := -100.0
 
 # entrada táctil
 var _touches: Dictionary = {}
@@ -309,6 +311,8 @@ func _atlas_index(rt: int, x: int, y: int) -> int:
 			return Art.TREE_PALM if k < 52 else (Art.TREE_DRY if k < 88 else Art.TREE_OAK_B)
 		Defs.R_GOLD:
 			return Art.RES_GOLD
+		Defs.R_STONE:
+			return Art.RES_STONE
 		Defs.R_BERRY:
 			return Art.RES_BERRY
 		Defs.R_FISH:
@@ -552,7 +556,7 @@ func _consume_events() -> void:
 				if ev["owner"] == human:
 					var dp: Vector2 = ev["pos"]
 					var dk: String = ev["kind"]
-					var dcol := Color(0.95, 0.72, 0.42) if dk == "wood" else (Color(1.0, 0.86, 0.25) if dk == "gold" else Color(1.0, 0.45, 0.4))
+					var dcol := Color(0.95, 0.72, 0.42) if dk == "wood" else (Color(1.0, 0.86, 0.25) if dk == "gold" else (Color(0.78, 0.82, 0.90) if dk == "stone" else Color(1.0, 0.45, 0.4)))
 					_fx({"t": "text", "p": dp + Vector2(randf_range(-10, 10), -26), "s": "+%d" % int(ev["n"]), "col": dcol, "life": 1.2})
 					sfx("deposit", dp)
 			"cannon":
@@ -634,6 +638,34 @@ func _consume_events() -> void:
 					res_layer.erase_cell(t)
 					if rt == Defs.R_TREE and _seen(sim.tile_center(t)):
 						_fx({"t": "puff", "p": sim.tile_center(t), "r": 10.0, "life": 0.5})
+			"tech":
+				if ev["owner"] == human:
+					sfx("age")
+					hud.toast(Lang.t("toast_tech_done", [Lang.t("t_" + String(ev["id"]))]), Color(0.8, 0.95, 1.0))
+					_fx({"t": "flash", "p": ev["pos"], "life": 0.6})
+					hud.refresh_now()
+			"garrison":
+				if ev["owner"] == human and _seen(ev["pos"]):
+					sfx("click", ev["pos"])
+			"ungarrison":
+				if ev["owner"] == human:
+					sfx("order", ev["pos"])
+					hud.toast(Lang.t("toast_ungarrison", [int(ev["n"])]), Color(0.7, 1, 0.7))
+			"bell":
+				if ev["owner"] == human:
+					if bool(ev["on"]):
+						sfx("alarm")
+						hud.toast(Lang.t("toast_bell_on"), Color(1, 0.8, 0.45))
+					else:
+						hud.toast(Lang.t("toast_bell_off"), Color(0.7, 1, 0.7))
+					hud.refresh_now()
+			"flee":
+				if ev["owner"] == human and sim.time - _flee_toast > 15.0:
+					_flee_toast = sim.time
+					hud.toast(Lang.t("toast_flee"), Color(1, 0.8, 0.45))
+			"trade":
+				if ev["owner"] == human:
+					sfx("deposit")
 			"eliminated":
 				var who2: Player = sim.players[ev["owner"]]
 				if not who2.is_human:
@@ -676,6 +708,7 @@ func clear_selection() -> void:
 	sel_set.clear()
 	rally_mode = false
 	amove_mode = false
+	garrison_mode = false
 	sel_changed.emit()
 
 func select_ents(list: Array) -> void:
@@ -686,6 +719,7 @@ func select_ents(list: Array) -> void:
 		sel_set[e.id] = true
 	rally_mode = false
 	amove_mode = false
+	garrison_mode = false
 	sel_changed.emit()
 
 func sel_ents() -> Array[Ent]:
@@ -735,6 +769,7 @@ func _prune_selection() -> void:
 		if sel.is_empty():
 			rally_mode = false
 			amove_mode = false
+			garrison_mode = false
 		sel_changed.emit()
 
 func pick_at(wp: Vector2) -> Ent:
@@ -959,6 +994,23 @@ func _tap(sp: Vector2) -> void:
 			_err(r)
 		hud.refresh_now()
 		return
+	if garrison_mode:
+		garrison_mode = false
+		var gh := pick_at(wp)
+		var gus := sel_own_units()
+		if gh != null and gh.owner == human and gh.is_building and not gus.is_empty():
+			var room: int = int(sim.garrison_rooms(human).get(gh.id, 0))
+			var gr := sim.cmd_garrison(human, _ids_of(gus), gh.id)
+			if gr != Sim.OK:
+				_err(gr)
+			else:
+				add_marker(gh.center(), Color(0.4, 1, 0.5))
+				hud.toast(Lang.t("toast_garrison_go", [mini(room, gus.size())]), Color(0.7, 1, 0.7))
+				sfx("order")
+		else:
+			_err(Sim.ERR_NOGAR)
+		sel_changed.emit()
+		return
 	if rally_mode:
 		var b := sel_building()
 		if b != null:
@@ -1137,6 +1189,8 @@ func _res_name(t: Vector2i) -> String:
 	var rt: int = sim.rtype[t.y * sim.W + t.x]
 	if rt == 0:
 		return ""
+	if Defs.is_animal(rt):
+		return Lang.t("res_hunt")
 	return Lang.t("res_" + String(Defs.RES_INFO[rt]["kind"]))
 
 func _res_at(wp: Vector2) -> Vector2i:
@@ -1183,6 +1237,9 @@ func err_text(code: int) -> String:
 		Sim.ERR_COOLDOWN: return Lang.t("err_cooldown")
 		Sim.ERR_NOTARGET: return Lang.t("err_notarget")
 		Sim.ERR_POP: return Lang.t("err_pop")
+		Sim.ERR_NOMARKET: return Lang.t("err_nomarket")
+		Sim.ERR_DONE: return Lang.t("err_done")
+		Sim.ERR_NOGAR: return Lang.t("err_nogar")
 	return Lang.t("err_invalid")
 
 func _err(code: int) -> void:
@@ -1211,6 +1268,7 @@ func ui_begin_place(type: String) -> void:
 	amove_mode = false
 	select_mode = false
 	abil_mode = false
+	garrison_mode = false
 	wall_tiles = []
 	wall_anchor = Vector2i(-1, -1)
 	wall_state = 0
@@ -1296,6 +1354,80 @@ func ui_train(utype: String) -> void:
 		sfx("click")
 	else:
 		_err(r)
+
+## Investiga una mejora en el edificio seleccionado.
+func ui_research(bid: int, tid: String) -> void:
+	var r := sim.cmd_research(human, bid, tid)
+	if r == Sim.OK:
+		sfx("click")
+		hud.toast(Lang.t("td_" + tid), Color(0.8, 0.95, 1.0))
+		hud.refresh_now()
+	else:
+		_err(r)
+
+## Mercado: compra o vende 100 de comida, madera o piedra.
+func ui_trade(kind: String, buy: bool) -> void:
+	var r := sim.cmd_trade(human, kind, buy)
+	if r == Sim.OK:
+		hud.toast(Lang.t("toast_buy" if buy else "toast_sell", [Lang.t("res_" + kind)]), Color(1.0, 0.9, 0.5))
+		hud.refresh_now()
+	else:
+		_err(r)
+
+func ui_toggle_garrison() -> void:
+	if sel_own_units().is_empty():
+		return
+	garrison_mode = not garrison_mode
+	rally_mode = false
+	amove_mode = false
+	abil_mode = false
+	if garrison_mode:
+		hud.toast(Lang.t("toast_garrison"), Color(1, 1, 1))
+	sfx("click")
+	sel_changed.emit()
+
+func ui_ungarrison() -> void:
+	var b := sel_building()
+	if b == null or b.owner != human:
+		return
+	var r := sim.cmd_ungarrison(human, b.id)
+	if r != Sim.OK:
+		_err(r)
+	else:
+		hud.refresh_now()
+
+## Rebato: llama a todos los aldeanos al refugio (o los devuelve al trabajo).
+func ui_bell() -> void:
+	var p: Player = sim.players[human]
+	var r := sim.cmd_bell(human, not p.bell)
+	if r != Sim.OK:
+		_err(r)
+	hud.refresh_now()
+
+## Cambia la postura de los soldados seleccionados: agresiva → defensiva → mantener → pasiva.
+func ui_cycle_stance() -> void:
+	var us := sel_own_units()
+	var first: Ent = null
+	for u in us:
+		if u.is_military():
+			first = u
+			break
+	if first == null:
+		return
+	var nxt := (first.stance + 1) % 4
+	sim.cmd_stance(human, _ids_of(us, "", true), nxt)
+	hud.toast(Lang.t("stance_d_%d" % nxt), Color(0.8, 0.9, 1.0))
+	sfx("click")
+	hud.refresh_now()
+
+## Cambia la formación con la que marcha el ejército: libre → línea → columna.
+func ui_cycle_formation() -> void:
+	var p: Player = sim.players[human]
+	var nxt := (p.formation + 1) % 3
+	sim.cmd_formation(human, nxt)
+	hud.toast(Lang.t("formation_d_%d" % nxt), Color(0.8, 0.9, 1.0))
+	sfx("click")
+	hud.refresh_now()
 
 func ui_cancel_queue(i: int) -> void:
 	var b := sel_building()

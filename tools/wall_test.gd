@@ -133,10 +133,16 @@ func _initialize() -> void:
 	# ---- 6) una pieza que la propia muralla deja encerrada se cancela y se devuelve su coste
 	var sim5 := make_sim(1)
 	var p5: Player = sim5.players[0]
-	p5.res = {"food": 2000, "wood": 2000, "gold": 2000}
+	p5.res = {"food": 2000, "wood": 2000, "gold": 2000, "stone": 2000}
 	p5.age = 1
 	var row_a := Vector2i(-1, -1)
 	var s5: Vector2i = p5.start_tile
+	# la cantera y la caza que trae el mapa caen justo en la zona de prueba: se retiran para dejar el terreno de siempre
+	for cy in range(3, 16):
+		for cx in range(-16, 10):
+			var ci: int = (s5.y + cy) * sim5.W + s5.x + cx
+			if sim5.rtype[ci] == Defs.R_STONE or Defs.is_animal(sim5.rtype[ci]):
+				sim5._deplete(ci)
 	for dy in range(5, 12):
 		for dx in range(-10, 4):
 			var okr := true
@@ -159,7 +165,7 @@ func _initialize() -> void:
 	var tl5: Array = []
 	for i in 8:
 		tl5.append(row_a + Vector2i(i, 0))
-	var wood5: int = p5.res["wood"]
+	var stone5: int = p5.res["stone"]
 	var placed5 := sim5.cmd_build_wall(0, vs5, "muralla", tl5)
 	for i in 900:
 		sim5.step()
@@ -175,5 +181,5 @@ func _initialize() -> void:
 	for id in vs5:
 		if sim5.get_ent(id).state == Sim.S_IDLE:
 			idle5 += 1
-	print("TEST trapped wall piece cancelled: ", "PASS" if placed5 == 8 and open5 == 0 and done5 >= 6 and idle5 == 3 and int(p5.res["wood"]) == wood5 - 8 * done5 else "FAIL", " placed ", placed5, " done ", done5, " open ", open5, " idle ", idle5, " wood ", wood5, "->", p5.res["wood"])
+	print("TEST trapped wall piece cancelled: ", "PASS" if placed5 == 8 and open5 == 0 and done5 >= 6 and idle5 == 3 and int(p5.res["stone"]) == stone5 - int(Defs.BUILDINGS["muralla"]["cost"]["stone"]) * done5 else "FAIL", " placed ", placed5, " done ", done5, " open ", open5, " idle ", idle5, " stone ", stone5, "->", p5.res["stone"])
 	quit(0)

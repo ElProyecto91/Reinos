@@ -55,7 +55,7 @@ func _run() -> void:
 	sim.ais.clear()
 	var p: Player = sim.players[h]
 	p.age = 2
-	p.res = {"food": 900, "wood": 900, "gold": 900}
+	p.res = {"food": 900, "wood": 900, "gold": 900, "stone": 900}
 	p.pop_cap = 300
 	var base: Vector2i = p.start_tile
 	var spots := {"castillo": Vector2i(8, -9), "monasterio": Vector2i(-11, -8), "cuartel": Vector2i(-12, 5), "arqueria": Vector2i(-6, 9), "establo": Vector2i(2, 10), "taller": Vector2i(10, 6), "torre": Vector2i(15, -2)}

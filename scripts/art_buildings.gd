@@ -502,6 +502,60 @@ static func roof_side(cv: Cv, er: Vector2, eb: Vector2, rb: Vector2, rr: Vector2
 		cv.line(lerpf(er.x, rr.x, t), lerpf(er.y, rr.y, t), lerpf(eb.x, rb.x, t), lerpf(eb.y, rb.y, t), 0.8, sh(col, 0.7))
 	cv.line(er.x, er.y, eb.x, eb.y, 1.0, INK)
 
+## Puesto de mercado: mostrador de madera con mercancías bajo un toldo de tela (las rayas del equipo van en `stall_stripes`).
+static func stall(cv: Cv, x: float, y: float, w: float, kind: int) -> void:
+	var cloth := Color(0.93, 0.89, 0.78)
+	# postes y mostrador
+	cv.rect(x + 1.0, y + 8, 2.2, 24, INK)
+	cv.rect(x + 1.4, y + 8, 1.4, 24, WOOD)
+	cv.rect(x + w - 3.2, y + 8, 2.2, 24, INK)
+	cv.rect(x + w - 2.8, y + 8, 1.4, 24, WOOD)
+	cv.rect(x + 0.4, y + 19, w - 0.8, 12, INK)
+	planks(cv, x + 1.0, y + 20, w - 2.0, 10, PLANK, 60 + kind, false)
+	cv.rect(x - 0.6, y + 18, w + 1.2, 2.6, INK)
+	cv.rect(x, y + 18.4, w, 1.8, sh(PLANK, 1.25))
+	# mercancías sobre el mostrador
+	if kind == 0:
+		for i in 6:
+			var ax := x + 5.0 + float(i) * 5.2
+			cv.disc(ax, y + 16.0 - float(i % 2) * 1.6, 2.4, Color(0.42, 0.04, 0.06))
+			cv.disc(ax, y + 16.0 - float(i % 2) * 1.6, 2.0, Color(0.84, 0.14, 0.14))
+			cv.disc(ax - 0.6, y + 15.2 - float(i % 2) * 1.6, 0.7, Color(1.0, 0.7, 0.7))
+		sack(cv, x + w - 7.0, y + 17.6, 4.0)
+	else:
+		for i in 4:
+			var bx := x + 5.0 + float(i) * 7.0
+			var cc: Color = [Color(0.20, 0.34, 0.62), Color(0.62, 0.20, 0.22), Color(0.22, 0.52, 0.30), Color(0.78, 0.62, 0.20)][i]
+			cv.rect(bx, y + 12.0, 5.4, 6.4, INK)
+			cv.rect(bx + 0.5, y + 12.5, 4.4, 5.4, cc)
+			cv.ell(bx + 2.7, y + 12.6, 2.2, 0.9, sh(cc, 1.3))
+		crate(cv, x + w - 7.0, y + 17.0, 5)
+	# toldo: tela crema inclinada con flecos
+	var tl := Vector2(x - 3.0, y)
+	var tr := Vector2(x + w + 3.0, y)
+	var bl := Vector2(x - 6.0, y + 10.0)
+	var br := Vector2(x + w + 6.0, y + 10.0)
+	cv.quad(tl + Vector2(0, -1.4), tr + Vector2(0, -1.4), br + Vector2(0.8, 0.6), bl + Vector2(-0.8, 0.6), INK)
+	cv.quad(tl, tr, br, bl, cloth)
+	cv.quad(tl, tr, tr.lerp(br, 0.22), tl.lerp(bl, 0.22), sh(cloth, 1.1))
+	cv.quad(tl.lerp(bl, 0.8), tr.lerp(br, 0.8), br, bl, sh(cloth, 0.80))
+
+static func stall_stripes(cv: Cv, x: float, y: float, w: float, c: Color) -> void:
+	var tl := Vector2(x - 3.0, y)
+	var tr := Vector2(x + w + 3.0, y)
+	var bl := Vector2(x - 6.0, y + 10.0)
+	var br := Vector2(x + w + 6.0, y + 10.0)
+	var n := 8
+	for i in range(0, n, 2):
+		var f0 := float(i) / float(n)
+		var f1 := float(i + 1) / float(n)
+		cv.quad(tl.lerp(tr, f0), tl.lerp(tr, f1), bl.lerp(br, f1), bl.lerp(br, f0), c)
+		cv.quad(tl.lerp(bl, 0.8).lerp(tr.lerp(br, 0.8), f0), tl.lerp(bl, 0.8).lerp(tr.lerp(br, 0.8), f1), bl.lerp(br, f1), bl.lerp(br, f0), sh(c, 0.78))
+	# flecos
+	for i in 9:
+		var fx := bl.x + 1.5 + float(i) * (br.x - bl.x - 3.0) / 8.0
+		cv.disc(fx, y + 10.8, 1.5, c if i % 2 == 0 else Color(0.93, 0.89, 0.78))
+
 static func paint_base(cv: Cv, type: String) -> void:
 	match type:
 		"casa":
@@ -625,6 +679,83 @@ static func paint_base(cv: Cv, type: String) -> void:
 			cv.rect(78, 80, 10, 2, WOOD)
 			cv.disc(83, 76, 3.2, Color(0.78, 0.66, 0.36))
 			hay(cv, 70, 83, 10, 5)
+		"herreria":
+			yard(cv, 48, 88, 45, 8, 41)
+			cast_shadow(cv, 8, 78, 88, 34)
+			side_face(cv, 78, 88, 58, 12, 7, sh(STONE, 0.60))
+			stone(cv, 8, 58, 70, 30, sh(STONE, 0.84), 42, 4.5)
+			quoins(cv, 8, 78, 60, 28, sh(STONE, 0.92), 43, 4.4, 4.5)
+			cv.rect(8, 84, 70, 4, sh(STONE, 1.02))
+			cv.rect(8, 84, 70, 0.8, sh(STONE, 1.25))
+			moss(cv, 8, 88, 70, 44, 0.5)
+			cv.rect(8, 58, 70, 2.8, WOOD)
+			# fragua: boca de la forja con brasas y llamas
+			cv.rect(38, 64, 26, 24, INK)
+			cv.rect(39.4, 65.4, 23.2, 22.6, Color(0.16, 0.06, 0.04))
+			cv.disc(51, 66.6, 11.6, INK)
+			cv.disc(51, 66.8, 10.4, Color(0.16, 0.06, 0.04))
+			cv.ell(51, 86, 10, 3.4, Color(0.78, 0.30, 0.06))
+			cv.ell(51, 85.4, 7, 2.4, Color(1.0, 0.62, 0.14))
+			cv.tri(44, 86, 46.4, 74, 49, 86, Color(0.95, 0.42, 0.08))
+			cv.tri(48, 86, 51.4, 70, 55, 86, Color(1.0, 0.56, 0.10))
+			cv.tri(53, 86, 56, 75, 59, 86, Color(0.95, 0.42, 0.08))
+			cv.tri(49.6, 86, 51.4, 77, 53.4, 86, Color(1.0, 0.86, 0.34))
+			cv.ell(51, 80, 15, 10, Color(1.0, 0.5, 0.1, 0.10))
+			cv.rect(34, 86, 34, 2.6, Color(0.60, 0.58, 0.55))
+			window(cv, 14, 68, 8, 8, Color(0.28, 0.30, 0.36), true)
+			torch(cv, 33.5, 70)
+			torch(cv, 68.5, 70)
+			eave_shadow(cv, 8, 78, 58)
+			roof_side(cv, Vector2(83, 58), Vector2(95, 51), Vector2(79, 30), Vector2(69, 33), sh(SLATE, 0.62), 5)
+			tiles(cv, 3, 83, 58, 32, 14, sh(SLATE, 0.88), 45, 4.0)
+			# chimenea ancha de la fragua
+			chimney(cv, 56, 12, 40, 11, Color(0.46, 0.43, 0.41), 46)
+			cv.rect(54.6, 11, 13.8, 2.8, INK)
+			cv.ell(61.5, 10, 6.0, 1.8, Color(0.12, 0.08, 0.06))
+			# yunque, tajo y herramientas
+			cv.rect(14, 84, 6, 4.4, WOOD)
+			cv.rect(10, 80.4, 14, 3.4, INK)
+			cv.rect(10.6, 80.8, 12.8, 2.4, Color(0.34, 0.35, 0.39))
+			cv.tri(10.6, 81.2, 5.4, 82.4, 10.6, 83.4, Color(0.34, 0.35, 0.39))
+			cv.rect(11.4, 80.8, 11, 0.8, Color(0.62, 0.64, 0.70))
+			cv.rect(14.4, 83.4, 5, 2.6, Color(0.26, 0.27, 0.31))
+			cv.line(24.6, 74, 22.4, 80.4, 1.1, WOOD)
+			cv.rect(21.6, 73, 5.6, 2.8, Color(0.40, 0.41, 0.45))
+			# rastrillo de espadas y barril de agua
+			cv.rect(70, 74, 1.4, 14, WOOD)
+			cv.rect(81, 74, 1.4, 14, WOOD)
+			for sx in [72.6, 75.2, 77.8, 80.0]:
+				cv.line(sx, 86, sx + 0.4, 71, 1.0, Color(0.72, 0.74, 0.80))
+				cv.rect(sx - 1.0, 85.4, 2.4, 1.2, Color(0.50, 0.36, 0.18))
+			barrel(cv, 27, 86, 3.8)
+			crate(cv, 36, 87, 5)
+		"mercado":
+			yard(cv, 48, 87, 45, 9, 51, true)
+			cast_shadow(cv, 8, 88, 88, 30)
+			# casa del mercader al fondo
+			side_face(cv, 76, 56, 28, 8, 5, sh(PLASTER, 0.70))
+			stone(cv, 20, 50, 56, 6, STONE, 52, 3.0)
+			timber(cv, 20, 28, 56, 22, PLASTER, WOOD, 53, 5)
+			door(cv, 42, 36, 12, 18, PLANK, true, true)
+			window(cv, 26, 33, 6, 6, Color(0.30, 0.42, 0.52), false, true)
+			window(cv, 64, 33, 6, 6, Color(0.30, 0.42, 0.52), false, true)
+			eave_shadow(cv, 20, 76, 28)
+			roof_side(cv, Vector2(81, 28), Vector2(89, 23), Vector2(73, 9), Vector2(69, 11), sh(TILE_RED, 0.66))
+			tiles(cv, 15, 81, 28, 10, 8, TILE_RED, 54, 3.8)
+			chimney(cv, 28, 4, 18, 5, STONE, 55)
+			# dos puestos con toldo y mercancías
+			stall(cv, 7.0, 56.0, 36.0, 0)
+			stall(cv, 53.0, 56.0, 36.0, 1)
+			# balanza del mercader en el centro
+			cv.rect(46.4, 64, 1.4, 20, WOOD)
+			cv.rect(41.6, 64, 11, 1.4, WOOD)
+			cv.line(42.2, 65, 41.0, 71, 0.5, Color(0.8, 0.7, 0.4))
+			cv.line(51.8, 65, 53.0, 71, 0.5, Color(0.8, 0.7, 0.4))
+			cv.ell(41.0, 71.4, 3.0, 1.0, Color(0.86, 0.68, 0.22))
+			cv.ell(53.0, 71.4, 3.0, 1.0, Color(0.86, 0.68, 0.22))
+			cv.disc(47.1, 63.4, 1.6, Color(0.86, 0.68, 0.22))
+			barrel(cv, 44, 86, 3.4)
+			sack(cv, 51, 87, 3.4)
 		"arqueria":
 			yard(cv, 48, 88, 45, 8, 31)
 			cast_shadow(cv, 10, 76, 86, 34)
@@ -1043,6 +1174,15 @@ static func paint_team(cv: Cv, type: String, c: Color) -> void:
 			cv.disc(41, 63, 3.2, c)
 			banner(cv, 55, 66, 6.0, 12.0, c)
 			banner(cv, 25, 66, 6.0, 12.0, c)
+		"herreria":
+			pennant(cv, 26, 22, 38, c, 9.0, 6.0)
+			cv.rect(8, 58.4, 70, 2.0, c)
+			banner(cv, 25, 66, 6.0, 12.0, c)
+			banner(cv, 70, 70, 6.0, 12.0, c)
+		"mercado":
+			pennant(cv, 48, 2, 14, c, 9.0, 6.0)
+			stall_stripes(cv, 7.0, 56.0, 36.0, c)
+			stall_stripes(cv, 53.0, 56.0, 36.0, c)
 		"arqueria":
 			pennant(cv, 42, 22, 32, c, 9.0, 6.0)
 			banner(cv, 42, 58, 8.0, 14.0, c)

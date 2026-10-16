@@ -46,6 +46,7 @@ static func draw_entities(g: Game, c: CanvasItem) -> void:
 	for i in range(0, _smoke.size(), 4):
 		var rad := _smoke[i + 2] * 1.0667
 		c.draw_texture_rect(sm, Rect2(_smoke[i] - rad, _smoke[i + 1] - rad, rad * 2.0, rad * 2.0), false, Color(0.86, 0.86, 0.88, _smoke[i + 3]))
+	_draw_fauna(g, c, vr)
 	_draw_units(g, c, vr)
 	if not sim.zones.is_empty():
 		_draw_zones(g, c)
@@ -82,6 +83,34 @@ static func draw_entities(g: Game, c: CanvasItem) -> void:
 		var rr := Rect2(a, b - a).abs()
 		c.draw_rect(rr, Color(0.3, 1.0, 0.4, 0.15), true)
 		c.draw_rect(rr, Color(0.3, 1.0, 0.4, 0.9), false, 2.0)
+
+## Animales de caza: se dibujan con las celdas del atlas de recursos y pasean con una interpolación propia (no son entidades).
+## Sólo se ven mientras la casilla está a la vista (como las unidades enemigas).
+static func _draw_fauna(g: Game, c: CanvasItem, vr: Rect2) -> void:
+	var sim := g.sim
+	if sim.fauna.is_empty():
+		return
+	var tex := g.art.res_atlas
+	var tnow := sim.time - Sim.DT + g.interp * Sim.DT
+	for a: Dictionary in sim.fauna:
+		var i: int = a["i"]
+		var t := Vector2i(i % sim.W, i / sim.W)
+		var dest := sim.tile_center(t)
+		var p := dest
+		var moving := false
+		var t1: float = a["t1"]
+		if tnow < t1:
+			var t0: float = a["t0"]
+			var k := clampf((tnow - t0) / maxf(t1 - t0, 0.01), 0.0, 1.0)
+			p = (a["fx"] as Vector2).lerp(dest, k)
+			moving = k < 1.0
+		if not vr.has_point(p) or not g.fog.visible_at(t):
+			continue
+		var boar := sim.rtype[i] == Defs.R_BOAR
+		var cell := (Art.RES_BOAR0 if boar else Art.RES_DEER0) + (int(tnow * 4.0) % 2 if moving else 0)
+		var face: int = a["face"]
+		var w := 64.0 * float(face)
+		c.draw_texture_rect_region(tex, Rect2(p.x - w * 0.5, p.y - 38.0, w, 64.0), Rect2(cell * Art.RES_CELL, 0, Art.RES_CELL, Art.RES_CELL))
 
 ## Zonas de fuego (fuego griego): disco rojizo con llamas que parpadean; se apagan en el último segundo.
 static func _draw_zones(g: Game, c: CanvasItem) -> void:
@@ -150,12 +179,12 @@ static func _trade_of(g: Game, u: Ent) -> int:
 		match g.sim.rtype[u.target_tile.y * g.sim.W + u.target_tile.x]:
 			Defs.R_TREE:
 				return ArtUnits.TRADE_CHOP
-			Defs.R_GOLD:
+			Defs.R_GOLD, Defs.R_STONE:
 				return ArtUnits.TRADE_MINE
-			Defs.R_BERRY, Defs.R_FARM:
+			Defs.R_BERRY, Defs.R_FARM, Defs.R_DEER, Defs.R_BOAR:
 				return ArtUnits.TRADE_FARM
 	match u.carry_kind:
-		"gold":
+		"gold", "stone":
 			return ArtUnits.TRADE_MINE
 		"food":
 			return ArtUnits.TRADE_FARM

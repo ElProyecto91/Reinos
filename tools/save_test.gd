@@ -223,7 +223,7 @@ func _boats_scenario() -> void:
 	sim.setup(cfg)
 	sim.ais.clear()
 	var p: Player = sim.players[0]
-	p.res = {"food": 3000, "wood": 3000, "gold": 3000}
+	p.res = {"food": 3000, "wood": 3000, "gold": 3000, "stone": 3000}
 	p.pop_cap = 100
 	p.age = 1
 	var base: Vector2i = p.start_tile

@@ -63,7 +63,7 @@ func _run() -> void:
 	var h := game.human
 	var hud := game.hud
 	var p: Player = sim.players[h]
-	p.res = {"food": 2000, "wood": 2000, "gold": 2000}
+	p.res = {"food": 2000, "wood": 2000, "gold": 2000, "stone": 2000}
 	var s0: Vector2i = p.start_tile
 	# buscar una fila horizontal libre de 8 casillas a ~6 casillas de la base
 	var a := Vector2i(-1, -1)

@@ -20,7 +20,13 @@ var gather_mult: float = 1.0
 var last_alarm: float = -100.0
 var kills: int = 0
 var losses: int = 0
-var gathered: Dictionary = {"food": 0, "wood": 0, "gold": 0}
+var gathered: Dictionary = {"food": 0, "wood": 0, "gold": 0, "stone": 0}
+
+# --- mejoras, mercado, rebato y formación ---
+var techs: Dictionary = {}             # mejoras investigadas (id -> true); ver Defs.TECHS
+var mkt: Dictionary = {"food": 100, "wood": 100, "stone": 100}   # precio de 100 unidades en oro (sube al comprar y baja al vender)
+var bell: bool = false                 # rebato: los aldeanos se refugian en los edificios con guarnición
+var formation: int = 0                 # formación al mover grupos: 0 libre, 1 línea, 2 caja
 
 # --- civilización y habilidad (ver civs.gd) ---
 var civ: String = ""                   # "" = sin civilización (partidas antiguas y pruebas)

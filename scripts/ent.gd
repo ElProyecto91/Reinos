@@ -58,6 +58,11 @@ var am: float = 1.0                   # multiplicadores de civilización fijados
 var sm: float = 1.0
 var rm: float = 1.0
 var lb: int = 0                        # casillas extra de vista
+var stance: int = 0                    # postura de combate (Sim.ST_*): 0 agresiva, 1 defensiva, 2 mantener posición, 3 pasiva
+var fspd: float = 0.0                  # formación: velocidad máxima mientras marcha con el grupo (casillas/s; 0 = sin tope)
+var gar_tile: Vector2i = Vector2i(-1, -1)   # aldeano refugiado: recurso en el que trabajaba (para volver a él)
+var in_gar: int = 0                    # id del edificio donde está refugiado (0 = a la intemperie)
+var gar_auto: bool = false               # se refugió huyendo (o por el rebato): sale solo cuando pasa el peligro
 
 # --- edificio ---
 var progress: float = 1.0             # 0..1; 1 = completo
@@ -71,6 +76,8 @@ var builders: int = 0
 var bacc: int = 0
 var orient: int = 2                   # puerto: lado del agua (0 norte, 1 este, 2 sur, 3 oeste)
 var dock_tile: Vector2i = Vector2i(-1, -1)   # puerto: casilla de agua donde aparecen los barcos
+var prod_tech: bool = false           # lo que se produce ahora es una mejora (no reserva población)
+var gar_t: float = 0.0                # guarnición: segundos seguidos sin enemigos cerca
 
 func center() -> Vector2:
 	if is_building:

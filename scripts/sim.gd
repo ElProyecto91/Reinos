@@ -18,6 +18,7 @@ const S_BUILD := 6
 const S_ATTACK_GO := 7
 const S_ATTACK := 8
 const S_BOARD_GO := 9       # caminando hacia un barco de transporte para subir
+const S_GARRISON_GO := 10   # caminando hacia un edificio para refugiarse dentro
 
 # Códigos de resultado de órdenes (negativos = error)
 const OK := 1
@@ -35,6 +36,27 @@ const ERR_REQ := -11        # falta un requisito (p. ej. edificios militares par
 const ERR_COOLDOWN := -12   # la habilidad de civilización aún se está recargando
 const ERR_NOTARGET := -13   # la habilidad necesita un punto del mapa
 const ERR_POP := -14        # no cabe en la población
+const ERR_NOMARKET := -15   # hace falta un mercado terminado
+const ERR_DONE := -16       # esa mejora ya está investigada o en cola
+const ERR_NOGAR := -17      # ese edificio no admite guarnición
+
+# Posturas de combate (Ent.stance)
+const ST_AGGR := 0          # persigue a lo que vea (lo de siempre)
+const ST_DEF := 1           # ataca a lo que se acerca y vuelve a su sitio si se aleja demasiado
+const ST_HOLD := 2          # no se mueve: sólo dispara/golpea a lo que tenga a tiro
+const ST_PASSIVE := 3       # no ataca por su cuenta
+const FAUNA_WALK := 1.8     # segundos que tarda un animal en pasar a la casilla contigua
+const MKT_TAX := 0.25       # diferencia entre el precio de compra y el de venta del mercado
+const MKT_LOT := 100        # unidades por operación
+const MKT_STEP := 4         # cuánto se mueve el precio con cada operación
+const GAR_ARROW := 0.4      # daño extra por soldado refugiado en una torre, castillo o centro (fracción del disparo)
+const FM_FREE := 0          # formaciones (Player.formation)
+const FM_LINE := 1
+const FM_COLUMN := 2
+const FLEE_R := 9.0         # casillas: hasta dónde corre un aldeano atacado en busca de refugio
+const BELL_R := 40.0        # casillas: el rebato llama a los aldeanos de hasta tan lejos
+const GAR_HEAL := 0.02      # fracción de vida por segundo que se cura quien está refugiado
+const GAR_ARROW_MAX := 8    # soldados que cuentan para el daño extra
 
 var W: int = 0
 var H: int = 0
@@ -98,6 +120,9 @@ var astar_w: AStarGrid2D                # rutas de barcos
 var stowed_list: Array[Ent] = []        # unidades que acaban de subir a un barco (se retiran al final del paso)
 var civ_mods: Array = []                # por jugador: tablas de multiplicadores de su civilización (Civs.build_mods; no se guarda)
 var zones: Array = []                   # zonas de fuego activas (habilidad de los bizantinos): {p, r, dps, until, owner}
+var fauna: Array = []                   # animales de caza: {i: casilla, home: casilla de origen, fx: salida (px), t0/t1: paseo, nx: próximo paseo, face}
+var fauna_at: Dictionary = {}           # casilla -> registro de fauna (los mismos diccionarios que en `fauna`)
+var up_mods: Array = []                 # por jugador: efecto de sus mejoras ya convertido en multiplicadores (no se guarda; ver _build_ups)
 
 # ------------------------------------------------------------------ preparación
 
@@ -152,6 +177,7 @@ func setup(cfg: Dictionary) -> bool:
 		hostile.append(row)
 	_pick_civs()
 	_setup_civs()
+	_init_fauna()
 	for p in players:
 		_spawn_building("centro", p.idx, p.start_tile - Vector2i(1, 1), true)
 	map_info["carved_trees"] = _ensure_routes()
@@ -188,8 +214,70 @@ func _pick_civs() -> void:
 ## Tablas de multiplicadores de cada jugador (se rehacen al cargar una partida: no se guardan).
 func _setup_civs() -> void:
 	civ_mods.clear()
+	up_mods.clear()
 	for p in players:
 		civ_mods.append(Civs.build_mods(p.civ))
+		up_mods.append(_build_ups(p))
+
+## Convierte las mejoras investigadas en tablas por tipo de unidad: atk (×), arm (× al daño recibido), rng (+casillas),
+## hp (×), gather (× por tipo de recurso) y carry (+unidades). Se rehace al terminar una mejora y al cargar la partida.
+func _build_ups(p: Player) -> Dictionary:
+	var out := {"atk": {}, "arm": {}, "rng": {}, "hp": {}, "gather": PackedFloat32Array(), "carry": 0.0}
+	var g := PackedFloat32Array()
+	g.resize(Defs.RES_N)
+	g.fill(1.0)
+	var sel_rt := {"wood": [Defs.R_TREE], "gold": [Defs.R_GOLD], "stone": [Defs.R_STONE], "farm": [Defs.R_FARM],
+		"berry": [Defs.R_BERRY], "hunt": [Defs.R_DEER, Defs.R_BOAR], "fish": [Defs.R_FISH]}
+	for tid: String in p.techs:
+		var t: Dictionary = Defs.TECHS.get(tid, {})
+		if t.is_empty():
+			continue
+		for stat in ["atk", "rng", "hp"]:
+			var rules: Dictionary = t.get(stat, {})
+			for ut: String in Defs.UNITS:
+				for sel: String in rules:
+					if Civs.sel_matches(sel, ut):
+						var d: Dictionary = out[stat]
+						var base := 0.0 if stat == "rng" else 1.0
+						d[ut] = float(d.get(ut, base)) + float(rules[sel])
+		var arm: Dictionary = t.get("arm", {})
+		for ut2: String in Defs.UNITS:
+			for sel2: String in arm:
+				if Civs.sel_matches(sel2, ut2):
+					var da: Dictionary = out["arm"]
+					da[ut2] = maxf(0.4, float(da.get(ut2, 1.0)) - float(arm[sel2]))
+		var gm: Dictionary = t.get("gather", {})
+		for sel3: String in gm:
+			for rt: int in sel_rt.get(sel3, []):
+				g[rt] += float(gm[sel3])
+		out["carry"] = float(out["carry"]) + float(t.get("carry", 0.0))
+	out["gather"] = g
+	return out
+
+func _recalc_ups(pidx: int) -> void:
+	while up_mods.size() <= pidx:
+		up_mods.append({})
+	up_mods[pidx] = _build_ups(players[pidx])
+
+## Alcance efectivo en casillas: el de la unidad por su civilización más lo que den las mejoras (sólo a las de distancia).
+func eff_range(e: Ent) -> float:
+	var r := float(e.def["range"]) * e.rm
+	if r > 1.5 and e.owner < up_mods.size():
+		r += float((up_mods[e.owner]["rng"] as Dictionary).get(e.type, 0.0))
+	return r
+
+func _up_atk(e: Ent) -> float:
+	if e.owner >= up_mods.size():
+		return 1.0
+	return float((up_mods[e.owner]["atk"] as Dictionary).get(e.type, 1.0))
+
+func _apply_up_hp(e: Ent) -> void:
+	if e.owner >= up_mods.size():
+		return
+	var f: Variant = (up_mods[e.owner]["hp"] as Dictionary).get(e.type)
+	if f != null:
+		e.max_hp *= float(f)
+		e.hp = e.max_hp
 
 ## Fija en la unidad recién creada los multiplicadores de su civilización (vida, daño, velocidad, alcance, vista).
 func _apply_civ(e: Ent) -> void:
@@ -326,7 +414,7 @@ func _ensure_routes() -> int:
 			for k in W * H:
 				var rt := rtype[k]
 				var pt := Vector2i(k % W, k / W)
-				if terrain[k] == Defs.T_WATER or rt == Defs.R_GOLD or rt == Defs.R_BERRY or occ[k] != 0:
+				if terrain[k] == Defs.T_WATER or rt == Defs.R_GOLD or rt == Defs.R_BERRY or rt == Defs.R_STONE or occ[k] != 0:
 					tmp.set_point_solid(pt, true)
 				elif terrain[k] == Defs.T_ROCK:
 					tmp.set_point_weight_scale(pt, 30.0)     # un paso de montaña sólo si no hay otra salida
@@ -400,13 +488,13 @@ func _build_grids() -> void:
 	gate_tile.fill(0)
 	for i in total:
 		var rt := rtype[i]
-		if terrain[i] == Defs.T_WATER or terrain[i] == Defs.T_ROCK or rt == Defs.R_TREE or rt == Defs.R_GOLD or rt == Defs.R_BERRY:
+		if terrain[i] == Defs.T_WATER or terrain[i] == Defs.T_ROCK or Defs.solid_res(rt):
 			solid[i] = 1
 			astar.set_point_solid(Vector2i(i % W, i / W), true)
 			astar2.set_point_solid(Vector2i(i % W, i / W), true)
 	_setup_water()
 	cw = (W + 7) / 8
-	for k in 6:
+	for k in Defs.RES_N:
 		var arr := PackedInt32Array()
 		arr.resize(cw * cw)
 		chunk_cnt.append(arr)
@@ -631,6 +719,7 @@ func _spawn_unit(type: String, owner: int, tile: Vector2i) -> Ent:
 	e.max_hp = float(d["hp"]) * float(Defs.AGE_STAT_MULT[players[owner].age])
 	e.hp = e.max_hp
 	_apply_civ(e)
+	_apply_up_hp(e)
 	e.radius = d["radius"]
 	e.naval = bool(d.get("naval", false))
 	e.off = Vector2(rng.randf_range(-7.0, 7.0), rng.randf_range(-7.0, 7.0))
@@ -786,7 +875,7 @@ func scan_enemy(e: Ent, r: float) -> Ent:
 		if o.naval and not e.naval:
 			# a los barcos sólo se les dispara desde la orilla: los de cuerpo a cuerpo no pueden, y los
 			# arqueros no salen a perseguirlos mar adentro
-			if float(e.def["range"]) <= 1.5 or o.dist_to(e.pos) > float(e.def["range"]) * e.rm * Defs.TILE:
+			if float(e.def["range"]) <= 1.5 or o.dist_to(e.pos) > eff_range(e) * Defs.TILE:
 				continue
 		if bool(e.def.get("siege", false)) and not o.is_building:
 			continue
@@ -996,8 +1085,10 @@ func res_mask_for(kind: String) -> int:
 			return 1 << Defs.R_TREE
 		"gold":
 			return 1 << Defs.R_GOLD
+		"stone":
+			return 1 << Defs.R_STONE
 		"food":
-			return (1 << Defs.R_BERRY) | (1 << Defs.R_FARM)
+			return (1 << Defs.R_BERRY) | (1 << Defs.R_FARM) | (1 << Defs.R_DEER) | (1 << Defs.R_BOAR)
 	return 0
 
 func kind_of_tile(t: Vector2i) -> String:
@@ -1071,7 +1162,7 @@ func find_resource_far(from: Vector2i, mask: int) -> Vector2i:
 	if fcomp < 0:
 		return Vector2i(-1, -1)
 	var kinds: Array = []
-	for rt in [Defs.R_TREE, Defs.R_GOLD, Defs.R_BERRY]:
+	for rt in [Defs.R_TREE, Defs.R_GOLD, Defs.R_BERRY, Defs.R_STONE, Defs.R_DEER, Defs.R_BOAR]:
 		if (mask & (1 << rt)) != 0:
 			kinds.append(rt)
 	if kinds.is_empty():
@@ -1259,6 +1350,7 @@ func _clear_orders(e: Ent) -> void:
 	e.resume_id = 0
 	e.unload_at = Vector2i(-1, -1)
 	e.explore = false          # cualquier orden del jugador corta la exploración automática
+	e.fspd = 0.0
 
 func _own_units(pidx: int, ids: Array) -> Array:
 	var out: Array = []
@@ -1432,6 +1524,10 @@ func cmd_explore(pidx: int, ids: Array, on: bool = true) -> int:
 	return OK if n > 0 else ERR_NOUNITS
 
 func _move_group(us: Array, tile: Vector2i, attack_move: bool) -> void:
+	var fm: int = players[(us[0] as Ent).owner].formation
+	if fm != FM_FREE and us.size() >= 3 and not is_solid_tile(tile) and comp[tile.y * W + tile.x] >= 0:
+		_move_formation(us, tile, attack_move, fm)
+		return
 	var center := tile_center(tile)
 	us.sort_custom(func(a: Ent, b: Ent) -> bool:
 		return a.pos.distance_squared_to(center) < b.pos.distance_squared_to(center))
@@ -1737,12 +1833,18 @@ func cmd_cancel_train(pidx: int, bid: int, index: int) -> void:
 	var b := get_ent(bid)
 	if b == null or b.owner != pidx or index < 0 or index >= b.queue.size():
 		return
-	var utype: String = b.queue[index]
-	Defs.refund(players[pidx].res, unit_cost(pidx, utype))
+	var item: String = b.queue[index]
+	var is_tech := Defs.is_tech_item(item)
+	if is_tech:
+		Defs.refund(players[pidx].res, Defs.TECHS[Defs.tech_of_item(item)]["cost"])
+	else:
+		Defs.refund(players[pidx].res, unit_cost(pidx, item))
 	b.queue.remove_at(index)
 	if index == 0 and b.producing:
 		b.producing = false
-		players[pidx].reserved -= 1
+		b.prod_tech = false
+		if not is_tech:
+			players[pidx].reserved -= 1
 
 func cmd_set_rally(pidx: int, bid: int, tile: Vector2i) -> void:
 	var b := get_ent(bid)
@@ -1851,6 +1953,7 @@ func step() -> void:
 	for b in buildings:
 		if b.alive:
 			_update_building(b)
+	_fauna_tick()
 	_update_players()
 	if not zones.is_empty():
 		_zones_tick()
@@ -1908,6 +2011,12 @@ func _heal_tick() -> void:
 			_ev({"t": "heal", "pos": o.pos, "owner": m.owner})
 
 func _update_players() -> void:
+	if step_count % 100 == 0:
+		_market_drift()
+	if step_count % 10 == 5:
+		for p in players:
+			if p.bell and p.alive:
+				_bell_tick(p.idx)
 	for p in players:
 		if p.abil_on and time >= p.abil_until:
 			_end_buff(p)
@@ -1926,7 +2035,538 @@ func _update_players() -> void:
 						for c: Ent in u.cargo:
 							c.max_hp *= ratio
 							c.hp *= ratio
+				for bb in buildings:
+					for c2: Ent in bb.cargo:
+						if c2.owner == p.idx:
+							c2.max_hp *= ratio
+							c2.hp *= ratio
 				_ev({"t": "age", "owner": p.idx, "age": p.age})
+
+# ------------------------------------------------------------------ guarnición, rebato, posturas y formaciones
+
+func garrison_cap(b: Ent) -> int:
+	return int(b.def.get("garrison", 0))
+
+## ¿Se puede refugiar gente en este edificio (propio, terminado y con plazas)?
+func can_garrison_in(b: Ent, pidx: int) -> bool:
+	return b != null and b.alive and b.is_building and b.owner == pidx and b.progress >= 1.0 and garrison_cap(b) > 0
+
+## Plazas libres de cada edificio con guarnición del jugador ({id: plazas}), descontando a quienes ya van de camino.
+func garrison_rooms(pidx: int) -> Dictionary:
+	var rooms := {}
+	for b in buildings:
+		if can_garrison_in(b, pidx):
+			rooms[b.id] = garrison_cap(b) - b.cargo.size()
+	for u in units:
+		if u.alive and u.owner == pidx and u.state == S_GARRISON_GO and rooms.has(u.target_id):
+			rooms[u.target_id] = int(rooms[u.target_id]) - 1
+	return rooms
+
+func _nearest_garrison(e: Ent, rooms: Dictionary, max_tiles: float) -> Ent:
+	var best: Ent = null
+	var bd := pow(max_tiles * Defs.TILE, 2.0)
+	for b in buildings:
+		if rooms.has(b.id) and int(rooms[b.id]) > 0:
+			var d := b.center().distance_squared_to(e.pos)
+			if d < bd:
+				bd = d
+				best = b
+	return best
+
+func _send_garrison(e: Ent, b: Ent, auto: bool) -> void:
+	var was_work := e.state == S_GATHER_GO or e.state == S_GATHER or e.state == S_RETURN
+	var wt := e.target_tile if was_work else Vector2i(-1, -1)
+	_clear_orders(e)
+	e.gar_tile = wt
+	e.gar_auto = auto
+	e.state = S_GARRISON_GO
+	e.target_id = b.id
+	e.fails = 0
+	e.repath_t = 0.0
+	_request_path(e, b.tile + Vector2i(b.size / 2, b.size / 2))
+
+## Las unidades van al edificio y se refugian dentro (no pueden ser atacadas, se curan y las que disparan añaden flechas).
+func cmd_garrison(pidx: int, ids: Array, bid: int) -> int:
+	var b := get_ent(bid)
+	if not can_garrison_in(b, pidx):
+		return ERR_NOGAR
+	var room: int = int(garrison_rooms(pidx).get(bid, 0))
+	if room <= 0:
+		return ERR_FULL
+	var n := 0
+	for e in _own_units(pidx, ids):
+		if e.naval or e.stowed or n >= room or bool(e.def.get("siege", false)):
+			continue
+		_send_garrison(e, b, false)
+		n += 1
+	return OK if n > 0 else ERR_NOUNITS
+
+func cmd_ungarrison(pidx: int, bid: int) -> int:
+	var b := get_ent(bid)
+	if not can_garrison_in(b, pidx):
+		return ERR_NOGAR
+	return OK if _garrison_release(b, 0) > 0 else ERR_NOUNITS
+
+func _u_garrison_go(e: Ent, step_px: float) -> void:
+	var b := get_ent(e.target_id)
+	if not can_garrison_in(b, e.owner) or b.cargo.size() >= garrison_cap(b):
+		var wt := e.gar_tile
+		_clear_orders(e)
+		e.gar_tile = wt
+		_resume_work(e)
+		return
+	if b.dist_to(e.pos) <= Defs.TILE * 1.4:
+		_garrison_enter(e, b)
+		return
+	var r := _follow(e, step_px)
+	if r != 0:
+		e.fails += 1
+		if e.fails > 4:
+			var wt2 := e.gar_tile
+			_clear_orders(e)
+			e.gar_tile = wt2
+			_resume_work(e)
+		elif not e.path_pending:
+			_request_path(e, b.tile + Vector2i(b.size / 2, b.size / 2))
+
+func _garrison_enter(e: Ent, b: Ent) -> void:
+	var wt := e.gar_tile
+	var auto := e.gar_auto
+	_clear_orders(e)
+	e.gar_tile = wt
+	e.gar_auto = auto
+	if e.carry_amt >= 1.0 and e.carry_kind != "" and bool(b.def.get("drop", false)):
+		# el Centro recoge lo que lleva el aldeano
+		var p: Player = players[e.owner]
+		var n := int(e.carry_amt)
+		p.res[e.carry_kind] = int(p.res.get(e.carry_kind, 0)) + n
+		p.gathered[e.carry_kind] = int(p.gathered.get(e.carry_kind, 0)) + n
+		e.carry_amt = 0.0
+	e.stowed = true
+	e.in_gar = b.id
+	e.pos = b.center()
+	e.ppos = e.pos
+	b.cargo.append(e)
+	stowed_list.append(e)
+	_ev({"t": "garrison", "pos": b.center(), "owner": e.owner})
+
+## Saca refugiados de `b` y los deja a pie junto al edificio. mode: 0 todos · 1 sólo aldeanos · 2 sólo los que entraron huyendo.
+func _garrison_release(b: Ent, mode: int) -> int:
+	var out: Array[Ent] = []
+	for c: Ent in b.cargo:
+		if mode == 0 or (mode == 1 and c.type == "aldeano") or (mode == 2 and c.gar_auto):
+			out.append(c)
+	if out.is_empty():
+		return 0
+	var center := b.tile + Vector2i(b.size / 2, b.size / 2)
+	var spots := free_tiles_around(center, out.size() + 6, b.size + 5)
+	var n := 0
+	for u in out:
+		if n >= spots.size():
+			break
+		b.cargo.erase(u)
+		u.stowed = false
+		u.in_gar = 0
+		u.pos = tile_center(spots[n])
+		u.ppos = u.pos
+		n += 1
+		ents[u.id] = u
+		units.append(u)
+		_clear_orders(u)
+		u.gar_auto = false
+		if u.type == "aldeano":
+			_resume_work(u)
+		else:
+			u.gar_tile = Vector2i(-1, -1)
+			if b.rally.x >= 0:
+				cmd_move(u.owner, [u.id], b.rally)
+	if n > 0:
+		_ev({"t": "ungarrison", "pos": b.center(), "owner": b.owner, "n": n})
+	return n
+
+## Un aldeano que sale del refugio vuelve a su trabajo (al recurso que dejó, o a uno cercano del mismo tipo).
+func _resume_work(u: Ent) -> void:
+	var t := u.gar_tile
+	u.gar_tile = Vector2i(-1, -1)
+	if t.x >= 0:
+		var idx := t.y * W + t.x
+		if _res_usable(idx, _gmask(u), u.owner, u.id):
+			u.target_tile = t
+			if rtype[idx] == Defs.R_FARM:
+				farm_slots[idx] = u.id
+			u.state = S_GATHER_GO
+			u.fails = 0
+			_request_path(u, t)
+			return
+	if u.carry_kind != "":
+		_find_new_resource(u)
+
+## Cada segundo, dentro de un edificio con guarnición: los refugiados se curan, y si no hay enemigos cerca y no suena el
+## rebato salen solos los que entraron huyendo.
+func _gar_tick(b: Ent) -> void:
+	for c: Ent in b.cargo:
+		if c.hp < c.max_hp:
+			c.hp = minf(c.max_hp, c.hp + c.max_hp * GAR_HEAL)
+	if players[b.owner].bell:
+		b.gar_t = 0.0
+		return
+	var danger := false
+	var r := (float(b.def.get("range", 6.0)) + 3.0) * Defs.TILE
+	for o in query(b.center(), r):
+		if o.alive and not o.is_building and hostile[b.owner][o.owner]:
+			danger = true
+			break
+	if danger:
+		b.gar_t = 0.0
+	else:
+		b.gar_t += 1.0
+		if b.gar_t >= 5.0:
+			_garrison_release(b, 2)
+
+## Rebato: todos los aldeanos corren a refugiarse (los más cercanos a cada edificio, mientras haya plazas).
+func cmd_bell(pidx: int, on: bool) -> int:
+	var p: Player = players[pidx]
+	if p.bell == on:
+		return OK
+	if on and garrison_rooms(pidx).is_empty():
+		return ERR_NOGAR
+	p.bell = on
+	if on:
+		_bell_tick(pidx)
+	else:
+		for b in buildings:
+			if b.alive and b.owner == pidx and not b.cargo.is_empty():
+				_garrison_release(b, 1)
+		for u in units:
+			if u.alive and u.owner == pidx and u.state == S_GARRISON_GO:
+				var wt := u.gar_tile
+				_clear_orders(u)
+				u.gar_tile = wt
+				_resume_work(u)
+	_ev({"t": "bell", "owner": pidx, "on": on})
+	return OK
+
+func _bell_tick(pidx: int) -> void:
+	var rooms := garrison_rooms(pidx)
+	if rooms.is_empty():
+		return
+	for u in units:
+		if not u.alive or u.owner != pidx or u.type != "aldeano" or u.state == S_GARRISON_GO or u.stowed:
+			continue
+		var b := _nearest_garrison(u, rooms, BELL_R)
+		if b == null:
+			continue
+		rooms[b.id] = int(rooms[b.id]) - 1
+		_send_garrison(u, b, true)
+
+## Un aldeano herido por un soldado enemigo corre al refugio más cercano si lo tiene a menos de FLEE_R casillas.
+func _flee(t: Ent) -> void:
+	if t.naval or t.stowed or time - t.danger_t < 3.0:
+		return
+	t.danger_t = time
+	var b := _nearest_garrison(t, garrison_rooms(t.owner), FLEE_R)
+	if b != null:
+		_send_garrison(t, b, true)
+		_ev({"t": "flee", "owner": t.owner})
+
+# --- posturas
+
+## Radio al que un soldado parado (o que acaba de terminar con su objetivo) busca enemigos según su postura.
+func _scan_radius(e: Ent) -> float:
+	match e.stance:
+		ST_DEF:
+			return minf(_los_px(e), maxf(eff_range(e) + 2.5, 5.0) * Defs.TILE)
+		ST_HOLD:
+			return eff_range(e) * Defs.TILE + e.radius + 6.0
+	return _los_px(e)
+
+## Hasta dónde se aleja persiguiendo a un objetivo que no ha elegido el jugador antes de volver a su sitio.
+func _leash_px(e: Ent) -> float:
+	if e.stance == ST_DEF:
+		return _scan_radius(e) + 2.0 * Defs.TILE
+	return _los_px(e) + 6.0 * Defs.TILE
+
+func cmd_stance(pidx: int, ids: Array, st: int) -> int:
+	if st < ST_AGGR or st > ST_PASSIVE:
+		return ERR_INVALID
+	var n := 0
+	for e in _own_units(pidx, ids):
+		if not e.is_military():
+			continue
+		e.stance = st
+		n += 1
+		if st >= ST_HOLD and e.auto_target and (e.state == S_ATTACK_GO or e.state == S_ATTACK):
+			_clear_orders(e)         # deja de pelear lo que nadie le mandó
+	return OK if n > 0 else ERR_NOUNITS
+
+# --- formaciones
+
+func cmd_formation(pidx: int, f: int) -> int:
+	if f < FM_FREE or f > FM_COLUMN:
+		return ERR_INVALID
+	players[pidx].formation = f
+	return OK
+
+func _formation_spot(st: Vector2i, taken: Dictionary, goal: Vector2i) -> Vector2i:
+	var gc := comp[goal.y * W + goal.x]
+	for r in range(0, 4):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var q := st + Vector2i(dx, dy)
+				if in_bounds(q) and not is_solid_tile(q) and not taken.has(q) and comp[q.y * W + q.x] == gc:
+					return q
+	return goal
+
+## Marcha en formación: los de cuerpo a cuerpo van delante y arqueros, asedio y monjes detrás, en filas perpendiculares al
+## rumbo, y todo el grupo avanza al paso del más lento para llegar junto.
+func _move_formation(us: Array, tile: Vector2i, attack_move: bool, fm: int) -> void:
+	var center := tile_center(tile)
+	var n := us.size()
+	var c0 := Vector2.ZERO
+	var slow := 99.0
+	for e: Ent in us:
+		c0 += e.pos
+		slow = minf(slow, float(e.def["speed"]) * e.sm)
+	c0 /= float(n)
+	var dir := center - c0
+	var far := dir.length() > 6.0 * Defs.TILE
+	dir = dir.normalized() if dir.length() > Defs.TILE else Vector2.DOWN
+	var perp := Vector2(-dir.y, dir.x)
+	var front: Array = []
+	var back: Array = []
+	for e: Ent in us:
+		if e.is_military() and float(e.def["range"]) <= 1.5 and not bool(e.def.get("siege", false)):
+			front.append(e)
+		else:
+			back.append(e)
+	var cols := clampi(int(ceil(sqrt(float(n) * 2.0))), 3, 12) if fm == FM_LINE else 3
+	var taken := {}
+	var row := 0
+	for grp: Array in [front, back]:
+		if grp.is_empty():
+			continue
+		# los que ya van más adelantados ocupan las filas de delante
+		grp.sort_custom(func(a: Ent, b: Ent) -> bool: return (a.pos - c0).dot(dir) > (b.pos - c0).dot(dir))
+		var rows_n := int(ceil(float(grp.size()) / float(cols)))
+		for r in rows_n:
+			var chunk: Array = grp.slice(r * cols, mini(grp.size(), (r + 1) * cols))
+			chunk.sort_custom(func(a: Ent, b: Ent) -> bool: return (a.pos - c0).dot(perp) < (b.pos - c0).dot(perp))
+			for k in chunk.size():
+				var lateral := float(k) - (float(chunk.size()) - 1.0) * 0.5
+				var pt := Vector2(tile) + perp * lateral - dir * float(row)
+				var spot := _formation_spot(Vector2i(roundi(pt.x), roundi(pt.y)), taken, tile)
+				taken[spot] = true
+				var e: Ent = chunk[k]
+				_clear_orders(e)
+				e.state = S_MOVE
+				e.amove = attack_move
+				e.amove_goal = tile
+				e.home = center
+				e.fspd = slow if far else 0.0
+				_request_path(e, spot)
+			row += 1
+
+# ------------------------------------------------------------------ caza, mercado y mejoras
+
+const DIR8 := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1)]
+
+## Registra los animales que trae el mapa (cada uno recuerda su casilla de origen para no alejarse demasiado de ella).
+func _init_fauna() -> void:
+	fauna.clear()
+	fauna_at.clear()
+	for i in W * H:
+		if Defs.is_animal(rtype[i]):
+			_fauna_add(i)
+
+func _fauna_add(i: int) -> void:
+	var a := {"i": i, "home": i, "fx": tile_center(Vector2i(i % W, i / W)), "t0": -100.0, "t1": -100.0,
+		"nx": rng.randf_range(3.0, 12.0), "face": 1 if rng.randf() < 0.5 else -1}
+	fauna.append(a)
+	fauna_at[i] = a
+
+func _fauna_remove(i: int) -> void:
+	var a: Variant = fauna_at.get(i)
+	if a != null:
+		fauna.erase(a)
+		fauna_at.erase(i)
+
+## Cada animal da un paseo corto de vez en cuando (a una casilla contigua, sin alejarse más de 6 de su origen), salvo
+## que haya alguien cerca: así se puede cazar sin que se escape y las manadas no deambulan por todo el mapa.
+func _fauna_tick() -> void:
+	var n := fauna.size()
+	var k := step_count % 5
+	while k < n:
+		var a: Dictionary = fauna[k]
+		k += 5
+		if time < float(a["nx"]):
+			continue
+		a["nx"] = time + rng.randf_range(6.0, 16.0)
+		var idx: int = a["i"]
+		var t := Vector2i(idx % W, idx / W)
+		if not query(tile_center(t), 5.0 * Defs.TILE).is_empty():
+			a["nx"] = time + 3.0
+			continue
+		var hi: int = a["home"]
+		for tries in 3:
+			var dd: Vector2i = DIR8[rng.randi() % 8]
+			var q := t + dd
+			if not in_bounds(q):
+				continue
+			var qi := q.y * W + q.x
+			if rtype[qi] != 0 or solid[qi] == 1 or occ[qi] != 0 or terrain[qi] != Defs.T_GRASS:
+				continue
+			if Vector2(q - Vector2i(hi % W, hi / W)).length() > 6.0:
+				continue
+			_fauna_move(a, idx, qi, dd)
+			break
+
+func _fauna_move(a: Dictionary, from: int, to: int, dd: Vector2i) -> void:
+	var rt := rtype[from]
+	var ci_from := ((from / W) / 8) * cw + (from % W) / 8
+	var ci_to := ((to / W) / 8) * cw + (to % W) / 8
+	rtype[to] = rt
+	ramt[to] = ramt[from]
+	rtype[from] = 0
+	ramt[from] = 0
+	if ci_from != ci_to:
+		chunk_cnt[rt][ci_from] -= 1
+		chunk_cnt[rt][ci_to] += 1
+	fauna_at.erase(from)
+	fauna_at[to] = a
+	a["i"] = to
+	a["fx"] = tile_center(Vector2i(from % W, from / W))
+	a["t0"] = time
+	a["t1"] = time + FAUNA_WALK
+	if dd.x != 0:
+		a["face"] = dd.x
+
+# --- mercado
+
+func has_market(pidx: int) -> bool:
+	for b in buildings:
+		if b.alive and b.owner == pidx and b.progress >= 1.0 and bool(b.def.get("market", false)):
+			return true
+	return false
+
+func market_price(pidx: int, kind: String) -> int:
+	return int(players[pidx].mkt.get(kind, 100))
+
+## Oro que cuesta comprar MKT_LOT unidades de `kind`.
+func market_buy_cost(pidx: int, kind: String) -> int:
+	return int(ceil(float(market_price(pidx, kind)) * (1.0 + MKT_TAX)))
+
+## Oro que se recibe al vender MKT_LOT unidades de `kind`.
+func market_sell_gain(pidx: int, kind: String) -> int:
+	return int(floor(float(market_price(pidx, kind)) * (1.0 - MKT_TAX)))
+
+## Compra (`buy`) o vende MKT_LOT unidades de comida, madera o piedra a cambio de oro. El precio sube con cada compra y
+## baja con cada venta (y con el tiempo vuelve poco a poco a 100).
+func cmd_trade(pidx: int, kind: String, buy: bool) -> int:
+	var p: Player = players[pidx]
+	if not p.alive or not p.mkt.has(kind):
+		return ERR_INVALID
+	if not has_market(pidx):
+		return ERR_NOMARKET
+	var price := int(p.mkt[kind])
+	if buy:
+		var cost := market_buy_cost(pidx, kind)
+		if int(p.res.get("gold", 0)) < cost:
+			return ERR_COST
+		p.res["gold"] = int(p.res["gold"]) - cost
+		p.res[kind] = int(p.res.get(kind, 0)) + MKT_LOT
+		p.mkt[kind] = mini(300, price + MKT_STEP)
+	else:
+		if int(p.res.get(kind, 0)) < MKT_LOT:
+			return ERR_COST
+		p.res[kind] = int(p.res[kind]) - MKT_LOT
+		p.res["gold"] = int(p.res.get("gold", 0)) + market_sell_gain(pidx, kind)
+		p.mkt[kind] = maxi(20, price - MKT_STEP)
+	_ev({"t": "trade", "owner": pidx, "buy": buy})
+	return OK
+
+## Con el tiempo los precios del mercado vuelven hacia 100 (un punto cada 10 s).
+func _market_drift() -> void:
+	for p in players:
+		for k: String in p.mkt:
+			var v := int(p.mkt[k])
+			if v < 100:
+				p.mkt[k] = v + 1
+			elif v > 100:
+				p.mkt[k] = v - 1
+
+# --- mejoras
+
+func tech_queued(pidx: int, tid: String) -> bool:
+	var item := "tech:" + tid
+	for b in buildings:
+		if b.alive and b.owner == pidx and b.queue.has(item):
+			return true
+	return false
+
+## OK si el jugador puede ponerse a investigar `tid` (sin contar coste ni cola); si no, el motivo.
+func tech_status(pidx: int, tid: String) -> int:
+	var t: Dictionary = Defs.TECHS.get(tid, {})
+	if t.is_empty():
+		return ERR_INVALID
+	var p: Player = players[pidx]
+	if p.techs.has(tid) or tech_queued(pidx, tid):
+		return ERR_DONE
+	if p.age < int(t["age"]):
+		return ERR_AGE
+	var req := String(t.get("req", ""))
+	if req != "" and not p.techs.has(req):
+		return ERR_REQ
+	return OK
+
+func tech_time(item: String) -> float:
+	return float(Defs.TECHS[Defs.tech_of_item(item)]["time"])
+
+func cmd_research(pidx: int, bid: int, tid: String) -> int:
+	var b := get_ent(bid)
+	if b == null or b.owner != pidx or not b.is_building or b.progress < 1.0:
+		return ERR_INVALID
+	var t: Dictionary = Defs.TECHS.get(tid, {})
+	if t.is_empty() or String(t["b"]) != b.type:
+		return ERR_INVALID
+	var r := tech_status(pidx, tid)
+	if r != OK:
+		return r
+	if b.queue.size() >= 5:
+		return ERR_QUEUE
+	var p: Player = players[pidx]
+	if not Defs.can_afford(p.res, t["cost"]):
+		return ERR_COST
+	Defs.pay(p.res, t["cost"])
+	b.queue.append("tech:" + tid)
+	return OK
+
+func _finish_tech(b: Ent) -> void:
+	var item: String = b.queue.pop_front()
+	b.producing = false
+	b.prod_tech = false
+	var tid := Defs.tech_of_item(item)
+	var p: Player = players[b.owner]
+	p.techs[tid] = true
+	var old_hp: Dictionary = (up_mods[b.owner]["hp"] as Dictionary).duplicate()
+	_recalc_ups(b.owner)
+	var new_hp: Dictionary = up_mods[b.owner]["hp"]
+	if new_hp != old_hp:
+		# la vida extra también llega a quien ya existe (incluidos los refugiados y los embarcados)
+		var every: Array[Ent] = []
+		for u in units:
+			every.append(u)
+			every.append_array(u.cargo)
+		for bb in buildings:
+			every.append_array(bb.cargo)
+		for u in every:
+			if u.alive and u.owner == b.owner:
+				var ratio := float(new_hp.get(u.type, 1.0)) / float(old_hp.get(u.type, 1.0))
+				if absf(ratio - 1.0) > 0.0001:
+					u.max_hp *= ratio
+					u.hp *= ratio
+	_ev({"t": "tech", "pos": b.center(), "owner": b.owner, "id": tid})
 
 # ------------------------------------------------------------------ habilidad de civilización
 
@@ -2036,6 +2676,8 @@ func _update_unit(e: Ent) -> void:
 	var pl: Player = players[e.owner]
 	if pl.abil_on and pl.b_spd != 1.0 and pl.b_types.has(e.type):
 		step_px *= pl.b_spd
+	if e.fspd > 0.0 and e.state == S_MOVE:
+		step_px = minf(step_px, e.fspd * Defs.TILE * DT)      # marcha en formación: al paso del más lento
 	match e.state:
 		S_IDLE:
 			_u_idle(e)
@@ -2057,6 +2699,8 @@ func _update_unit(e: Ent) -> void:
 			_u_attack(e)
 		S_BOARD_GO:
 			_u_board_go(e, step_px)
+		S_GARRISON_GO:
+			_u_garrison_go(e, step_px)
 
 func _los_px(e: Ent) -> float:
 	return (float(e.def["los"]) + float(e.lb)) * Defs.TILE
@@ -2066,6 +2710,7 @@ func _engage(e: Ent, t: Ent, auto: bool) -> void:
 		e.home = e.pos
 	e.target_id = t.id
 	e.auto_target = auto
+	e.fspd = 0.0
 	e.state = S_ATTACK_GO
 	e.repath_t = 0.0
 	e.path = []
@@ -2082,12 +2727,14 @@ func _u_idle(e: Ent) -> void:
 			e.scan_t = 1.0
 			_healer_seek(e)
 		return
-	if not e.is_military():
+	if not e.is_military() or e.stance == ST_PASSIVE:
 		return
 	e.scan_t -= DT
 	if e.scan_t <= 0.0:
 		e.scan_t = 0.5
-		var t := scan_enemy(e, _los_px(e))
+		var t := scan_enemy(e, _scan_radius(e))
+		if t != null and e.stance == ST_HOLD and not _in_range(e, t):
+			t = null                    # mantener posición: sólo dispara a lo que tiene a tiro
 		if t != null:
 			_engage(e, t, true)
 
@@ -2281,7 +2928,7 @@ func _unload(sh: Ent) -> int:
 	return n
 
 func _in_range(e: Ent, t: Ent, slack: float = 1.0) -> bool:
-	return t.dist_to(e.pos) - e.radius <= float(e.def["range"]) * e.rm * Defs.TILE * slack
+	return t.dist_to(e.pos) - e.radius <= eff_range(e) * Defs.TILE * slack
 
 func _target_lost(e: Ent) -> void:
 	e.target_id = 0
@@ -2297,8 +2944,10 @@ func _target_lost(e: Ent) -> void:
 		e.state = S_MOVE
 		_request_path(e, e.amove_goal)
 		return
-	if e.is_military():
-		var t := scan_enemy(e, _los_px(e))
+	if e.is_military() and e.stance != ST_PASSIVE:
+		var t := scan_enemy(e, _scan_radius(e))
+		if t != null and e.stance == ST_HOLD and not _in_range(e, t):
+			t = null
 		if t != null:
 			_engage(e, t, e.auto_target)
 			return
@@ -2324,8 +2973,11 @@ func _u_attack_go(e: Ent, step_px: float) -> void:
 		e.path = []
 		e.path_pending = false
 		return
+	if e.auto_target and not e.amove and e.stance == ST_HOLD:
+		_target_lost(e)                 # mantener posición: no persigue a nadie
+		return
 	if e.auto_target and not e.amove:
-		if e.pos.distance_to(e.home) > _los_px(e) + 6.0 * Defs.TILE:
+		if e.pos.distance_to(e.home) > _leash_px(e):
 			e.target_id = 0
 			e.auto_target = false
 			e.state = S_MOVE
@@ -2371,7 +3023,7 @@ func _u_attack(e: Ent) -> void:
 
 func _hit(a: Ent, t: Ent) -> void:
 	var p: Player = players[a.owner]
-	var dmg: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]) * a.am
+	var dmg: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]) * a.am * _up_atk(a)
 	if p.abil_on and p.b_atk != 1.0 and p.b_types.has(a.type):
 		dmg *= p.b_atk
 	if t.is_building:
@@ -2391,7 +3043,7 @@ func _hit(a: Ent, t: Ent) -> void:
 	if splash > 0.0:
 		# la piedra también golpea (a menos fuerza) a los enemigos que están junto al objetivo
 		var c := t.center()
-		var base_atk: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]) * a.am
+		var base_atk: float = float(a.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]) * a.am * _up_atk(a)
 		for o in query(c, splash * float(Defs.TILE)):
 			if o != t and o.alive and not o.is_building and o.owner != a.owner and hostile[a.owner][o.owner]:
 				_damage(o, base_atk * 0.55 * Defs.bonus(a.type, o.type), a)
@@ -2405,6 +3057,8 @@ func _damage(t: Ent, dmg: float, attacker: Ent, raw: bool = false) -> void:
 				dmg *= rres            # los arietes casi no sienten flechas ni torres
 		if tp.abil_on and tp.b_def != 1.0 and tp.b_types.has(t.type):
 			dmg *= tp.b_def
+		if not raw and t.owner < up_mods.size():
+			dmg *= float((up_mods[t.owner]["arm"] as Dictionary).get(t.type, 1.0))
 	t.hp -= dmg
 	t.last_hit = time
 	if tp.is_human and time - tp.last_alarm > 8.0:
@@ -2420,7 +3074,10 @@ func _damage(t: Ent, dmg: float, attacker: Ent, raw: bool = false) -> void:
 			_explore_next(t)
 		t.danger_t = time
 		return
-	if attacker != null and (not t.is_building) and t.state == S_IDLE and t.is_military():
+	if attacker != null and not attacker.is_building and t.type == "aldeano" and not t.is_building and t.state != S_GARRISON_GO:
+		_flee(t)
+	if attacker != null and (not t.is_building) and t.state == S_IDLE and t.is_military() and t.stance != ST_PASSIVE \
+			and (t.stance != ST_HOLD or _in_range(t, attacker)):
 		_engage(t, attacker, true)
 
 # --- recolección
@@ -2466,10 +3123,12 @@ func _deplete(idx: int) -> void:
 	rowner[idx] = 255
 	ramt[idx] = 0
 	farm_slots.erase(idx)
+	if Defs.is_animal(rt):
+		_fauna_remove(idx)
 	if rt == Defs.R_FISH:
 		wsol[idx] = 0
 		astar_w.set_point_solid(Vector2i(idx % W, idx / W), false)
-	elif rt != Defs.R_FARM:
+	elif Defs.solid_res(rt):
 		var t := Vector2i(idx % W, idx / W)
 		if terrain[idx] != Defs.T_WATER and terrain[idx] != Defs.T_ROCK and occ[idx] == 0:
 			set_solid(t, false)
@@ -2521,6 +3180,8 @@ func _u_gather(e: Ent) -> void:
 	var gm := p.gather_mult
 	if e.owner < civ_mods.size():
 		gm *= (civ_mods[e.owner]["gather"] as PackedFloat32Array)[rt]
+	if e.owner < up_mods.size():
+		gm *= (up_mods[e.owner]["gather"] as PackedFloat32Array)[rt]
 	e.gather_acc += float(Defs.RES_INFO[rt]["rate"]) * gm * DT
 	if e.gather_acc >= 1.0:
 		var n := mini(int(e.gather_acc), ramt[idx])
@@ -2529,7 +3190,10 @@ func _u_gather(e: Ent) -> void:
 		ramt[idx] -= n
 		if ramt[idx] <= 0:
 			_deplete(idx)
-	if e.carry_amt >= float(e.def.get("carry", CARRY_CAP)):
+	var cap := float(e.def.get("carry", CARRY_CAP))
+	if e.type == "aldeano" and e.owner < up_mods.size():
+		cap += float(up_mods[e.owner]["carry"])
+	if e.carry_amt >= cap:
 		_start_return(e)
 
 func _start_return(e: Ent) -> void:
@@ -2684,7 +3348,13 @@ func _update_building(b: Ent) -> void:
 	var p: Player = players[b.owner]
 	if b.queue.size() > 0:
 		if not b.producing:
-			if p.pop + p.reserved >= p.pop_cap:
+			if Defs.is_tech_item(b.queue[0]):
+				b.blocked_pop = false
+				b.producing = true
+				b.prod_tech = true
+				b.train_total = tech_time(b.queue[0])
+				b.train_left = b.train_total
+			elif p.pop + p.reserved >= p.pop_cap:
 				b.blocked_pop = true
 			else:
 				b.blocked_pop = false
@@ -2695,9 +3365,14 @@ func _update_building(b: Ent) -> void:
 		else:
 			b.train_left -= DT
 			if b.train_left <= 0.0:
-				_spawn_trained(b)
+				if b.prod_tech:
+					_finish_tech(b)
+				else:
+					_spawn_trained(b)
 	else:
 		b.blocked_pop = false
+	if not b.cargo.is_empty() and (step_count + b.id) % 10 == 0:
+		_gar_tick(b)
 	if b.def.has("atk"):
 		b.cd = maxf(0.0, b.cd - DT)
 		if b.cd <= 0.0:
@@ -2714,7 +3389,11 @@ func _update_building(b: Ent) -> void:
 			if best == null:
 				b.cd = 0.4
 			else:
-				b.cd = float(b.def["cd"])
+				var shooters := 0
+				for c: Ent in b.cargo:
+					if float(c.def["range"]) > 1.5 and float(c.def["atk"]) > 0.0 and c.is_military():
+						shooters += 1
+				b.cd = float(b.def["cd"]) / (1.0 + GAR_ARROW * float(mini(shooters, GAR_ARROW_MAX)))
 				_ev({"t": "arrow", "from": b.center(), "to": best.pos, "owner": b.owner})
 				_damage(best, float(b.def["atk"]) * float(Defs.AGE_STAT_MULT[p.age]), null)
 
@@ -2799,8 +3478,17 @@ func _kill(e: Ent, killer: Ent) -> void:
 					astar2.set_point_weight_scale(t, 1.0)
 				if rtype[t.y * W + t.x] == 0 and terrain[t.y * W + t.x] != Defs.T_WATER and terrain[t.y * W + t.x] != Defs.T_ROCK:
 					set_solid(t, false)
-		if e.producing:
+		if e.producing and not e.prod_tech:
 			p.reserved -= 1
+		if not e.cargo.is_empty():
+			if p.alive:
+				_garrison_release(e, 0)          # el edificio cae: los refugiados salen a pie
+			else:
+				for c: Ent in e.cargo:
+					c.alive = false
+					p.pop -= 1
+					p.losses += 1
+				e.cargo.clear()
 		_recount_pop_cap(p)
 		if e.type == "centro":
 			_check_player_alive(p)

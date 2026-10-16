@@ -95,6 +95,7 @@ static func snapshot_sim(s: Sim) -> Dictionary:
 	sd["hostile"] = s.hostile.duplicate(true)
 	sd["path_queue"] = s.path_queue.duplicate()
 	sd["zones"] = s.zones.duplicate(true)
+	sd["fauna"] = s.fauna.duplicate(true)
 	sd["rng"] = [s.rng.seed, s.rng.state]
 	var ents: Array = []
 	for e: Ent in s.ents.values():
@@ -325,6 +326,12 @@ static func restore(data: Dictionary) -> Sim:
 	for pd: Dictionary in plist:
 		var p := Player.new()
 		_dec_obj(p, pd, "Player", [])
+		# partidas guardadas antes de la piedra: los diccionarios de recursos no traen esa clave
+		for rk: String in ["food", "wood", "gold", "stone"]:
+			if not p.res.has(rk):
+				p.res[rk] = 0
+			if not p.gathered.has(rk):
+				p.gathered[rk] = 0
 		s.players.append(p)
 	s._setup_civs()
 	if s.hostile.size() != s.players.size():
@@ -374,6 +381,18 @@ static func restore(data: Dictionary) -> Sim:
 				(s.buckets[i] as Array).append(e)
 	s.rebuild_bucket_masks()
 	s.events.clear()
+	# fauna: cada animal con su origen y su paseo en curso (una partida anterior a la caza no trae lista: se rehace del mapa)
+	s.fauna.clear()
+	s.fauna_at.clear()
+	if d.has("fauna"):
+		for a: Dictionary in (d["fauna"] as Array):
+			var ad2: Dictionary = (a as Dictionary).duplicate()
+			var fi := int(ad2.get("i", -1))
+			if fi >= 0 and fi < total and Defs.is_animal(s.rtype[fi]):
+				s.fauna.append(ad2)
+				s.fauna_at[fi] = ad2
+	else:
+		s._init_fauna()
 	return s
 
 static func _make_ent(ed: Dictionary, s: Sim) -> Ent:
