@@ -288,7 +288,7 @@ const BUILDINGS := {
 		"train": ["barco_pesca", "barco_transporte", "galera", "galeon"], "los": 8, "age": 0,
 	},
 	"torre": {
-		"size": 2, "hp": 700, "cost": {"wood": 60, "stone": 90}, "time": 36.0,
+		"size": 2, "hp": 1500, "cost": {"wood": 60, "stone": 90}, "time": 36.0,
 		"pop": 0, "drop": false, "train": [], "los": 9, "age": 1,
 		"atk": 8.0, "range": 8.0, "cd": 1.6, "garrison": 5,
 	},
@@ -298,17 +298,17 @@ const BUILDINGS := {
 		"pop": 0, "drop": false, "train": ["monje"], "los": 6, "age": 2,
 	},
 	"castillo": {
-		"size": 4, "hp": 3200, "cost": {"wood": 150, "stone": 350}, "time": 120.0,
+		"size": 4, "hp": 4800, "cost": {"wood": 150, "stone": 350}, "time": 120.0,
 		"pop": 0, "drop": false, "train": ["trabuquete"], "los": 12, "age": 2,
 		"atk": 15.0, "range": 10.0, "cd": 1.1, "garrison": 20,
 	},
 	# Murallas y puertas: 1x1, se trazan en línea. La puerta deja pasar a los aliados y no al enemigo.
 	"muralla": {
-		"size": 1, "hp": 550, "cost": {"stone": 4}, "time": 6.0,
+		"size": 1, "hp": 1400, "cost": {"stone": 4}, "time": 6.0,
 		"pop": 0, "drop": false, "train": [], "los": 2, "age": 1, "wall": true,
 	},
 	"puerta": {
-		"size": 1, "hp": 800, "cost": {"wood": 30, "stone": 25}, "time": 14.0,
+		"size": 1, "hp": 1800, "cost": {"wood": 30, "stone": 25}, "time": 14.0,
 		"pop": 0, "drop": false, "train": [], "los": 3, "age": 1, "wall": true, "gate": true,
 	},
 	# Herrería: investiga mejoras de ataque, alcance y armadura del ejército (ver TECHS)
