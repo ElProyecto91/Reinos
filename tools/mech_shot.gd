@@ -82,12 +82,12 @@ func _run() -> void:
 		if d.x < 0:
 			d = _near(sim, Defs.R_BOAR, base, base)
 		print("INFO ciervo en ", d, " base ", base)
-		for i in 5:
-			var tile := sim.nearest_free_tile(d + Vector2i(-3 + i, 3), 6)
+		for i in 4:
+			var tile := sim.nearest_free_tile(d + Vector2i(-2 + i, 2), 6)
 			var u := sim._spawn_unit("aldeano", h, tile)
 			sim.cmd_gather(h, [u.id], d)
 		cam = d
-		for j in 140:
+		for j in 90:
 			sim.step()
 	elif mode == "stone":
 		var st := _near(sim, Defs.R_STONE, base, base)

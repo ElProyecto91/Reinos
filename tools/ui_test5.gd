@@ -99,18 +99,18 @@ func _run() -> void:
 	await tap(slot_with(Lang.t("b_muralla")).get_global_rect().get_center())
 	check("placing muralla", game.placing_type == "muralla")
 	# dos toques: inicio y fin del tramo
-	var wood0: int = p.res["wood"]
+	var stone0: int = p.res["stone"]
 	await tap(game.world_to_screen(sim.tile_center(a)))
 	check("first tap sets anchor", game.wall_state == 1 and game.wall_tiles.size() == 1)
 	await tap(game.world_to_screen(sim.tile_center(a + Vector2i(7, 0))))
 	check("second tap draws 8-tile line", game.wall_state == 2 and game.wall_tiles.size() == 8)
 	await frames(8)
 	shot("wall_ghost")
-	check("place bar shows wall cost", hud.place_bar.visible and hud.place_label.text.contains("64"))
+	check("place bar shows wall cost", hud.place_bar.visible and hud.place_label.text.contains("32"))
 	await tap(hud.place_ok.get_global_rect().get_center())
 	var walls := count_type("muralla")
 	check("8 wall sites created", walls == 8)
-	check("wood paid 8x8", int(p.res["wood"]) == wood0 - 64)
+	check("stone paid 8x4", int(p.res["stone"]) == stone0 - 32)
 	check("still in wall mode for next segment", game.placing_type == "muralla")
 	# terminar el modo con Listo
 	await tap(hud.place_cancel.get_global_rect().get_center())
