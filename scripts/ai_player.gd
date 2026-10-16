@@ -42,13 +42,20 @@ func _init(s: Sim, idx: int, d: int) -> void:
 	diff = clampi(d, 0, 2)
 	interval = [1.4, 1.0, 0.7][diff]
 	rng.seed = s.rng.seed + idx * 131
-	# La primera oleada llega con una economía ya hecha y un ejército grande; después van creciendo.
-	attack_at = [780.0, 600.0, 470.0][diff] + rng.randf_range(0.0, 50.0)
-	need_army = [16, 22, 28][diff]
-	wave_gap = [300.0, 240.0, 180.0][diff]
-	raid_at = [1e9, 900.0, 720.0][diff] + rng.randf_range(0.0, 60.0)
-	navy_at = [1e9, 700.0, 560.0][diff] + rng.randf_range(0.0, 40.0)
+	# Ritmo de la IA (medido con tools/rush_probe.gd contra un jugador que no hace nada): antes (build-21) el primer
+	# enemigo llegaba a ~13,5 min en Fácil, ~11 en Normal y ~9-10 en Difícil con 30-45 soldados rivales; un jugador que
+	# aprende no llega a eso. Ahora la primera oleada llega a ~26 / ~17 / ~11 min y, mientras no ataca, la IA no acumula
+	# más soldados de los necesarios (ver `_army_cap`), así que la primera oleada tiene el tamaño previsto y no uno enorme.
+	attack_at = [1500.0, 1000.0, 660.0][diff] + rng.randf_range(0.0, 50.0)
+	need_army = [10, 18, 26][diff]
+	wave_gap = [420.0, 300.0, 200.0][diff]
+	raid_at = [1e9, 1260.0, 840.0][diff] + rng.randf_range(0.0, 60.0)
+	navy_at = [1e9, 1000.0, 660.0][diff] + rng.randf_range(0.0, 40.0)
 	acc = rng.randf() * interval
+
+## Soldados que la IA llega a juntar mientras espera para atacar (sin límite en Difícil).
+func _army_cap() -> int:
+	return [need_army + 6, need_army + 14, 100000][diff]
 
 func update(dt: float) -> void:
 	acc += dt
@@ -690,6 +697,8 @@ func _train(p: Player, vills: Array, done: Dictionary, boats: Array, navy: Array
 					queued_ships += 1
 		else:
 			if n < [12, 10, 9][diff]:
+				continue
+			if not wave_active and army.size() >= _army_cap():
 				continue
 			if b.queue.size() < 2 and p.pop + p.reserved + b.queue.size() < p.pop_cap:
 				var ut := _pick_unit(b, p, cnt)
