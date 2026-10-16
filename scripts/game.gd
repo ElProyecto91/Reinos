@@ -73,6 +73,7 @@ var _vs := Vector2(1280, 720)
 var sel: Array[int] = []
 var sel_set: Dictionary = {}
 var placing_type := ""
+var _limit_kind := "sapling"         # qué tope se ha alcanzado, para el texto de ERR_LIMIT: "sapling" | "mine"
 var place_tile := Vector2i(-1, -1)
 var wall_tiles: Array[Vector2i] = []   # tramo de muralla que se está trazando
 var wall_anchor := Vector2i(-1, -1)
@@ -311,6 +312,8 @@ func _atlas_index(rt: int, x: int, y: int) -> int:
 			return Art.TREE_PALM if k < 52 else (Art.TREE_DRY if k < 88 else Art.TREE_OAK_B)
 		Defs.R_GOLD:
 			return Art.RES_GOLD
+		Defs.R_SAPLING:
+			return Art.RES_SAPLING
 		Defs.R_STONE:
 			return Art.RES_STONE
 		Defs.R_BERRY:
@@ -610,6 +613,25 @@ func _consume_events() -> void:
 					farm_tiles[t.y * sim.W + t.x] = true
 				if ev["owner"] == human:
 					sfx("place", ev["pos"])
+			"planted":
+				var pt: Vector2i = ev["tile"]
+				res_layer.set_cell(pt, 0, Vector2i(Art.RES_SAPLING, 0))
+				if ev["owner"] == human:
+					sfx("place", ev["pos"])
+			"grown":
+				var gt: Vector2i = ev["tile"]
+				res_layer.set_cell(gt, 0, Vector2i(_atlas_index(Defs.R_TREE, gt.x, gt.y), 0))
+				if _seen(sim.tile_center(gt)):
+					_fx({"t": "puff", "p": sim.tile_center(gt) + Vector2(0, -6), "r": 8.0, "life": 0.5})
+			"mine_open":
+				var mt: Vector2i = ev["tile"]
+				res_layer.set_cell(mt, 0, Vector2i(Art.RES_GOLD, 0))
+				if ev["owner"] == human:
+					sfx("built", ev["pos"])
+					hud.toast(Lang.t("toast_mine_open", [Defs.MINE_YIELD]), Color(1.0, 0.88, 0.4))
+					_fx({"t": "flash", "p": ev["pos"], "life": 0.7})
+				elif _seen(ev["pos"]):
+					_fx({"t": "flash", "p": ev["pos"], "life": 0.5})
 			"trained":
 				if ev["owner"] == human:
 					sfx("trained", ev["pos"])
@@ -975,7 +997,7 @@ func _tap(sp: Vector2) -> void:
 	var wp := screen_to_world(sp)
 	if placing_type != "":
 		place_tile = _ghost_from_world(wp)
-		if placing_type == "granja":
+		if Defs.is_plot(placing_type):
 			ui_confirm_place()
 		elif placing_type == "muralla":
 			# primer toque: inicio; segundo toque: final del tramo; tercero: empieza otro
@@ -1191,6 +1213,8 @@ func _res_name(t: Vector2i) -> String:
 		return ""
 	if Defs.is_animal(rt):
 		return Lang.t("res_hunt")
+	if rt == Defs.R_SAPLING:
+		return Lang.t("res_sapling")
 	return Lang.t("res_" + String(Defs.RES_INFO[rt]["kind"]))
 
 func _res_at(wp: Vector2) -> Vector2i:
@@ -1204,7 +1228,7 @@ func _res_at(wp: Vector2) -> Vector2i:
 				continue
 			var idx := q.y * sim.W + q.x
 			var rt := sim.rtype[idx]
-			if rt == 0 or rt == Defs.R_FISH:
+			if rt == 0 or rt == Defs.R_FISH or rt == Defs.R_SAPLING:
 				continue
 			if rt == Defs.R_FARM and sim.rowner[idx] != human:
 				continue
@@ -1218,7 +1242,7 @@ func _res_at(wp: Vector2) -> Vector2i:
 
 func _ghost_from_world(wp: Vector2) -> Vector2i:
 	var s := 1.0
-	if placing_type != "granja":
+	if not Defs.is_plot(placing_type):
 		s = float(Defs.BUILDINGS[placing_type]["size"])
 	return Vector2i(roundi(wp.x / T - s * 0.5), roundi(wp.y / T - s * 0.5))
 
@@ -1240,6 +1264,7 @@ func err_text(code: int) -> String:
 		Sim.ERR_NOMARKET: return Lang.t("err_nomarket")
 		Sim.ERR_DONE: return Lang.t("err_done")
 		Sim.ERR_NOGAR: return Lang.t("err_nogar")
+		Sim.ERR_LIMIT: return Lang.t("err_limit_" + _limit_kind)
 	return Lang.t("err_invalid")
 
 func _err(code: int) -> void:
@@ -1252,7 +1277,7 @@ func ui_begin_place(type: String) -> void:
 		_err(Sim.ERR_NOUNITS)
 		return
 	var p: Player = sim.players[human]
-	if type != "granja":
+	if not Defs.is_plot(type):
 		var d: Dictionary = Defs.BUILDINGS[type]
 		if p.age < int(d["age"]):
 			_err(Sim.ERR_AGE)
@@ -1260,8 +1285,16 @@ func ui_begin_place(type: String) -> void:
 		if not Defs.can_afford(p.res, d["cost"]):
 			_err(Sim.ERR_COST)
 			return
-	elif not Defs.can_afford(p.res, Defs.FARM_COST):
+		if bool(d.get("mine", false)) and sim.mine_count(human) >= Defs.MINE_MAX:
+			_limit_kind = "mine"
+			_err(Sim.ERR_LIMIT)
+			return
+	elif not Defs.can_afford(p.res, Defs.plot_cost(type)):
 		_err(Sim.ERR_COST)
+		return
+	elif type == "arbol" and sim.sapling_count(human) >= Defs.PLANT_MAX:
+		_limit_kind = "sapling"
+		_err(Sim.ERR_LIMIT)
 		return
 	placing_type = type
 	rally_mode = false
@@ -1325,15 +1358,22 @@ func ui_confirm_place() -> void:
 			hud.refresh_now()
 			sel_changed.emit()
 			return
-		if placing_type == "granja":
+		if Defs.is_plot(placing_type):
+			# la granja y el retoño se pueden repetir hasta que falte madera (o, en el retoño, se llegue al tope)
 			var p: Player = sim.players[human]
-			if not Defs.can_afford(p.res, Defs.FARM_COST):
+			if not Defs.can_afford(p.res, Defs.plot_cost(placing_type)):
 				placing_type = ""
+			elif placing_type == "arbol" and sim.sapling_count(human) >= Defs.PLANT_MAX:
+				placing_type = ""
+				_limit_kind = "sapling"
+				_err(Sim.ERR_LIMIT)
 		else:
 			placing_type = ""
 		hud.refresh_now()
 		sel_changed.emit()
 	else:
+		if r == Sim.ERR_LIMIT:
+			_limit_kind = "mine" if placing_type == "mina" else "sapling"
 		_err(r)
 
 func ui_cancel_place() -> void:

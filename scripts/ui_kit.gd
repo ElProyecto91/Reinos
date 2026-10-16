@@ -270,6 +270,18 @@ static func draw_symbol(c: CanvasItem, kind: String, r: Rect2, a: float = 1.0) -
 			c.draw_rect(Rect2(m - Vector2(s, s) * 0.38, Vector2(s, s) * 0.76), Color(0.42, 0.28, 0.14, a), true)
 			for i in 4:
 				c.draw_line(Vector2(m.x - s * 0.3, m.y - s * 0.26 + i * s * 0.17), Vector2(m.x + s * 0.3, m.y - s * 0.26 + i * s * 0.17), Color(0.6, 0.78, 0.25, a), maxf(2.5, s * 0.08))
+		"sapling":
+			# retoño: tallo, dos hojas y montoncito de tierra
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.36, s * 0.38), m + Vector2(-s * 0.26, s * 0.24), m + Vector2(s * 0.26, s * 0.24), m + Vector2(s * 0.36, s * 0.38)]), Color(0.45, 0.30, 0.15, a))
+			c.draw_line(m + Vector2(0, s * 0.28), m + Vector2(0, -s * 0.06), Color(0.45, 0.32, 0.16, a), maxf(2.5, s * 0.08))
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(0, -s * 0.04), m + Vector2(-s * 0.36, -s * 0.12), m + Vector2(-s * 0.26, -s * 0.34), m + Vector2(-s * 0.02, -s * 0.2)]), Color(0.35, 0.72, 0.28, a))
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(0, -s * 0.12), m + Vector2(s * 0.36, -s * 0.2), m + Vector2(s * 0.26, -s * 0.44), m + Vector2(s * 0.02, -s * 0.3)]), Color(0.5, 0.82, 0.32, a))
+		"resources":
+			# pico sobre una pepita de oro
+			c.draw_circle(m + Vector2(s * 0.1, s * 0.22), s * 0.2, Color(0.95, 0.75, 0.12, a))
+			c.draw_circle(m + Vector2(s * 0.04, s * 0.15), s * 0.06, Color(1, 0.96, 0.62, a * 0.9))
+			c.draw_line(m + Vector2(-s * 0.24, s * 0.38), m + Vector2(s * 0.14, -s * 0.30), Color(0.55, 0.36, 0.16, a), maxf(3.0, s * 0.09))
+			c.draw_arc(m + Vector2(s * 0.12, -s * 0.18), s * 0.30, PI * 1.12, PI * 1.9, 10, Color(0.78, 0.8, 0.86, a), maxf(3.0, s * 0.10))
 		"back":
 			c.draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.32, 0), m + Vector2(s * 0.05, -s * 0.32), m + Vector2(s * 0.05, -s * 0.12), m + Vector2(s * 0.34, -s * 0.12), m + Vector2(s * 0.34, s * 0.12), m + Vector2(s * 0.05, s * 0.12), m + Vector2(s * 0.05, s * 0.32)]), Color(0.95, 0.9, 0.8, a))
 		"anchor":

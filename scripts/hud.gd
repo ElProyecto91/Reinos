@@ -480,10 +480,11 @@ func _update_place_bar() -> void:
 	var g := game
 	var t := g.placing_type
 	var ok := g._ghost_ok()
-	var cost: Dictionary = Defs.FARM_COST if t == "granja" else Defs.BUILDINGS[t]["cost"]
+	var plot := Defs.is_plot(t)
+	var cost: Dictionary = Defs.plot_cost(t) if plot else Defs.BUILDINGS[t]["cost"]
 	var nm := Lang.t("b_" + t)
-	if t == "granja":
-		place_label.text = Lang.t("place_farm_hint", [nm])
+	if plot:
+		place_label.text = Lang.t("place_plant_hint", [nm, _cost_str(cost)]) if t == "arbol" else Lang.t("place_farm_hint", [nm])
 		place_ok.text = Lang.t("place_done")
 		place_ok.icon_kind = "ok"
 		place_ok.set_meta("farm", true)
@@ -504,8 +505,8 @@ func _update_place_bar() -> void:
 		place_ok.text = Lang.t("place_build")
 		place_ok.icon_kind = "ok"
 	place_ok.cost = {}
-	place_ok.enabled = ok or t == "granja"
-	place_ok.action = (func() -> void: game.ui_cancel_place()) if t == "granja" else (func() -> void: game.ui_confirm_place())
+	place_ok.enabled = ok or plot
+	place_ok.action = (func() -> void: game.ui_cancel_place()) if plot else (func() -> void: game.ui_confirm_place())
 	place_cancel.text = Lang.t("place_done") if t == "muralla" else Lang.t("place_cancel")
 	place_ok.queue_redraw()
 	place_cancel.queue_redraw()
@@ -613,23 +614,33 @@ func _fill_grid(p: Player) -> int:
 				has_scout = true
 				if not u.explore:
 					all_exploring = false
-		if has_v and (grid_mode == "build" or grid_mode == "military" or grid_mode == "defense"):
+		if has_v and (grid_mode == "build" or grid_mode == "military" or grid_mode == "defense" or grid_mode == "resource"):
 			var idx := 0
 			var list: Array = Defs.BUILD_MENU
 			if grid_mode == "military":
 				list = Defs.MILITARY_MENU
 			elif grid_mode == "defense":
 				list = Defs.DEFENSE_MENU
+			elif grid_mode == "resource":
+				list = Defs.RESOURCE_MENU
 			for t: String in list:
-				var cost: Dictionary = Defs.FARM_COST if t == "granja" else Defs.BUILDINGS[t]["cost"]
-				var okage := t == "granja" or p.age >= int(Defs.BUILDINGS[t]["age"])
+				var plot := Defs.is_plot(t)
+				var cost: Dictionary = Defs.plot_cost(t) if plot else Defs.BUILDINGS[t]["cost"]
+				var okage := plot or p.age >= int(Defs.BUILDINGS[t]["age"])
 				var tex: Texture2D = null
 				var kind := ""
 				if t == "granja":
 					kind = "farm"
+				elif t == "arbol":
+					kind = "sapling"
 				else:
 					tex = g.art.building_tex[t][g.human % 4]
-				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, "" if okage else Lang.t("needs_age_%d" % int(Defs.BUILDINGS[t]["age"])))
+				var sub := "" if okage else Lang.t("needs_age_%d" % int(Defs.BUILDINGS[t]["age"]))
+				if t == "arbol":
+					sub = "%d/%d" % [g.sim.sapling_count(g.human), Defs.PLANT_MAX]
+				elif t == "mina":
+					sub = sub if sub != "" else "%d/%d" % [g.sim.mine_count(g.human), Defs.MINE_MAX]
+				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, sub)
 				idx += 1
 			if grid_mode == "build":
 				_slot(idx, Lang.t("military"), g.art.building_tex["cuartel"][g.human % 4], "", {}, res, true, (func() -> void:
@@ -641,6 +652,11 @@ func _fill_grid(p: Player) -> int:
 					grid_mode = "defense"
 					g.sfx("click")
 					refresh_now()), false, -1.0, "" if p.age >= 1 else Lang.t("needs_feudal"))
+				idx += 1
+				_slot(idx, Lang.t("resources"), null, "resources", {}, res, true, (func() -> void:
+					grid_mode = "resource"
+					g.sfx("click")
+					refresh_now()))
 			var back_to := "main" if grid_mode == "build" else "build"
 			_slot(COLS * 2 - 1, Lang.t("back"), null, "back", {}, res, true, (func() -> void:
 				grid_mode = back_to

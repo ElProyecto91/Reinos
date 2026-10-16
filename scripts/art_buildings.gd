@@ -575,6 +575,68 @@ static func paint_base(cv: Cv, type: String) -> void:
 			tiles(cv, 5, 55, 36, 14, 12, TILE_RED, 7)
 			dormer(cv, 31, 31, 9, TILE_RED)
 			chimney(cv, 19, 6, 21, 6, STONE, 9)
+		"mina":
+			yard(cv, 32, 57, 29, 6, 4)
+			cast_shadow(cv, 8, 56, 57, 22)
+			# colina de roca con la boca de la galería, vigas de madera, vagoneta con mineral y montón de pepitas
+			var rock := Color(0.52, 0.50, 0.50)
+			var blobs := [Vector3(32, 38, 20), Vector3(15, 44, 11), Vector3(50, 44, 12), Vector3(23, 26, 12), Vector3(41, 27, 11)]
+			for b: Vector3 in blobs:
+				cv.disc(b.x, b.y, b.z + 1.2, INK)
+			for b: Vector3 in blobs:
+				cv.disc(b.x, b.y, b.z, sh(rock, 0.70))
+			for b: Vector3 in blobs:
+				cv.disc(b.x - 1.5, b.y - 2.0, b.z * 0.84, rock)
+			for b: Vector3 in blobs:
+				cv.disc(b.x - 3.0, b.y - 4.0, b.z * 0.46, sh(rock, 1.25))
+			cv.line(28, 22, 24, 34, 0.9, Color(0.10, 0.09, 0.10, 0.7))
+			cv.line(44, 24, 47, 36, 0.9, Color(0.10, 0.09, 0.10, 0.7))
+			moss(cv, 14, 54, 12, 3, 0.7)
+			# galería
+			cv.disc(32, 42.5, 9.6, INK)
+			cv.rect(22.4, 42.5, 19.2, 14.5, INK)
+			cv.disc(32, 42.5, 8.4, Color(0.05, 0.04, 0.04))
+			cv.rect(23.6, 42.5, 16.8, 13.5, Color(0.05, 0.04, 0.04))
+			cv.rect(24.5, 52.0, 15.0, 4.0, Color(0.12, 0.10, 0.08))
+			cv.disc(31, 47, 1.2, Color(0.95, 0.78, 0.25, 0.8))
+			cv.disc(35, 50, 0.9, Color(0.95, 0.78, 0.25, 0.7))
+			# marco de madera
+			for px: float in [21.0, 40.0]:
+				cv.rect(px - 0.6, 37.0, 4.2, 20.0, INK)
+				cv.rect(px, 37.6, 3.0, 19.0, WOOD)
+				cv.rect(px, 37.6, 1.0, 19.0, sh(WOOD, 1.3))
+			cv.rect(18.6, 34.0, 26.8, 5.0, INK)
+			cv.rect(19.2, 34.6, 25.6, 3.6, WOOD)
+			cv.rect(19.2, 34.6, 25.6, 1.0, sh(WOOD, 1.3))
+			cv.line(24, 45, 29, 38.4, 1.4, sh(WOOD, 0.8))
+			cv.line(40, 45, 35, 38.4, 1.4, sh(WOOD, 0.8))
+			torch(cv, 17.5, 46)
+			# vías hasta el borde
+			cv.line(28.5, 52, 24.5, 63, 1.0, Color(0.34, 0.30, 0.28))
+			cv.line(35.5, 52, 39.5, 63, 1.0, Color(0.34, 0.30, 0.28))
+			for ty: float in [55.0, 59.0]:
+				var k: float = (ty - 52.0) / 11.0
+				cv.rect(28.5 - 4.0 * k - 2.0, ty, 7.0 + 8.0 * k, 1.4, sh(WOOD, 0.9))
+			# vagoneta con mineral
+			cv.ell(48, 56.5, 7, 2, Color(0, 0, 0, 0.28))
+			cv.rect(41.5, 49.4, 13, 7.4, INK)
+			cv.rect(42.2, 50.2, 11.6, 5.8, PLANK)
+			cv.rect(42.2, 50.2, 11.6, 1.2, sh(PLANK, 1.3))
+			cv.disc(44.5, 57, 2.0, INK)
+			cv.disc(44.5, 57, 1.3, Color(0.44, 0.44, 0.48))
+			cv.disc(51.5, 57, 2.0, INK)
+			cv.disc(51.5, 57, 1.3, Color(0.44, 0.44, 0.48))
+			for g: Vector3 in [Vector3(44.5, 49.4, 2.5), Vector3(48.5, 48.4, 3.0), Vector3(52.0, 49.6, 2.3)]:
+				cv.disc(g.x, g.y, g.z, Color(0.50, 0.38, 0.08))
+				cv.disc(g.x - 0.4, g.y - 0.5, g.z * 0.82, Color(0.95, 0.78, 0.22))
+				cv.disc(g.x - 0.9, g.y - 1.0, g.z * 0.36, Color(1.0, 0.96, 0.62))
+			# montón de pepitas y un pico
+			for g: Vector3 in [Vector3(11, 57, 2.4), Vector3(15, 58, 2.0), Vector3(13, 55.4, 2.0)]:
+				cv.disc(g.x, g.y, g.z + 0.5, INK)
+				cv.disc(g.x, g.y, g.z, Color(0.95, 0.78, 0.22))
+				cv.disc(g.x - 0.6, g.y - 0.7, g.z * 0.4, Color(1.0, 0.96, 0.62))
+			cv.line(7.5, 49, 12, 60, 1.2, sh(WOOD, 0.85))
+			cv.line(4.5, 51.5, 11, 49.2, 1.4, Color(0.55, 0.57, 0.62))
 		"almacen":
 			yard(cv, 32, 57, 29, 6, 2)
 			cast_shadow(cv, 8, 50, 56, 24)
@@ -1160,6 +1222,9 @@ static func paint_team(cv: Cv, type: String, c: Color) -> void:
 			pennant(cv, 40, 2, 16, c, 9.0, 6.0)
 			cv.rect(27.4, 37.0, 6.2, 4.4, INK)
 			cv.rect(28.0, 37.6, 5.0, 3.4, c)
+		"mina":
+			pennant(cv, 47, 6, 20, c, 9.0, 6.0)
+			cv.rect(19.2, 38.0, 25.6, 1.6, c)
 		"almacen":
 			pennant(cv, 40, 4, 18, c, 9.0, 6.0)
 			cv.rect(8, 34.4, 42, 3.0, c)

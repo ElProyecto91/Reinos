@@ -101,7 +101,7 @@ func unit_icon(type: String, team: int) -> Texture2D:
 # ------------------------------------------------------------------ edificios
 
 func _build_buildings() -> void:
-	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64, "monasterio": 96, "castillo": 128, "herreria": 96, "mercado": 96}
+	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64, "monasterio": 96, "castillo": 128, "herreria": 96, "mercado": 96, "mina": 64}
 	for type in sizes:
 		var px: int = sizes[type]
 		var ss := ArtBuildings.SS
@@ -137,7 +137,8 @@ const RES_DEER0 := 13        # ciervo parado / en marcha
 const RES_DEER1 := 14
 const RES_BOAR0 := 15        # jabalí parado / en marcha
 const RES_BOAR1 := 16
-const ATLAS_N := 17
+const RES_SAPLING := 17      # retoño recién plantado (crece a árbol en 90 s)
+const ATLAS_N := 18
 
 func _build_resources() -> void:
 	var atlas := _new_img(RES_CELL * ATLAS_N, RES_CELL)
@@ -159,6 +160,7 @@ func _build_resources() -> void:
 	put.call(RES_DEER1, func(t: Image) -> void: _paint_animal(t, 0, 1))
 	put.call(RES_BOAR0, func(t: Image) -> void: _paint_animal(t, 1, 0))
 	put.call(RES_BOAR1, func(t: Image) -> void: _paint_animal(t, 1, 1))
+	put.call(RES_SAPLING, func(t: Image) -> void: _paint_sapling(t))
 	# bayas y peces se dibujan en 32x32 y se centran en la casilla de 64
 	var small := func(idx: int, painter: Callable) -> void:
 		var s := _new_img(32, 32)
@@ -329,6 +331,30 @@ func _paint_stone(img: Image) -> void:
 	Painter.disc(img, 12, 47, 2.2, Color(0.08, 0.09, 0.11, 0.9))
 	Painter.disc(img, 12, 46.7, 1.8, Painter.shade(rock, 0.8))
 	Painter.ellipse(img, 22, 46, 4, 1.6, Color(0.24, 0.40, 0.20, 0.7))
+
+## Retoño: montoncito de tierra, tutor de madera y un tallo con hojas tiernas.
+func _paint_sapling(img: Image) -> void:
+	Painter.ellipse(img, 33, 47.5, 11, 3.6, Color(0, 0, 0, 0.28))
+	Painter.ellipse(img, 32, 46.5, 9.5, 3.4, Color(0.10, 0.06, 0.03, 0.9))
+	Painter.ellipse(img, 32, 46.0, 8.6, 2.9, Color(0.36, 0.24, 0.13))
+	Painter.ellipse(img, 31, 45.4, 5.0, 1.5, Color(0.48, 0.33, 0.18))
+	# tutor
+	Painter.line(img, 39, 47, 39, 34, 2.4, Color(0.10, 0.07, 0.04, 0.9))
+	Painter.line(img, 39, 47, 39, 34.4, 1.4, Color(0.55, 0.42, 0.24))
+	# tallo
+	Painter.line(img, 32, 46, 32.4, 31, 2.8, Color(0.10, 0.07, 0.04, 0.9))
+	Painter.line(img, 32, 46, 32.4, 31.4, 1.7, Color(0.42, 0.30, 0.16))
+	# hojas: pares a los lados y un brote arriba
+	var leaf := Color(0.40, 0.68, 0.22)
+	var lobes := [Vector3(26.5, 37.5, 4.4), Vector3(38.0, 34.5, 4.2), Vector3(27.5, 31.0, 4.0), Vector3(33.0, 27.0, 4.8), Vector3(37.5, 40.0, 3.4)]
+	for l: Vector3 in lobes:
+		Painter.disc(img, l.x, l.y, l.z + 1.2, LEAF_OUT)
+	for l: Vector3 in lobes:
+		Painter.disc(img, l.x, l.y, l.z, Painter.shade(leaf, 0.72))
+	for l: Vector3 in lobes:
+		Painter.disc(img, l.x - 0.8, l.y - 1.0, l.z * 0.82, leaf)
+	for l: Vector3 in lobes:
+		Painter.disc(img, l.x - 1.5, l.y - 1.9, l.z * 0.42, Painter.shade(leaf, 1.38))
 
 ## Animal de caza mirando a la derecha: kind 0 ciervo, 1 jabalí; f 0 parado, 1 en marcha (patas abiertas).
 func _paint_animal(img: Image, kind: int, f: int) -> void:

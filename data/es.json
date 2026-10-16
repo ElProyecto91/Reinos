@@ -171,6 +171,10 @@
    "En Construir → Defensas (Edad Feudal): murallas (arrastra o toca inicio y final), puertas (por ellas pasan tus unidades y las aliadas) y torres que disparan. Todo esto cuesta piedra: manda aldeanos a picarla. El enemigo rompe murallas y puertas para entrar."
   ],
   [
+   "Plantar y minar",
+   "En Construir → Recursos: «Plantar árbol» (12 de madera) deja un retoño que a los 90 segundos es un árbol con 100 de madera; puedes tener 30 creciendo a la vez y no se plantan pegados a un edificio. La Mina de oro (Edad Feudal, 80 de madera y 70 de piedra, hasta 3 a la vez) se construye y al terminar deja un filón de 400 de oro que los constructores empiezan a picar. Sirve para seguir cuando el bosque o las minas del mapa se agotan."
+  ],
+  [
    "Entrenar",
    "Toca un edificio y usa sus botones. «Reunión» fija dónde aparecen las tropas nuevas."
   ],
@@ -447,5 +451,13 @@
  "stance_line": "Postura: %s",
  "err_nogar": "Ese edificio no admite guarnición (o está lleno)",
  "err_nomarket": "Necesitas un Mercado terminado",
- "err_done": "Esa mejora ya está investigada o en cola"
+ "err_done": "Esa mejora ya está investigada o en cola",
+ "b_arbol": "Plantar árbol",
+ "b_mina": "Mina de oro",
+ "resources": "Recursos",
+ "res_sapling": "retoño",
+ "place_plant_hint": "%s (%s): toca cada casilla de hierba donde quieras plantar.\nA los 90 s será un árbol. Pulsa Listo al terminar.",
+ "err_limit_sapling": "Ya tienes el máximo de retoños creciendo",
+ "err_limit_mine": "Ya tienes el máximo de minas a la vez",
+ "toast_mine_open": "¡Mina abierta! Hay %d de oro por sacar"
 }

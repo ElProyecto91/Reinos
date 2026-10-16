@@ -24,7 +24,8 @@ const R_FISH := 5
 const R_STONE := 6     # cantera: piedra para torres, murallas y castillos
 const R_DEER := 7      # ciervo: caza (comida rápida); vaga por el mapa mientras nadie se acerca
 const R_BOAR := 8      # jabalí: más carne que el ciervo
-const RES_N := 9       # número de tipos de recurso (tamaño de las tablas indexadas por tipo)
+const R_SAPLING := 9   # retoño plantado por un aldeano: no se recolecta; a los 90 s es un árbol (ver Sim._sapling_tick)
+const RES_N := 10      # número de tipos de recurso (tamaño de las tablas indexadas por tipo)
 
 const RES_INFO := {
 	1: {"kind": "wood", "amount": 100, "rate": 0.8},
@@ -35,6 +36,7 @@ const RES_INFO := {
 	6: {"kind": "stone", "amount": 500, "rate": 0.65},
 	7: {"kind": "food", "amount": 140, "rate": 1.5, "animal": true},
 	8: {"kind": "food", "amount": 300, "rate": 1.25, "animal": true},
+	9: {"kind": "wood", "amount": 0, "rate": 0.0, "sapling": true},
 }
 
 ## Recursos sólidos (no se puede pasar por encima): árboles, minas, bayas. Los animales y las granjas no lo son.
@@ -314,6 +316,11 @@ const BUILDINGS := {
 		"size": 3, "hp": 900, "cost": {"wood": 150}, "time": 40.0,
 		"pop": 0, "drop": false, "train": [], "los": 5, "age": 1,
 	},
+	# Mina de oro: se construye y al terminar queda un depósito de oro (MINE_YIELD) que los mismos aldeanos empiezan a picar
+	"mina": {
+		"size": 2, "hp": 300, "cost": {"wood": 80, "stone": 70}, "time": 30.0,
+		"pop": 0, "drop": false, "train": [], "los": 4, "age": 1, "mine": true,
+	},
 	# Mercado: compra y vende comida, madera y piedra a cambio de oro (precios que suben y bajan con el uso)
 	"mercado": {
 		"size": 3, "hp": 1000, "cost": {"wood": 175}, "time": 45.0,
@@ -323,9 +330,24 @@ const BUILDINGS := {
 
 # Granja: recurso de 1 casilla que se coloca al instante (no es edificio).
 const FARM_COST := {"wood": 60}
+# Retoño: como la granja, se coloca al instante en 1 casilla. A los PLANT_GROW pasos de 0,1 s (90 s) es un árbol normal.
+const PLANT_COST := {"wood": 12}
+const PLANT_GROW := 900
+const PLANT_MAX := 30          # retoños a la vez por jugador (los árboles ya crecidos no cuentan)
+# Mina de oro: edificio pequeño que al terminarse se convierte en un depósito de oro finito (MINE_YIELD) en una casilla.
+const MINE_YIELD := 400
+const MINE_MAX := 3            # minas propias a la vez (en obras o con oro por sacar)
+
+## Colocaciones de una casilla que se hacen al instante, sin edificio: la granja y el retoño.
+static func is_plot(type: String) -> bool:
+	return type == "granja" or type == "arbol"
+
+static func plot_cost(type: String) -> Dictionary:
+	return PLANT_COST if type == "arbol" else FARM_COST
 
 # Orden de los botones de construcción
 const BUILD_MENU := ["casa", "granja", "almacen", "mercado", "puerto", "centro"]
+const RESOURCE_MENU := ["arbol", "mina"]
 const MILITARY_MENU := ["cuartel", "arqueria", "establo", "taller", "herreria", "monasterio"]
 const DEFENSE_MENU := ["muralla", "puerta", "torre", "castillo"]
 const WALL_MAX_LINE := 40

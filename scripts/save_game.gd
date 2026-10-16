@@ -393,6 +393,7 @@ static func restore(data: Dictionary) -> Sim:
 				s.fauna_at[fi] = ad2
 	else:
 		s._init_fauna()
+	s._init_plants()        # retoños y minas creadas: se deducen del mapa (rtype/rowner)
 	return s
 
 static func _make_ent(ed: Dictionary, s: Sim) -> Ent:

@@ -39,6 +39,7 @@ const ERR_POP := -14        # no cabe en la población
 const ERR_NOMARKET := -15   # hace falta un mercado terminado
 const ERR_DONE := -16       # esa mejora ya está investigada o en cola
 const ERR_NOGAR := -17      # ese edificio no admite guarnición
+const ERR_LIMIT := -18      # ya tienes el máximo de retoños o de minas a la vez
 
 # Posturas de combate (Ent.stance)
 const ST_AGGR := 0          # persigue a lo que vea (lo de siempre)
@@ -123,6 +124,8 @@ var zones: Array = []                   # zonas de fuego activas (habilidad de l
 var fauna: Array = []                   # animales de caza: {i: casilla, home: casilla de origen, fx: salida (px), t0/t1: paseo, nx: próximo paseo, face}
 var fauna_at: Dictionary = {}           # casilla -> registro de fauna (los mismos diccionarios que en `fauna`)
 var up_mods: Array = []                 # por jugador: efecto de sus mejoras ya convertido en multiplicadores (no se guarda; ver _build_ups)
+var saplings: Array = []                # casillas con retoño (en ramt queda lo que falta para ser árbol, en pasos); se rehace al cargar
+var mines: Array = []                   # casillas de oro creadas por jugadores con una mina (rowner = dueño); se rehace al cargar
 
 # ------------------------------------------------------------------ preparación
 
@@ -770,6 +773,9 @@ func _spawn_building(type: String, owner: int, tile: Vector2i, complete: bool) -
 	return e
 
 func _on_building_complete(b: Ent, announce: bool) -> void:
+	if bool(b.def.get("mine", false)):
+		_convert_mine(b)
+		return
 	var p: Player = players[b.owner]
 	if b.def.get("gate", false):
 		# la puerta terminada deja de ser sólida: pasan los aliados; al enemigo lo frena _follow
@@ -779,6 +785,30 @@ func _on_building_complete(b: Ent, announce: bool) -> void:
 	p.pop_cap = mini(Defs.MAX_POP, p.pop_cap + _bld_pop(b))
 	if announce:
 		_ev({"t": "built", "pos": b.pos, "owner": b.owner, "type": b.type})
+
+## La mina terminada deja de ser un edificio: queda un depósito de oro (MINE_YIELD) en su casilla de arriba a la
+## izquierda, el resto de la obra vuelve a ser suelo libre y los albañiles se ponen a picar.
+func _convert_mine(b: Ent) -> void:
+	var keep := b.tile
+	for dy in b.size:
+		for dx in b.size:
+			var t := b.tile + Vector2i(dx, dy)
+			occ[t.y * W + t.x] = 0
+			if t != keep:
+				set_solid(t, false)
+	var ki := keep.y * W + keep.x
+	rtype[ki] = Defs.R_GOLD
+	ramt[ki] = Defs.MINE_YIELD
+	rowner[ki] = b.owner
+	chunk_cnt[Defs.R_GOLD][((ki / W) / 8) * cw + (ki % W) / 8] += 1
+	mines.append(ki)
+	b.alive = false
+	b.progress = 1.0
+	dead.append(b)
+	for u in units:
+		if u.alive and u.target_id == b.id and (u.state == S_BUILD or u.state == S_BUILD_GO):
+			_assign_gather(u, keep, "gold")
+	_ev({"t": "mine_open", "pos": tile_center(keep), "owner": b.owner, "tile": keep})
 
 # ------------------------------------------------------------------ búsqueda espacial
 
@@ -1614,6 +1644,8 @@ func cmd_gather(pidx: int, ids: Array, tile: Vector2i) -> void:
 	var rt := rtype[idx]
 	if rt == 0:
 		return
+	if rt == Defs.R_SAPLING:
+		return
 	if rt == Defs.R_FARM and rowner[idx] != pidx:
 		return
 	var kind: String = Defs.RES_INFO[rt]["kind"]
@@ -1662,6 +1694,8 @@ func cmd_build(pidx: int, ids: Array, type: String, tile: Vector2i) -> int:
 			if other.x >= 0:
 				_assign_gather(vs[i], other, "food")
 		return OK
+	if type == "arbol":
+		return _plant(pidx, tile)
 	if not Defs.BUILDINGS.has(type):
 		return ERR_INVALID
 	var d: Dictionary = Defs.BUILDINGS[type]
@@ -1671,6 +1705,8 @@ func cmd_build(pidx: int, ids: Array, type: String, tile: Vector2i) -> int:
 		return ERR_AGE
 	if not Defs.can_afford(p.res, d["cost"]):
 		return ERR_COST
+	if d.get("mine", false) and mine_count(pidx) >= Defs.MINE_MAX:
+		return ERR_LIMIT
 	if not can_place(type, tile, pidx):
 		return ERR_PLACE
 	if not can_reach_building(tile_of(vs[0].pos), type, tile):
@@ -1771,9 +1807,63 @@ func can_place_farm(tile: Vector2i) -> bool:
 	var idx := tile.y * W + tile.x
 	return solid[idx] == 0 and rtype[idx] == 0 and occ[idx] == 0 and terrain[idx] != Defs.T_WATER
 
+## ¿Se puede plantar un retoño aquí? Hierba libre, sin nadie encima y sin edificios pegados (así un árbol al crecer
+## nunca tapa la puerta de un edificio ni encierra a los aldeanos).
+func can_plant(tile: Vector2i) -> bool:
+	if not in_bounds(tile):
+		return false
+	var idx := tile.y * W + tile.x
+	if solid[idx] != 0 or rtype[idx] != 0 or occ[idx] != 0 or terrain[idx] != Defs.T_GRASS:
+		return false
+	for dd: Vector2i in DIR8:
+		var q := tile + dd
+		if in_bounds(q) and occ[q.y * W + q.x] != 0:
+			return false
+	return true
+
+func sapling_count(pidx: int) -> int:
+	var n := 0
+	for i: int in saplings:
+		if rowner[i] == pidx:
+			n += 1
+	return n
+
+## Minas del jugador: depósitos creados que aún tienen oro más obras de mina sin terminar.
+func mine_count(pidx: int) -> int:
+	var n := 0
+	for i: int in mines:
+		if rowner[i] == pidx:
+			n += 1
+	for b in buildings:
+		if b.alive and b.owner == pidx and b.progress < 1.0 and bool(b.def.get("mine", false)):
+			n += 1
+	return n
+
+func _plant(pidx: int, tile: Vector2i) -> int:
+	var p: Player = players[pidx]
+	if not Defs.can_afford(p.res, Defs.PLANT_COST):
+		return ERR_COST
+	if sapling_count(pidx) >= Defs.PLANT_MAX:
+		return ERR_LIMIT
+	if not can_plant(tile):
+		return ERR_PLACE
+	if not query(tile_center(tile), 0.6 * Defs.TILE).is_empty():
+		return ERR_PLACE
+	Defs.pay(p.res, Defs.PLANT_COST)
+	var idx := tile.y * W + tile.x
+	rtype[idx] = Defs.R_SAPLING
+	ramt[idx] = Defs.PLANT_GROW
+	rowner[idx] = pidx
+	chunk_cnt[Defs.R_SAPLING][((idx / W) / 8) * cw + (idx % W) / 8] += 1
+	saplings.append(idx)
+	_ev({"t": "planted", "pos": tile_center(tile), "owner": pidx, "tile": tile})
+	return OK
+
 func can_place(type: String, tile: Vector2i, pidx: int = -1) -> bool:
 	if type == "granja":
 		return can_place_farm(tile)
+	if type == "arbol":
+		return can_plant(tile)
 	var size: int = Defs.BUILDINGS[type]["size"]
 	for dy in size:
 		for dx in size:
@@ -1954,6 +2044,7 @@ func step() -> void:
 		if b.alive:
 			_update_building(b)
 	_fauna_tick()
+	_sapling_tick()
 	_update_players()
 	if not zones.is_empty():
 		_zones_tick()
@@ -2371,6 +2462,49 @@ func _move_formation(us: Array, tile: Vector2i, attack_move: bool, fm: int) -> v
 # ------------------------------------------------------------------ caza, mercado y mejoras
 
 const DIR8 := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1)]
+
+## Rehace las listas de retoños y de minas creadas desde el mapa (al cargar una partida).
+func _init_plants() -> void:
+	saplings.clear()
+	mines.clear()
+	for i in W * H:
+		if rtype[i] == Defs.R_SAPLING:
+			saplings.append(i)
+		elif rtype[i] == Defs.R_GOLD and rowner[i] != 255:
+			mines.append(i)
+
+## Cada retoño envejece un paso por segundo de juego (se reparte entre 5 pasos) y al llegar a 0 se vuelve árbol, salvo
+## que haya alguien encima: entonces espera 3 s y vuelve a intentarlo.
+func _sapling_tick() -> void:
+	var n := saplings.size()
+	if n == 0:
+		return
+	var grown: Array = []
+	var k := step_count % 5
+	while k < n:
+		var idx: int = saplings[k]
+		k += 5
+		ramt[idx] -= 5
+		if ramt[idx] <= 0:
+			grown.append(idx)
+	for idx: int in grown:
+		_sapling_grow(idx)
+
+func _sapling_grow(idx: int) -> void:
+	var t := Vector2i(idx % W, idx / W)
+	for o in query(tile_center(t), 0.7 * Defs.TILE):
+		if o.alive and not o.is_building:
+			ramt[idx] = 30
+			return
+	saplings.erase(idx)
+	var ci := ((idx / W) / 8) * cw + (idx % W) / 8
+	chunk_cnt[Defs.R_SAPLING][ci] -= 1
+	chunk_cnt[Defs.R_TREE][ci] += 1
+	rtype[idx] = Defs.R_TREE
+	ramt[idx] = int(Defs.RES_INFO[Defs.R_TREE]["amount"])
+	rowner[idx] = 255
+	set_solid(t, true)
+	_ev({"t": "grown", "tile": t})
 
 ## Registra los animales que trae el mapa (cada uno recuerda su casilla de origen para no alejarse demasiado de ella).
 func _init_fauna() -> void:
@@ -3125,6 +3259,8 @@ func _deplete(idx: int) -> void:
 	farm_slots.erase(idx)
 	if Defs.is_animal(rt):
 		_fauna_remove(idx)
+	if rt == Defs.R_GOLD and not mines.is_empty():
+		mines.erase(idx)
 	if rt == Defs.R_FISH:
 		wsol[idx] = 0
 		astar_w.set_point_solid(Vector2i(idx % W, idx / W), false)
@@ -3442,7 +3578,7 @@ func _spawn_trained(b: Ent) -> void:
 		elif naval:
 			if is_free_water(b.rally, water_comp_at(tile_of(u.pos))):
 				cmd_move(b.owner, [u.id], b.rally)
-		elif utype == "aldeano" and rtype[idx] != 0 and rtype[idx] != Defs.R_FISH and (rtype[idx] != Defs.R_FARM or rowner[idx] == b.owner):
+		elif utype == "aldeano" and rtype[idx] != 0 and rtype[idx] != Defs.R_FISH and rtype[idx] != Defs.R_SAPLING and (rtype[idx] != Defs.R_FARM or rowner[idx] == b.owner):
 			_assign_gather(u, b.rally, kind_of_tile(b.rally))
 		else:
 			cmd_move(b.owner, [u.id], b.rally)

@@ -1,12 +1,13 @@
 extends Node
 ## Capturas de las mecánicas nuevas: caza, piedra, herrería y mejoras, mercado y guarnición.
-## Uso: xvfb-run -a godot --path . res://tools/mech_shot.tscn --rendering-driver opengl3 --resolution 1280x720 -- shot=/tmp/m.png mode=hunt|stone|forge|market|garrison seed=4 zoom=1.5
+## Uso: xvfb-run -a godot --path . res://tools/mech_shot.tscn --rendering-driver opengl3 --resolution 1280x720 -- shot=/tmp/m.png mode=hunt|stone|forge|market|garrison|plant|mine seed=4 zoom=1.5
 var game: Game
 var _started := false
 var shot_path := "/tmp/mech.png"
 var mode := "forge"
 var zoom_v := 1.5
 var seed_v := 4
+var grid_resource := false
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -100,6 +101,90 @@ func _run() -> void:
 		cam = st
 		for j in 220:
 			sim.step()
+	elif mode == "plant":
+		p.age = 0
+		p.res["wood"] = 400
+		# un calvero de hierba (poca arboleda natural) para que se distingan los plantados
+		var c0 := base
+		var best_n := 1 << 30
+		for dy in range(-20, 21):
+			for dx in range(-20, 21):
+				var q := base + Vector2i(dx, dy)
+				if absi(dx) < 6 and absi(dy) < 6:
+					continue
+				if not sim.can_plant(q) or sim.comp[q.y * sim.W + q.x] != sim.comp[base.y * sim.W + base.x]:
+					continue
+				var n := 0
+				for yy in range(q.y - 6, q.y + 7):
+					for xx in range(q.x - 6, q.x + 7):
+						if sim.in_bounds(Vector2i(xx, yy)) and (sim.rtype[yy * sim.W + xx] != 0 or sim.terrain[yy * sim.W + xx] == Defs.T_WATER):
+							n += 1
+				if n < best_n:
+					best_n = n
+					c0 = q
+		print("INFO calvero en ", c0, " con ", best_n, " casillas ocupadas alrededor")
+		var alm0 := _spot(sim, "almacen", h, c0, 3, Vector2i(-5, 0))
+		var vs0: Array = []
+		for i in 3:
+			vs0.append(sim._spawn_unit("aldeano", h, sim.nearest_free_tile(c0 + Vector2i(-3 + i, 4), 5)).id)
+		var spots0: Array[Vector2i] = []
+		for r in range(2, 9):
+			for dy in range(-r, r + 1):
+				for dx in range(-r, r + 1):
+					var q := c0 + Vector2i(dx, dy)
+					if maxi(absi(dx), absi(dy)) == r and dx % 2 == 0 and dy % 2 == 0 and spots0.size() < 16 and sim.can_plant(q) and sim.query(sim.tile_center(q), 40.0).is_empty():
+						spots0.append(q)
+		for k in 8:
+			sim.cmd_build(h, vs0, "arbol", spots0[k])
+		for j in 700:
+			sim.step()
+		for k in range(8, 16):
+			sim.cmd_build(h, vs0, "arbol", spots0[k])
+		for j in 330:
+			sim.step()
+		print("INFO retoños aún: ", sim.saplings.size())
+		for i in 3:
+			sim.cmd_gather(h, [vs0[i]], spots0[i])
+		for j in 60:
+			sim.step()
+		sel = []
+		for i in 3:
+			sel.append(sim.get_ent(vs0[i]))
+		grid_resource = true
+		cam = c0 + Vector2i(0, 1)
+	elif mode == "mine":
+		p.age = 1
+		p.res = {"food": 400, "wood": 700, "gold": 20, "stone": 400}
+		var alm1 := _spot(sim, "almacen", h, base, 6, Vector2i(8, 4))
+		var vsA: Array = []
+		var vsB: Array = []
+		for i in 3:
+			vsA.append(sim._spawn_unit("aldeano", h, sim.nearest_free_tile(alm1.tile + Vector2i(-3 + i, 4), 5)).id)
+			vsB.append(sim._spawn_unit("aldeano", h, sim.nearest_free_tile(alm1.tile + Vector2i(4 + i, 4), 5)).id)
+		var siteA := Vector2i(-1, -1)
+		var siteB := Vector2i(-1, -1)
+		for r in range(3, 12):
+			for dy in range(-r, r + 1):
+				for dx in range(-r, r + 1):
+					var q := alm1.tile + Vector2i(dx, dy)
+					if maxi(absi(dx), absi(dy)) != r or not sim.can_place("mina", q, h) or not sim.can_reach_building(sim.tile_of((sim.get_ent(vsA[0]) as Ent).pos), "mina", q):
+						continue
+					if siteA.x < 0 and dx < 0:
+						siteA = q
+					elif siteB.x < 0 and dx > 3:
+						siteB = q
+		print("INFO minas en ", siteA, siteB)
+		sim.cmd_build(h, vsA, "mina", siteA)
+		for j in 400:
+			sim.step()
+		sim.cmd_build(h, vsB, "mina", siteB)
+		for j in 130:
+			sim.step()
+		sel = []
+		for i in 3:
+			sel.append(sim.get_ent(vsB[i]))
+		grid_resource = true
+		cam = Vector2i((siteA.x + siteB.x) / 2, (siteA.y + siteB.y) / 2 + 1)
 	elif mode == "garrison":
 		var tw := _spot(sim, "torre", h, base, 5, Vector2i(6, 0))
 		var sold: Array = []
@@ -130,6 +215,8 @@ func _run() -> void:
 		cam = base + Vector2i(0, 1)
 		for j in 10:
 			sim.step()
+	game._consume_events()      # con el juego en pausa nadie consume los eventos: sin esto el mapa de casillas no ve retoños ni minas nuevos
+	game.fx.clear()             # y los textos «+100» de los depósitos de ese minuto no deben quedar flotando en la captura
 	game.fog.update(sim, h)
 	game.cam_pos = sim.tile_center(cam)
 	game.zoom = zoom_v
@@ -143,6 +230,8 @@ func _run() -> void:
 	game._dirty = 3
 	for j in 5:
 		await get_tree().process_frame
+	if grid_resource:
+		game.hud.grid_mode = "resource"
 	game.hud.refresh_now()
 	await get_tree().create_timer(0.5).timeout
 	get_viewport().get_texture().get_image().save_png(shot_path)

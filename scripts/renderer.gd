@@ -625,8 +625,12 @@ static func _draw_ghost(g: Game, c: CanvasItem) -> void:
 		return
 	var ok := g.sim.can_place(type, g.place_tile, g.human)
 	var col := Color(0.2, 1.0, 0.3, 0.35) if ok else Color(1.0, 0.2, 0.2, 0.4)
-	if type == "granja":
+	if Defs.is_plot(type):
 		var r := Rect2(Vector2(g.place_tile) * T, Vector2(T, T))
+		if type == "arbol":
+			# retoño en transparencia sobre la casilla (el dibujo del atlas es de 64 px centrado en ella)
+			var cell := float(Art.RES_CELL)
+			c.draw_texture_rect_region(g.art.res_atlas, Rect2(r.position + Vector2(T, T) * 0.5 - Vector2(cell, cell) * 0.5, Vector2(cell, cell)), Rect2(float(Art.RES_SAPLING) * cell, 0.0, cell, cell), Color(1, 1, 1, 0.8))
 		c.draw_rect(r, col, true)
 		c.draw_rect(r, Color(col.r, col.g, col.b, 0.95), false, 2.0)
 		return
