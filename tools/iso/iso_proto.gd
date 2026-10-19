@@ -15,6 +15,7 @@ var shot_path := "/tmp/iso_proto.png"
 var zoom_v := 1.35
 var seed_v := 4
 var scene_v := "ref"
+var lego_style := false
 var off := Vector2(3, 0)     # desplazamiento del centro de la vista respecto del sitio elegido
 var site := Vector2i(64, 64)
 var shadow_tex: Texture2D
@@ -42,6 +43,9 @@ func _ready() -> void:
 		elif a.begins_with("cy="): off.y = float(a.substr(3))
 		elif a.begins_with("scene="): scene_v = a.substr(6)
 		elif a.begins_with("sprites="): sprites_dir = a.substr(8)
+		elif a.begins_with("style="): lego_style = a.substr(6) == "lego"
+	if lego_style and sprites_dir == "/tmp/iso_sprites":
+		sprites_dir = "/tmp/iso_sprites_lego"
 	anchors = JSON.parse_string(FileAccess.get_file_as_string(sprites_dir + "/anchors.json"))
 	sim = Sim.new()
 	sim.setup({"size": 128, "seed": seed_v, "events": false, "players": [
@@ -182,6 +186,7 @@ func _build_scene() -> void:
 	mat.shader = load("res://tools/iso/terrain_iso.gdshader")
 	mat.set_shader_parameter("tile_px", float(Defs.TILE))
 	mat.set_shader_parameter("tm", 0.0)
+	mat.set_shader_parameter("lego", 1.0 if lego_style else 0.0)
 	road_img = Image.create(sim.W, sim.H, false, Image.FORMAT_R8)
 	if scene_v == "ref":
 		_paint_roads()

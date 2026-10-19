@@ -17,6 +17,7 @@ uniform float tm = 0.0;     // reloj de animación: lo escribe el juego sólo cu
 uniform vec2 iso = vec2(32.0, 16.0);   // medio rombo de casilla en píxeles (ancho/2, alto/2): proyección isométrica 2:1
 uniform sampler2D road : filter_linear, repeat_disable;   // 1 píxel por casilla: 1 = camino empedrado
 uniform float use_road = 0.0;
+uniform float lego = 0.0;   // 1 = estilo ladrillo: colores planos por casilla, tacos, agua y costa en bloques
 uniform float full = 1.0;   // 0 = perfil Ahorro: sin relieve ni sombras de montaña (4 lecturas menos)
 
 varying vec2 wp;
@@ -34,6 +35,10 @@ void vertex() {
 
 void fragment() {
 	vec2 q = wp / tile_px;                       // coordenadas en casillas
+	vec2 qf = q;
+	if (lego > 0.5) {
+		q = floor(q) + 0.5;                      // todo el contenido de una casilla se muestrea en su centro: color plano por casilla
+	}
 	vec2 uv = q / map_size;
 	vec4 d = texture(data, uv);
 	float s = (d.r - 0.5) * 16.0;                // + tierra, - agua
@@ -47,6 +52,7 @@ void fragment() {
 	vec3 f = texture(nz2, q * 0.9).rgb;          // grano fino
 
 	float t = tm * anim;
+	float roadm = 0.0;
 	float coast = s + (b.r - 0.5) * 0.70 + (c.g - 0.5) * 0.30;
 	vec3 col;
 
@@ -85,6 +91,9 @@ void fragment() {
 		float tuft = smoothstep(0.44, 0.80, g1.g) - smoothstep(0.46, 0.82, g2.b);
 		grass *= 1.0 + 0.20 * tuft;
 		grass = mix(grass, grass * vec3(1.12, 1.15, 0.78), smoothstep(0.58, 0.88, g1.r) * 0.35);
+		if (lego > 0.5) {
+			grass = mix(vec3(0.16, 0.60, 0.15), vec3(0.30, 0.72, 0.20), smoothstep(0.40, 0.60, b.r));
+		}
 		grass = mix(grass, vec3(0.46, 0.36, 0.22), smoothstep(0.70, 0.80, a.b + c.b * 0.10) * 0.55);  // tierra
 		float hn = heat + (a.g - 0.5) * 0.10 + (f.r - 0.5) * 0.012;   // el ruido fino evita bandas
 		float snow_f = 1.0 - smoothstep(0.20, 0.34, hn);
@@ -148,7 +157,7 @@ void fragment() {
 			float rd = texture(road, uv).r;
 			float em = rd + (b.g - 0.5) * 0.55 + (c.r - 0.5) * 0.40 + (f.g - 0.5) * 0.15;
 			float rm = smoothstep(0.40, 0.50, em) * smoothstep(0.0, 0.5, coast);
-			vec2 cp = q * 3.4;
+			vec2 cp = qf * (lego > 0.5 ? 1.7 : 3.4);
 			float row = floor(cp.y);
 			vec2 cq = vec2(cp.x + 0.5 * mod(row, 2.0), cp.y);
 			vec2 id = floor(cq);
@@ -159,10 +168,24 @@ void fragment() {
 			cob *= 0.90 + 0.18 * c.g;
 			cob = mix(cob, cob * 0.42, gap);
 			cob = mix(cob, land * 0.80, (1.0 - smoothstep(0.50, 0.70, em)) * 0.65);   // el borde se funde con la hierba
+			roadm = rm;
 			land = mix(land, cob, rm);
 		}
 		col = land;
 	}
 	col *= 0.96 + 0.08 * f.r;
+	if (lego > 0.5) {
+		// tacos de plástico: disco claro con brillo arriba a la izquierda, borde oscuro y sombra corta a la derecha;
+		// los caminos son placas lisas (sin tacos) y entre casillas hay una junta fina
+		vec2 lf = fract(qf) - 0.5;
+		float r = length(lf);
+		float top = smoothstep(0.31, 0.28, r) * (1.0 - roadm);
+		float hl = smoothstep(0.26, 0.0, length(lf - vec2(-0.07, -0.05)));
+		float rim = smoothstep(0.20, 0.30, r) * top;
+		float sdw = smoothstep(0.36, 0.27, length(lf - vec2(0.08, 0.06))) * (1.0 - top) * (1.0 - roadm);
+		col *= 1.0 + 0.24 * hl * top - 0.18 * rim;
+		col *= 1.0 - 0.22 * sdw;
+		col *= 1.0 - 0.10 * smoothstep(0.455, 0.49, max(abs(lf.x), abs(lf.y)));
+	}
 	COLOR = vec4(col, 1.0);
 }

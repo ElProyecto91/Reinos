@@ -23,6 +23,7 @@ func _ready() -> void:
 		if a.begins_with("out="): out_dir = a.substr(4)
 		elif a.begins_with("only="): only = a.substr(5).split(",")
 		elif a.begins_with("teams="): teams = a.substr(6).split(",")
+		elif a.begins_with("style="): IsoModels.lego = a.substr(6) == "lego"
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	_log("ready")
 	_setup()

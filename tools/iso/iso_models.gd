@@ -4,7 +4,47 @@ extends RefCounted
 ## texturas generadas por código: piedra, yeso, madera, tejas, hojas). 1 unidad de mundo = 1 casilla.
 ## El origen (0,0,0) es el centro de la huella del objeto, a nivel del suelo; +x y +z son los dos ejes de la rejilla.
 
+## Estilo "ladrillo de plástico": texturas planas con juntas, materiales brillantes, tacos en las superficies planas,
+## personas de bloques y paleta saturada. Se activa con `IsoModels.lego = true` antes de construir los modelos.
+static var lego := false
+
 # ------------------------------------------------------------------ texturas (128x128, sin costura)
+
+## Colores de plástico: más saturados y algo más claros que los realistas.
+static func _pop(c: Color) -> Color:
+	return Color.from_hsv(c.h, minf(1.0, c.s * 1.4 + (0.05 if c.s > 0.15 else 0.0)), minf(1.0, c.v * 1.06))
+
+## Hileras de ladrillos de plástico: cada ladrillo un tono plano, junta fina y oscura, hileras desfasadas.
+static func _lego_bricks(seed_v: int, base: Color, bw: int = 32, bh: int = 16) -> ImageTexture:
+	var n := 128
+	base = _pop(base)
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	img.fill(_mul(base, 0.50))
+	for r in n / bh:
+		var off := bw / 2 if r % 2 == 1 else 0
+		for k in n / bw + 1:
+			var tone := rng.randf_range(0.95, 1.05)
+			var x0 := k * bw - off
+			for yy in range(r * bh + 1, r * bh + bh - 1):
+				for xx in range(x0 + 1, x0 + bw - 1):
+					var bev := 1.10 if (yy == r * bh + 1 or xx == x0 + 1) else (0.88 if (yy == r * bh + bh - 2 or xx == x0 + bw - 2) else 1.0)
+					img.set_pixel(posmod(xx, n), yy, _mul(base, tone * bev))
+	return _to_tex(img)
+
+static func _lego_flat(seed_v: int, base: Color, line_every: int = 0) -> ImageTexture:
+	var n := 128
+	base = _pop(base)
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var a := _noise_img(seed_v, 0.03)
+	for y in n:
+		for x in n:
+			var v := 1.0 + (a.get_pixel(x, y).r - 0.5) * 0.05
+			if line_every > 0 and (y % line_every) >= line_every - 2:
+				v *= 0.72
+			img.set_pixel(x, y, _mul(base, v))
+	return _to_tex(img)
 
 static func _noise_img(seed_v: int, freq: float) -> Image:
 	var nz := FastNoiseLite.new()
@@ -24,6 +64,8 @@ static func _to_tex(img: Image) -> ImageTexture:
 
 ## Sillares: hileras de bloques con juntas oscuras y biselado.
 static func tex_stone(seed_v: int, base: Color) -> ImageTexture:
+	if lego:
+		return _lego_bricks(seed_v, base)
 	var n := 128
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var rng := RandomNumberGenerator.new()
@@ -59,6 +101,8 @@ static func tex_stone(seed_v: int, base: Color) -> ImageTexture:
 	return _to_tex(img)
 
 static func tex_plaster(seed_v: int, base: Color) -> ImageTexture:
+	if lego:
+		return _lego_bricks(seed_v, base, 32, 16)
 	var n := 128
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var a := _noise_img(seed_v, 0.03)
@@ -71,6 +115,8 @@ static func tex_plaster(seed_v: int, base: Color) -> ImageTexture:
 
 ## Tablas verticales con veta.
 static func tex_wood(seed_v: int, base: Color) -> ImageTexture:
+	if lego:
+		return _lego_bricks(seed_v, base, 16, 128)
 	var n := 128
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var rng := RandomNumberGenerator.new()
@@ -90,6 +136,8 @@ static func tex_wood(seed_v: int, base: Color) -> ImageTexture:
 
 ## Tejas: hileras desfasadas, sombra bajo cada hilera.
 static func tex_roof(seed_v: int, base: Color) -> ImageTexture:
+	if lego:
+		return _lego_flat(seed_v, base, 16)
 	var n := 128
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var rng := RandomNumberGenerator.new()
@@ -115,6 +163,8 @@ static func tex_roof(seed_v: int, base: Color) -> ImageTexture:
 	return _to_tex(img)
 
 static func tex_leaf(seed_v: int, base: Color) -> ImageTexture:
+	if lego:
+		return _lego_flat(seed_v, base)
 	var n := 128
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var a := _noise_img(seed_v, 0.05)
@@ -126,6 +176,8 @@ static func tex_leaf(seed_v: int, base: Color) -> ImageTexture:
 	return _to_tex(img)
 
 static func tex_bark(seed_v: int, base: Color) -> ImageTexture:
+	if lego:
+		return _lego_flat(seed_v, base)
 	var n := 128
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var a := _noise_img(seed_v, 0.06)
@@ -144,15 +196,17 @@ static func tmat(tex: Texture2D, per_unit: float, tint: Color = Color.WHITE, rou
 	m.albedo_color = tint
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3(per_unit, per_unit, per_unit)
-	m.roughness = rough
+	m.roughness = 0.30 if lego else rough
+	if lego:
+		m.metallic_specular = 0.75
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return m
 
 static func fmat(col: Color, rough: float = 0.85, spec: float = 0.5) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_color = col
-	m.roughness = rough
-	m.metallic_specular = spec
+	m.albedo_color = _pop(col) if lego else col
+	m.roughness = 0.28 if lego else rough
+	m.metallic_specular = 0.75 if lego else spec
 	return m
 
 static func _add(parent: Node3D, mesh: Mesh, pos: Vector3, m: Material) -> MeshInstance3D:
@@ -162,6 +216,18 @@ static func _add(parent: Node3D, mesh: Mesh, pos: Vector3, m: Material) -> MeshI
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
+
+## Tacos de ladrillo sobre una cara superior plana (c = centro de la cara, y = altura de la cara). Sólo en estilo ladrillo.
+static func _studs(parent: Node3D, c: Vector3, hw: float, hd: float, m: Material, pitch: float = 0.26) -> void:
+	if not lego or hw < 0.05 or hd < 0.05:
+		return
+	var nx := maxi(1, int(floor(hw * 2.0 / pitch)))
+	var nz := maxi(1, int(floor(hd * 2.0 / pitch)))
+	for i in nx:
+		for j in nz:
+			var x := c.x - hw + (float(i) + 0.5) * hw * 2.0 / float(nx)
+			var z := c.z - hd + (float(j) + 0.5) * hd * 2.0 / float(nz)
+			cyl(parent, 0.075, 0.075, 0.055, Vector3(x, c.y + 0.0275, z), m, 12)
 
 static func box(parent: Node3D, size: Vector3, pos: Vector3, m: Material) -> MeshInstance3D:
 	var bm := BoxMesh.new()
@@ -362,6 +428,9 @@ static func roble(variant: int) -> Node3D:
 	# 0-3 verdes; 4-6 otoño (naranja, ocre, dorado)
 	var bases := [Color(0.24, 0.46, 0.16), Color(0.30, 0.50, 0.17), Color(0.20, 0.42, 0.18), Color(0.34, 0.46, 0.15),
 		Color(0.78, 0.42, 0.10), Color(0.66, 0.34, 0.10), Color(0.80, 0.64, 0.16)]
+	if lego:
+		bases = [Color(0.12, 0.58, 0.20), Color(0.28, 0.68, 0.16), Color(0.08, 0.50, 0.22), Color(0.42, 0.68, 0.14),
+			Color(0.96, 0.48, 0.06), Color(0.82, 0.30, 0.08), Color(0.98, 0.78, 0.08)]
 	var base: Color = bases[variant % bases.size()]
 	var leaf_d := tmat(tex_leaf(40 + variant, base), 1.6, Color.WHITE, 0.95)
 	var leaf_l := tmat(tex_leaf(44 + variant, _mul(base, 1.14)), 1.6, Color.WHITE, 0.95)
@@ -380,7 +449,7 @@ static func roble(variant: int) -> Node3D:
 		var y := 1.12 - 0.34 * f + rng.randf_range(-0.05, 0.05) - rr * 0.30
 		var pos := Vector3(cos(ang) * rr, y, sin(ang) * rr) * s
 		var light := (y > 0.98) or (pos.x < -0.05)
-		lump(root, r * s, pos, leaf_l if light else leaf_d, 900 + variant * 13 + k, 0.34)
+		lump(root, r * s, pos, leaf_l if light else leaf_d, 900 + variant * 13 + k, 0.12 if lego else 0.34)
 		if k < 4:   # ramas que suben del tronco hacia los lóbulos bajos
 			var br := Node3D.new()
 			root.add_child(br)
@@ -394,6 +463,8 @@ static func roble(variant: int) -> Node3D:
 static func pino(variant: int) -> Node3D:
 	var root := Node3D.new()
 	var base := Color(0.12, 0.34, 0.22) if variant % 2 == 0 else Color(0.14, 0.38, 0.20)
+	if lego:
+		base = Color(0.06, 0.46, 0.24) if variant % 2 == 0 else Color(0.10, 0.52, 0.22)
 	var leaf := tmat(tex_leaf(60 + variant, base), 1.8, Color.WHITE, 0.95)
 	var bark := tmat(tex_bark(70 + variant, Color(0.34, 0.23, 0.13)), 3.0)
 	cyl(root, 0.05, 0.09, 0.50, Vector3(0, 0.25, 0), bark, 10)
@@ -413,7 +484,7 @@ static func roca(variant: int, gold: bool) -> Node3D:
 	var specs := [Vector4(0, 0.30, 0, 0.46), Vector4(-0.40, 0.20, 0.22, 0.30), Vector4(0.42, 0.22, 0.12, 0.32), Vector4(-0.10, 0.20, -0.40, 0.30), Vector4(0.12, 0.50, -0.10, 0.28)]
 	var k := 0
 	for l: Vector4 in specs:
-		lump(root, l.w, Vector3(l.x, l.y, l.z), stone, 400 + variant * 7 + k, 0.35, 0.80)
+		lump(root, l.w, Vector3(l.x, l.y, l.z), stone, 400 + variant * 7 + k, 0.14 if lego else 0.35, 0.80)
 		k += 1
 	if gold:
 		var g := fmat(Color(0.98, 0.78, 0.14), 0.22, 0.9)
@@ -425,6 +496,8 @@ static func roca(variant: int, gold: bool) -> Node3D:
 
 ## Persona articulada (mira hacia +z). kind: "aldeano" o "espadachin". phase en [0,1): ciclo de marcha; -1 = parado.
 static func persona(kind: String, team: Color, phase: float) -> Node3D:
+	if lego:
+		return persona_bloques(kind, team, phase)
 	var root := Node3D.new()
 	var skin := fmat(Color(0.88, 0.69, 0.53), 0.8, 0.3)
 	# aldeano: ropa natural con el color del equipo sólo en cinturón y pañuelo; espadachín: sobrevesta del equipo y mangas de malla
@@ -505,6 +578,17 @@ static func persona(kind: String, team: Color, phase: float) -> Node3D:
 # ------------------------------------------------------------------ fortificaciones
 
 static func _stone_set(seed_v: int) -> Dictionary:
+	if lego:
+		return {
+			"wall": tmat(tex_stone(seed_v, Color(0.62, 0.64, 0.68)), 1.3),
+			"dark": tmat(tex_stone(seed_v + 1, Color(0.36, 0.38, 0.43)), 1.3),
+			"light": tmat(tex_stone(seed_v + 2, Color(0.78, 0.79, 0.81)), 1.3),
+			"trim": fmat(Color(0.96, 0.72, 0.08), 0.3, 0.7),
+			"ivy": fmat(Color(0.16, 0.62, 0.22), 0.3, 0.7),
+			"slit": fmat(Color(0.04, 0.04, 0.06), 0.9, 0.1),
+			"floor": tmat(tex_stone(seed_v + 4, Color(0.42, 0.44, 0.48)), 1.6),
+			"wood": tmat(tex_wood(seed_v + 5, Color(0.50, 0.30, 0.14)), 1.6),
+		}
 	return {
 		"wall": tmat(tex_stone(seed_v, Color(0.50, 0.50, 0.53)), 1.3),
 		"dark": tmat(tex_stone(seed_v + 1, Color(0.36, 0.36, 0.39)), 1.3),
@@ -569,6 +653,7 @@ static func _sq_tower(parent: Node3D, c: Vector3, w: float, h: float, S: Diction
 	crown.position = c
 	parent.add_child(crown)
 	_rim(crown, (w + 0.24) * 0.5 - 0.065, (w + 0.24) * 0.5 - 0.065, ytop + 0.05, S.light)
+	_studs(parent, c + Vector3(0, ytop + 0.065, 0), w * 0.5 - 0.06, w * 0.5 - 0.06, S.floor)
 	_slits(parent, c, hw, [0.9, 1.5], S)
 	_ivy(parent, c + Vector3(-hw * 0.50, 0.75, hw + 0.01), w * 0.24, 0, S, 301)
 	_ivy(parent, c + Vector3(hw + 0.01, 0.62, hw * 0.35), w * 0.20, 1, S, 302)
@@ -617,6 +702,7 @@ static func _wall_block(parent: Node3D, S: Dictionary, sx: float, h: float, sz: 
 	var along_x := sx >= sz
 	var L := sx if along_x else sz
 	var T := sz if along_x else sx
+	_studs(parent, pos + Vector3(0, h + 0.05, 0), (L - 0.12) * 0.5 if along_x else 0.10, 0.10 if along_x else (L - 0.12) * 0.5, S.floor)
 	var n := maxi(2, 2 * int(round(L / 0.30)))
 	for i in n + 1:
 		if i % 2 == 0:
@@ -754,4 +840,54 @@ static func catapulta(team: Color) -> Node3D:
 	box(arm, Vector3(0.22, 0.10, 0.22), Vector3(0, 0.98, 0), wood_d)
 	ball(arm, 0.10, Vector3(0, 1.06, 0), tmat(tex_stone(272, Color(0.55, 0.55, 0.58)), 3.0))
 	box(root, Vector3(0.36, 0.05, 0.30), Vector3(0.28, 0.375, 0), tm_)
+	return root
+
+## Persona de bloques (estilo ladrillo): piernas, torso y brazos en cajas, cabeza cilíndrica; extremidades rígidas que giran en el pivote.
+## Genérica a propósito: no copia el diseño de ninguna figurita comercial.
+static func persona_bloques(kind: String, team: Color, phase: float) -> Node3D:
+	var root := Node3D.new()
+	var skin := fmat(Color(0.96, 0.74, 0.22))
+	var tunic := fmat(team) if kind == "espadachin" else fmat(Color(0.80, 0.62, 0.34))
+	var trousers := fmat(Color(0.16, 0.20, 0.34) if kind == "espadachin" else Color(0.36, 0.26, 0.16))
+	var steel := fmat(Color(0.62, 0.64, 0.70))
+	var dark := fmat(Color(0.14, 0.12, 0.12))
+	var swing := 0.0 if phase < 0.0 else sin(phase * TAU)
+	var bob := 0.0 if phase < 0.0 else absf(sin(phase * TAU)) * 0.02
+	var body := Node3D.new()
+	body.position = Vector3(0, bob, 0)
+	body.scale = Vector3(1.12, 1.12, 1.12)
+	root.add_child(body)
+	for side in [-1, 1]:
+		var hip := Node3D.new()
+		hip.position = Vector3(side * 0.075, 0.38, 0)
+		hip.rotation_degrees.x = swing * 30.0 * float(side)
+		body.add_child(hip)
+		box(hip, Vector3(0.12, 0.34, 0.13), Vector3(0, -0.17, 0), trousers)
+		box(hip, Vector3(0.12, 0.05, 0.17), Vector3(0, -0.345, 0.02), dark)
+	box(body, Vector3(0.31, 0.30, 0.17), Vector3(0, 0.53, 0), tunic)
+	box(body, Vector3(0.32, 0.045, 0.18), Vector3(0, 0.40, 0), dark)
+	if kind == "aldeano":
+		box(body, Vector3(0.12, 0.30, 0.01), Vector3(0, 0.53, 0.09), fmat(team))   # delantal con el color del equipo
+	cyl(body, 0.095, 0.095, 0.14, Vector3(0, 0.77, 0), skin, 16)
+	box(body, Vector3(0.05, 0.014, 0.01), Vector3(0, 0.78, 0.095), dark)
+	if kind == "espadachin":
+		cyl(body, 0.108, 0.108, 0.09, Vector3(0, 0.86, 0), steel, 16)
+		box(body, Vector3(0.03, 0.09, 0.14), Vector3(0, 0.93, -0.01), fmat(Color(0.86, 0.10, 0.10)))
+	else:
+		cyl(body, 0.16, 0.16, 0.02, Vector3(0, 0.84, 0), fmat(Color(0.92, 0.80, 0.34)), 16)
+		cyl(body, 0.085, 0.085, 0.08, Vector3(0, 0.89, 0), fmat(Color(0.90, 0.78, 0.32)), 16)
+	for side in [-1, 1]:
+		var sh := Node3D.new()
+		sh.position = Vector3(side * 0.195, 0.66, 0)
+		sh.rotation_degrees.x = -swing * 28.0 * float(side)
+		body.add_child(sh)
+		box(sh, Vector3(0.075, 0.26, 0.09), Vector3(0, -0.12, 0), tunic)
+		cyl(sh, 0.045, 0.045, 0.07, Vector3(0, -0.27, 0), skin, 12)
+		if kind == "espadachin" and side == 1:
+			box(sh, Vector3(0.035, 0.04, 0.44), Vector3(0, -0.28, 0.22), steel)
+			box(sh, Vector3(0.14, 0.03, 0.03), Vector3(0, -0.28, 0.02), dark)
+		if kind == "espadachin" and side == -1:
+			box(sh, Vector3(0.04, 0.24, 0.18), Vector3(-0.08, -0.18, 0.04), fmat(team))
+		if kind == "aldeano" and side == 1:
+			box(sh, Vector3(0.03, 0.30, 0.03), Vector3(0.02, -0.36, 0.08), fmat(Color(0.40, 0.26, 0.12)))
 	return root
