@@ -15,9 +15,17 @@ uniform float tile_px = 32.0;
 uniform float anim = 1.0;   // 0 = agua quieta (ahorro), 1 = olas y destellos
 uniform float tm = 0.0;     // reloj de animación: lo escribe el juego sólo cuando corre (TIME obligaría a dibujar siempre, incluso en pausa)
 uniform vec2 iso = vec2(32.0, 16.0);   // medio rombo de casilla en píxeles (ancho/2, alto/2): proyección isométrica 2:1
+uniform sampler2D road : filter_linear, repeat_disable;   // 1 píxel por casilla: 1 = camino empedrado
+uniform float use_road = 0.0;
 uniform float full = 1.0;   // 0 = perfil Ahorro: sin relieve ni sombras de montaña (4 lecturas menos)
 
 varying vec2 wp;
+
+float hash21(vec2 p) {
+	p = fract(p * vec2(123.34, 456.21));
+	p += dot(p, p + 45.32);
+	return fract(p.x * p.y);
+}
 
 void vertex() {
 	// VERTEX está en píxeles de pantalla isométrica; se deshace la proyección para obtener coordenadas de casilla
@@ -68,9 +76,15 @@ void fragment() {
 		col = mix(col, vec3(0.94, 0.98, 1.0), foam);
 	} else {
 		// ---------------------------------------------------------------- tierra
-		vec3 grass = mix(vec3(0.26, 0.51, 0.19), vec3(0.40, 0.62, 0.23), smoothstep(0.35, 0.65, b.r));
-		grass = mix(grass, vec3(0.52, 0.58, 0.27), smoothstep(0.55, 0.80, a.g) * 0.55);   // hierba seca
+		vec3 grass = mix(vec3(0.30, 0.55, 0.17), vec3(0.45, 0.66, 0.21), smoothstep(0.35, 0.65, b.r));
+		grass = mix(grass, vec3(0.64, 0.64, 0.27), smoothstep(0.52, 0.78, a.g) * 0.60);   // hierba seca
 		grass *= 0.90 + 0.20 * c.r;
+		// trazos de hierba: dos capas de ruido estiradas en direcciones distintas, claras y oscuras
+		vec3 g1 = texture(nz2, q * vec2(2.6, 1.1) + 0.17).rgb;
+		vec3 g2 = texture(nz2, q * vec2(1.2, 3.0) + 0.53).rgb;
+		float tuft = smoothstep(0.44, 0.80, g1.g) - smoothstep(0.46, 0.82, g2.b);
+		grass *= 1.0 + 0.20 * tuft;
+		grass = mix(grass, grass * vec3(1.12, 1.15, 0.78), smoothstep(0.58, 0.88, g1.r) * 0.35);
 		grass = mix(grass, vec3(0.46, 0.36, 0.22), smoothstep(0.70, 0.80, a.b + c.b * 0.10) * 0.55);  // tierra
 		float hn = heat + (a.g - 0.5) * 0.10 + (f.r - 0.5) * 0.012;   // el ruido fino evita bandas
 		float snow_f = 1.0 - smoothstep(0.20, 0.34, hn);
@@ -128,6 +142,24 @@ void fragment() {
 			rc = mix(rc, vec3(0.94, 0.96, 1.0) * clamp(lit, 0.80, 1.10) * (0.94 + 0.06 * c.r), snowy);
 			rc *= 1.0 - 0.38 * (1.0 - smoothstep(0.52, 0.74, rh));       // pie de la montaña, más oscuro
 			land = mix(land, rc, rock);
+		}
+		if (use_road > 0.5) {
+			// camino empedrado: máscara de 1 píxel por casilla, borde roto por el ruido; adoquines en hileras desfasadas
+			float rd = texture(road, uv).r;
+			float em = rd + (b.g - 0.5) * 0.55 + (c.r - 0.5) * 0.40 + (f.g - 0.5) * 0.15;
+			float rm = smoothstep(0.40, 0.50, em) * smoothstep(0.0, 0.5, coast);
+			vec2 cp = q * 3.4;
+			float row = floor(cp.y);
+			vec2 cq = vec2(cp.x + 0.5 * mod(row, 2.0), cp.y);
+			vec2 id = floor(cq);
+			vec2 fc = fract(cq) - 0.5;
+			float hs = hash21(id);
+			float gap = smoothstep(0.36, 0.47, max(abs(fc.x) * 1.05, abs(fc.y) * 1.30));
+			vec3 cob = mix(vec3(0.60, 0.56, 0.50), vec3(0.78, 0.72, 0.62), hs);
+			cob *= 0.90 + 0.18 * c.g;
+			cob = mix(cob, cob * 0.42, gap);
+			cob = mix(cob, land * 0.80, (1.0 - smoothstep(0.50, 0.70, em)) * 0.65);   // el borde se funde con la hierba
+			land = mix(land, cob, rm);
 		}
 		col = land;
 	}

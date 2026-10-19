@@ -359,20 +359,36 @@ static func torre(team: Color) -> Node3D:
 
 static func roble(variant: int) -> Node3D:
 	var root := Node3D.new()
-	var bases := [Color(0.30, 0.52, 0.18), Color(0.38, 0.58, 0.20), Color(0.24, 0.46, 0.20), Color(0.42, 0.50, 0.16)]
+	# 0-3 verdes; 4-6 otoño (naranja, ocre, dorado)
+	var bases := [Color(0.24, 0.46, 0.16), Color(0.30, 0.50, 0.17), Color(0.20, 0.42, 0.18), Color(0.34, 0.46, 0.15),
+		Color(0.78, 0.42, 0.10), Color(0.66, 0.34, 0.10), Color(0.80, 0.64, 0.16)]
 	var base: Color = bases[variant % bases.size()]
-	var leaf := tmat(tex_leaf(40 + variant, base), 1.6, Color.WHITE, 0.95)
+	var leaf_d := tmat(tex_leaf(40 + variant, base), 1.6, Color.WHITE, 0.95)
+	var leaf_l := tmat(tex_leaf(44 + variant, _mul(base, 1.14)), 1.6, Color.WHITE, 0.95)
 	var bark := tmat(tex_bark(50 + variant, Color(0.40, 0.28, 0.16)), 3.0)
-	cyl(root, 0.06, 0.11, 0.62, Vector3(0, 0.31, 0), bark, 10)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 700 + variant
 	var s := rng.randf_range(0.92, 1.12)
-	var lobes := [Vector4(0, 1.00, 0, 0.44), Vector4(-0.26, 0.82, 0.10, 0.31), Vector4(0.28, 0.84, -0.06, 0.32), Vector4(0.04, 0.78, 0.30, 0.30), Vector4(-0.04, 0.80, -0.28, 0.30), Vector4(0.0, 1.30, 0.0, 0.30)]
-	var k := 0
-	for l: Vector4 in lobes:
-		var jit := Vector3(rng.randf_range(-0.05, 0.05), rng.randf_range(-0.04, 0.04), rng.randf_range(-0.05, 0.05))
-		lump(root, l.w * s, Vector3(l.x, l.y, l.z) * s + jit, leaf, 900 + variant * 13 + k, 0.30)
-		k += 1
+	cyl(root, 0.055, 0.115, 0.70, Vector3(0, 0.35, 0), bark, 10)
+	# lóbulos: espiral dorada sobre una cúpula, los de arriba y los del lado de la luz (-x) en el tono claro
+	var n := 10
+	for k in n:
+		var f := (float(k) + 0.5) / float(n)
+		var ang := float(k) * 2.39996
+		var rr := 0.10 + 0.34 * sqrt(f)
+		var r := rng.randf_range(0.20, 0.29) * (1.12 - 0.35 * f)
+		var y := 1.12 - 0.34 * f + rng.randf_range(-0.05, 0.05) - rr * 0.30
+		var pos := Vector3(cos(ang) * rr, y, sin(ang) * rr) * s
+		var light := (y > 0.98) or (pos.x < -0.05)
+		lump(root, r * s, pos, leaf_l if light else leaf_d, 900 + variant * 13 + k, 0.34)
+		if k < 4:   # ramas que suben del tronco hacia los lóbulos bajos
+			var br := Node3D.new()
+			root.add_child(br)
+			var dir := Vector3(pos.x, pos.y - 0.55, pos.z)
+			br.position = Vector3(0, 0.55, 0)
+			var bm := cyl(br, 0.022, 0.034, dir.length(), dir * 0.5, bark, 6)
+			br.basis = Basis(Quaternion(Vector3.UP, dir.normalized()))
+			bm.position = Vector3(0, dir.length() * 0.5, 0)
 	return root
 
 static func pino(variant: int) -> Node3D:
@@ -484,4 +500,258 @@ static func persona(kind: String, team: Color, phase: float) -> Node3D:
 			ball(sh, 0.04, Vector3(-0.10, -0.22, 0.05), steel)
 		if kind == "aldeano" and side == 1:
 			box(sh, Vector3(0.025, 0.28, 0.025), Vector3(0.02, -0.40, 0.08), fmat(Color(0.35, 0.24, 0.12), 0.9, 0.2))
+	return root
+
+# ------------------------------------------------------------------ fortificaciones
+
+static func _stone_set(seed_v: int) -> Dictionary:
+	return {
+		"wall": tmat(tex_stone(seed_v, Color(0.50, 0.50, 0.53)), 1.3),
+		"dark": tmat(tex_stone(seed_v + 1, Color(0.36, 0.36, 0.39)), 1.3),
+		"light": tmat(tex_stone(seed_v + 2, Color(0.56, 0.55, 0.54)), 1.3),
+		"trim": fmat(Color(0.88, 0.52, 0.16), 0.65, 0.35),
+		"ivy": tmat(tex_leaf(seed_v + 3, Color(0.22, 0.46, 0.16)), 2.0, Color.WHITE, 0.95),
+		"slit": fmat(Color(0.04, 0.04, 0.06), 0.9, 0.1),
+		"floor": tmat(tex_stone(seed_v + 4, Color(0.30, 0.30, 0.32)), 1.6),
+		"wood": tmat(tex_wood(seed_v + 5, Color(0.36, 0.23, 0.12)), 1.6),
+	}
+
+## Almenas en el borde de un rectángulo (hw, hd = medias dimensiones), a altura y.
+static func _rim(parent: Node3D, hw: float, hd: float, y: float, m: Material, step: float = 0.30) -> void:
+	var nx := maxi(2, 2 * int(round(hw / step)))
+	var mx := hw * 2.0 / float(nx) * 0.62
+	for i in nx + 1:
+		if i % 2 == 0:
+			var x := -hw + hw * 2.0 * float(i) / float(nx)
+			for sz in [-1, 1]:
+				box(parent, Vector3(mx, 0.17, 0.13), Vector3(x, y + 0.085, sz * hd), m)
+	var nz := maxi(2, 2 * int(round(hd / step)))
+	var mz := hd * 2.0 / float(nz) * 0.62
+	for j in range(2, nz - 1, 2):
+		var z := -hd + hd * 2.0 * float(j) / float(nz)
+		for sx in [-1, 1]:
+			box(parent, Vector3(0.13, 0.17, mz), Vector3(sx * hw, y + 0.085, z), m)
+
+## Almenas en círculo.
+static func _ring_rim(parent: Node3D, r: float, y: float, n: int, m: Material) -> void:
+	for k in n:
+		var a := TAU * (float(k) + 0.5) / float(n)
+		var mi := box(parent, Vector3(0.14, 0.17, TAU * r / float(n) * 0.58), Vector3(cos(a) * r, y + 0.085, sin(a) * r), m)
+		mi.rotation.y = -a
+
+## Mata de hiedra pegada a una pared (cara 0 = +z, 1 = +x).
+static func _ivy(parent: Node3D, pos: Vector3, r: float, face: int, S: Dictionary, seed_v: int) -> void:
+	var mi := lump(parent, r, pos, S.ivy, seed_v, 0.55)
+	mi.scale = Vector3(1.0, 1.35, 0.17) if face == 0 else Vector3(0.17, 1.35, 1.0)
+
+static func _slits(parent: Node3D, c: Vector3, hw: float, ys: Array, S: Dictionary) -> void:
+	for y in ys:
+		box(parent, Vector3(0.06, 0.28, 0.05), c + Vector3(0, y, hw + 0.005), S.slit)
+		box(parent, Vector3(0.05, 0.28, 0.06), c + Vector3(hw + 0.005, y, 0), S.slit)
+
+## Torre cuadrada de sillería: zócalo, fuste, voladizo con matacanes, adarve con almenas.
+static func _sq_tower(parent: Node3D, c: Vector3, w: float, h: float, S: Dictionary) -> float:
+	var hw := w * 0.5
+	box(parent, Vector3(w + 0.12, 0.20, w + 0.12), c + Vector3(0, 0.10, 0), S.dark)
+	box(parent, Vector3(w + 0.16, 0.05, w + 0.16), c + Vector3(0, 0.225, 0), S.trim)
+	var body_h := h - 0.20 - 0.44
+	box(parent, Vector3(w, body_h, w), c + Vector3(0, 0.20 + body_h * 0.5, 0), S.wall)
+	var yb := 0.20 + body_h
+	box(parent, Vector3(w + 0.10, 0.10, w + 0.10), c + Vector3(0, yb + 0.05, 0), S.dark)
+	box(parent, Vector3(w + 0.24, 0.30, w + 0.24), c + Vector3(0, yb + 0.25, 0), S.wall)
+	for k in [-0.28, 0.0, 0.28]:   # matacanes
+		box(parent, Vector3(0.12, 0.10, 0.07), c + Vector3(k * w * 1.4, yb + 0.05, hw + 0.075), S.light)
+		box(parent, Vector3(0.07, 0.10, 0.12), c + Vector3(hw + 0.075, yb + 0.05, k * w * 1.4), S.light)
+	var ytop := yb + 0.40
+	box(parent, Vector3(w + 0.28, 0.05, w + 0.28), c + Vector3(0, ytop + 0.025, 0), S.trim)
+	box(parent, Vector3(w + 0.10, 0.03, w + 0.10), c + Vector3(0, ytop + 0.05, 0), S.floor)
+	var crown := Node3D.new()
+	crown.position = c
+	parent.add_child(crown)
+	_rim(crown, (w + 0.24) * 0.5 - 0.065, (w + 0.24) * 0.5 - 0.065, ytop + 0.05, S.light)
+	_slits(parent, c, hw, [0.9, 1.5], S)
+	_ivy(parent, c + Vector3(-hw * 0.50, 0.75, hw + 0.01), w * 0.24, 0, S, 301)
+	_ivy(parent, c + Vector3(hw + 0.01, 0.62, hw * 0.35), w * 0.20, 1, S, 302)
+	return ytop + 0.05
+
+## Torre cuadrada 2x2 (la torre del juego): fuste de 1.3 de lado, 2.6 de alto.
+static func torre_cuadrada(team: Color) -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(210)
+	var top := _sq_tower(root, Vector3.ZERO, 1.25, 2.6, S)
+	box(root, Vector3(0.34, 0.50, 0.06), Vector3(0.0, 0.20 + 0.25, 0.66), S.wood)
+	_flag(root, Vector3(-0.40, top, -0.40), team, 0.75)
+	return root
+
+## Atalaya: fuste cuadrado con tejado piramidal de pizarra.
+static func atalaya(team: Color) -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(230)
+	var w := 1.10
+	var hw := w * 0.5
+	box(root, Vector3(w + 0.12, 0.20, w + 0.12), Vector3(0, 0.10, 0), S.dark)
+	box(root, Vector3(w + 0.16, 0.05, w + 0.16), Vector3(0, 0.225, 0), S.trim)
+	box(root, Vector3(w, 1.95, w), Vector3(0, 0.20 + 0.975, 0), S.wall)
+	box(root, Vector3(w + 0.20, 0.12, w + 0.20), Vector3(0, 2.21, 0), S.dark)
+	box(root, Vector3(w + 0.20, 0.34, w + 0.20), Vector3(0, 2.44, 0), S.wall)
+	box(root, Vector3(w + 0.30, 0.06, w + 0.30), Vector3(0, 2.64, 0), S.trim)
+	var roof := tmat(tex_roof(231, Color(0.40, 0.36, 0.34)), 1.5)
+	var pyr := cyl(root, 0.0, (w + 0.30) * 0.7071 + 0.02, 1.0, Vector3(0, 2.67 + 0.5, 0), roof, 4)
+	pyr.rotation_degrees.y = 45.0
+	box(root, Vector3(0.20, 0.20, 0.20), Vector3(0, 3.72, 0), S.trim)
+	_slits(root, Vector3.ZERO, hw, [0.9, 1.45], S)
+	box(root, Vector3(0.20, 0.26, 0.03), Vector3(0.0, 2.44, hw + 0.115), S.slit)
+	box(root, Vector3(0.03, 0.26, 0.20), Vector3(hw + 0.115, 2.44, 0.0), S.slit)
+	_ivy(root, Vector3(-0.22, 0.60, hw + 0.02), 0.36, 0, S, 311)
+	_ivy(root, Vector3(hw + 0.02, 1.1, 0.12), 0.30, 1, S, 312)
+	box(root, Vector3(0.34, 0.50, 0.06), Vector3(0.0, 0.20 + 0.25, hw + 0.03), S.wood)
+	_flag(root, Vector3(0, 3.82, 0), team, 0.5)
+	return root
+
+## Bloque de muralla (sx, sz = grosor y largo; h = altura): coronación con almenas en los bordes largos.
+static func _wall_block(parent: Node3D, S: Dictionary, sx: float, h: float, sz: float, pos: Vector3) -> void:
+	box(parent, Vector3(sx + 0.04, 0.14, sz + 0.04), pos + Vector3(0, 0.07, 0), S.dark)
+	box(parent, Vector3(sx + 0.06, 0.035, sz + 0.06), pos + Vector3(0, 0.155, 0), S.trim)
+	box(parent, Vector3(sx, h - 0.17, sz), pos + Vector3(0, 0.17 + (h - 0.17) * 0.5, 0), S.wall)
+	box(parent, Vector3(sx + 0.05, 0.05, sz + 0.05), pos + Vector3(0, h + 0.025, 0), S.light)
+	var along_x := sx >= sz
+	var L := sx if along_x else sz
+	var T := sz if along_x else sx
+	var n := maxi(2, 2 * int(round(L / 0.30)))
+	for i in n + 1:
+		if i % 2 == 0:
+			var u := -L * 0.5 + L * float(i) / float(n)
+			for side in [-1, 1]:
+				var off := float(side) * (T * 0.5 - 0.065)
+				var size := Vector3(L / float(n) * 0.62, 0.17, 0.13) if along_x else Vector3(0.13, 0.17, L / float(n) * 0.62)
+				var p := Vector3(u, h + 0.05 + 0.085, off) if along_x else Vector3(off, h + 0.05 + 0.085, u)
+				box(parent, size, pos + p, S.light)
+
+## Tramo de muralla de una casilla. rot90 = a lo largo de z en vez de x.
+static func muralla(rot90: bool) -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(250)
+	var body := Node3D.new()
+	root.add_child(body)
+	_wall_block(body, S, 1.0, 1.05, 0.50, Vector3.ZERO)
+	body.rotation_degrees.y = 90.0 if rot90 else 0.0
+	return root
+
+## Castillo 4x4: cortina con puerta, cuatro torres, torre del homenaje con torreón redondo.
+static func castillo(team: Color) -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(110)
+	var yard := tmat(tex_plaster(119, Color(0.60, 0.53, 0.38)), 1.2)
+	box(root, Vector3(3.5, 0.06, 3.5), Vector3(0, 0.03, 0), yard)
+	var wh := 1.30
+	_wall_block(root, S, 3.0, wh, 0.50, Vector3(0, 0, -1.55))
+	_wall_block(root, S, 0.50, wh, 3.0, Vector3(-1.55, 0, 0))
+	_wall_block(root, S, 0.50, wh, 3.0, Vector3(1.55, 0, 0))
+	_wall_block(root, S, 1.05, wh, 0.50, Vector3(-0.975, 0, 1.55))
+	_wall_block(root, S, 1.05, wh, 0.50, Vector3(0.975, 0, 1.55))
+	# puerta: dintel, hoja de madera y fondo oscuro
+	box(root, Vector3(0.90, 0.38, 0.52), Vector3(0, wh - 0.19, 1.55), S.wall)
+	box(root, Vector3(0.94, 0.05, 0.56), Vector3(0, wh + 0.025, 1.55), S.light)
+	box(root, Vector3(0.90, 0.92, 0.30), Vector3(0, 0.46, 1.50), S.slit)
+	for sx in [-1, 1]:
+		box(root, Vector3(0.05, 0.86, 0.34), Vector3(sx * 0.46, 0.43, 1.55), S.trim)
+		var leaf := box(root, Vector3(0.40, 0.84, 0.05), Vector3(sx * 0.30, 0.43, 1.79), S.wood)
+		leaf.rotation_degrees.y = float(sx) * -62.0
+	# torres de esquina
+	for sx in [-1, 1]:
+		for sz in [-1, 1]:
+			_sq_tower(root, Vector3(sx * 1.55, 0, sz * 1.55), 1.05, 2.35, S)
+	# torre del homenaje
+	var kc := Vector3(0.0, 0, -0.45)
+	box(root, Vector3(1.90, 0.20, 1.60), kc + Vector3(0, 0.10, 0), S.dark)
+	box(root, Vector3(1.94, 0.04, 1.64), kc + Vector3(0, 0.22, 0), S.trim)
+	box(root, Vector3(1.80, 1.70, 1.50), kc + Vector3(0, 0.20 + 0.85, 0), S.wall)
+	box(root, Vector3(1.98, 0.16, 1.68), kc + Vector3(0, 1.98, 0), S.dark)
+	box(root, Vector3(2.04, 0.05, 1.74), kc + Vector3(0, 2.08, 0), S.trim)
+	box(root, Vector3(1.86, 0.03, 1.56), kc + Vector3(0, 2.10, 0), S.floor)
+	_rim(root, 0.93, 0.78, 2.10, S.light)
+	cyl(root, 0.50, 0.54, 0.90, kc + Vector3(0.28, 2.10 + 0.45, -0.10), S.wall, 24)
+	cyl(root, 0.58, 0.58, 0.16, kc + Vector3(0.28, 3.06, -0.10), S.dark, 24)
+	cyl(root, 0.52, 0.52, 0.04, kc + Vector3(0.28, 3.16, -0.10), S.floor, 24)
+	var ring := Node3D.new()
+	ring.position = kc + Vector3(0.28, 3.16, -0.10)
+	root.add_child(ring)
+	_ring_rim(ring, 0.52, 0.02, 12, S.light)
+	for wx in [-0.55, 0.45]:
+		_window(root, kc + Vector3(wx, 1.15, 0.77), Vector3(0.24, 0.34, 0.03), S.trim)
+		_window(root, kc + Vector3(wx, 1.65, 0.77), Vector3(0.22, 0.26, 0.03), S.trim)
+	for wz in [-0.35, 0.40]:
+		_window(root, kc + Vector3(0.92, 1.30, wz), Vector3(0.03, 0.34, 0.24), S.trim)
+	_ivy(root, kc + Vector3(-0.70, 0.55, 0.77), 0.45, 0, S, 321)
+	_flag(root, kc + Vector3(0.28, 3.20, -0.10), team, 0.9)
+	_flag(root, Vector3(-1.2, 1.35, 1.55), team, 0.9)
+	return root
+
+# ------------------------------------------------------------------ asedio
+
+## Trabuquete (mira a +x): bastidor, dos caballetes en A, brazo con contrapeso y honda.
+static func trabuquete(team: Color) -> Node3D:
+	var root := Node3D.new()
+	var wood := tmat(tex_wood(260, Color(0.64, 0.48, 0.28)), 1.8)
+	var wood_d := tmat(tex_wood(261, Color(0.46, 0.33, 0.18)), 1.8)
+	var tm_ := fmat(team, 0.75, 0.3)
+	var iron := fmat(Color(0.25, 0.25, 0.28), 0.6, 0.5)
+	# bastidor bajo
+	for z in [-0.34, 0.34]:
+		box(root, Vector3(1.60, 0.12, 0.12), Vector3(0.05, 0.08, z), wood_d)
+	for x in [-0.55, 0.0, 0.55]:
+		box(root, Vector3(0.12, 0.10, 0.80), Vector3(x, 0.17, 0), wood_d)
+	# caballetes en A
+	var th := atan2(0.50, 1.05)
+	var plen := sqrt(0.50 * 0.50 + 1.05 * 1.05)
+	for z in [-0.30, 0.30]:
+		for sx in [-1, 1]:
+			var post := box(root, Vector3(0.10, plen, 0.10), Vector3(sx * 0.25, 0.12 + 0.525, z), wood)
+			post.rotation.z = float(sx) * th
+		box(root, Vector3(0.62, 0.07, 0.07), Vector3(0, 0.55, z), wood_d)
+	# eje y brazo (el pivote queda a 1.2 de altura)
+	var pivot := Vector3(0, 1.18, 0)
+	box(root, Vector3(0.07, 0.07, 0.80), pivot, iron)
+	var arm := Node3D.new()
+	arm.position = pivot
+	arm.rotation.z = deg_to_rad(-28.0)   # extremo largo (honda) hacia -x y arriba; contrapeso hacia +x y abajo
+	root.add_child(arm)
+	box(arm, Vector3(0.10, 1.90, 0.12), Vector3(0, 0.0, 0), wood)
+	box(arm, Vector3(0.14, 0.14, 0.16), Vector3(0, 0.95, 0), iron)
+	# contrapeso en el extremo corto (abajo del brazo)
+	box(arm, Vector3(0.34, 0.36, 0.34), Vector3(0, -1.02, 0), wood_d)
+	box(arm, Vector3(0.36, 0.06, 0.36), Vector3(0, -0.82, 0), tm_)
+	box(arm, Vector3(0.36, 0.06, 0.36), Vector3(0, -1.22, 0), tm_)
+	# honda y piedra
+	box(arm, Vector3(0.025, 0.40, 0.025), Vector3(0, 1.15, 0), fmat(Color(0.35, 0.28, 0.2), 0.9, 0.1))
+	ball(arm, 0.09, Vector3(0, 1.38, 0), tmat(tex_stone(262, Color(0.55, 0.55, 0.58)), 3.0))
+	# banderín de equipo en lo alto del caballete
+	box(root, Vector3(0.20, 0.10, 0.02), Vector3(0.0, 1.46, 0.30), tm_)
+	return root
+
+## Catapulta de ruedas (mira a +x): bastidor, cuatro ruedas, brazo con cazoleta.
+static func catapulta(team: Color) -> Node3D:
+	var root := Node3D.new()
+	var wood := tmat(tex_wood(270, Color(0.64, 0.48, 0.28)), 1.8)
+	var wood_d := tmat(tex_wood(271, Color(0.46, 0.33, 0.18)), 1.8)
+	var tm_ := fmat(team, 0.75, 0.3)
+	var iron := fmat(Color(0.25, 0.25, 0.28), 0.6, 0.5)
+	box(root, Vector3(1.10, 0.12, 0.62), Vector3(0, 0.30, 0), wood_d)
+	for sx in [-0.38, 0.38]:
+		for sz in [-1, 1]:
+			var w := cyl(root, 0.19, 0.19, 0.08, Vector3(sx, 0.19, sz * 0.36), wood, 14)
+			w.rotation_degrees.x = 90.0
+			var hub := cyl(root, 0.05, 0.05, 0.12, Vector3(sx, 0.19, sz * 0.36), iron, 8)
+			hub.rotation_degrees.x = 90.0
+	for sz in [-1, 1]:
+		box(root, Vector3(0.10, 0.62, 0.10), Vector3(-0.10, 0.62, sz * 0.24), wood)
+	box(root, Vector3(0.10, 0.10, 0.62), Vector3(-0.10, 0.92, 0), wood_d)
+	var arm := Node3D.new()
+	arm.position = Vector3(-0.10, 0.92, 0)
+	arm.rotation.z = deg_to_rad(-52.0)
+	root.add_child(arm)
+	box(arm, Vector3(0.09, 1.10, 0.10), Vector3(0, 0.40, 0), wood)
+	box(arm, Vector3(0.22, 0.10, 0.22), Vector3(0, 0.98, 0), wood_d)
+	ball(arm, 0.10, Vector3(0, 1.06, 0), tmat(tex_stone(272, Color(0.55, 0.55, 0.58)), 3.0))
+	box(root, Vector3(0.36, 0.05, 0.30), Vector3(0.28, 0.375, 0), tm_)
 	return root
