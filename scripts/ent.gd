@@ -19,6 +19,7 @@ var last_hit: float = -100.0
 var qmark: int = 0
 var off: Vector2 = Vector2.ZERO       # desvío de formación
 var face: int = 1                      # hacia dónde mira (+1 derecha, -1 izquierda); sólo dibujo
+var d8: int = 1                        # dirección de dibujo (0..7 = ángulo lógico / 45°); sólo dibujo
 var naval: bool = false                # barco: sólo se mueve por agua
 var stowed: bool = false               # a bordo de un barco (fuera de la partida hasta desembarcar)
 var cargo: Array = []                  # barco de transporte: unidades (Ent) a bordo

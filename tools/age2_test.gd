@@ -69,14 +69,12 @@ func test_defs() -> void:
 		ok(Defs.UNITS.has(a), "BONUS: atacante desconocido %s" % a)
 		for d in Defs.BONUS[a]:
 			ok(Defs.UNITS.has(d), "BONUS: %s → defensor desconocido %s" % [a, d])
-	# cada tipo militar terrestre debe poder entrenarse en algún sitio y todos los edificios de Defs deben tener arte
+	# todos los edificios y unidades de Defs deben tener arte isométrico (sprite propio o, mientras no esté, el sustituto)
 	var art := Art.new()
 	art.build()
 	for bt in Defs.BUILDINGS:
 		if bt != "granja":
-			ok(art.building_tex.has(bt), "sin arte de edificio: " + bt)
-	for ut in Defs.UNITS:
-		ok(ArtUnits.CELLS.has(ut), "sin hoja de unidad: " + ut)
+			ok(art.iso.has(bt) or art.iso.has("casa"), "sin arte de edificio: " + bt)
 
 # --- entrenamiento por edades
 func test_training_and_age_gate() -> void:

@@ -137,7 +137,7 @@ func _run() -> void:
 	check("el modo sigue activo", game.placing_type == "arbol")
 	check("y se paga la madera", int(p.res["wood"]) == w0 - 12, str(p.res["wood"]))
 	game._consume_events()
-	check("el mapa de casillas recibe el retoño", game.res_layer.get_cell_atlas_coords(spots[0]) == Vector2i(Art.RES_SAPLING, 0), str(game.res_layer.get_cell_atlas_coords(spots[0])))
+	check("el retoño se dibuja", game.view.res_name_at(spots[0]) == "retono_0", game.view.res_name_at(spots[0]))
 	for k in range(1, 3):
 		game.cam_pos = sim.tile_center(spots[k])
 		await frames(2)
@@ -167,10 +167,10 @@ func _run() -> void:
 	check("a los 95 s son árboles en la simulación", all_trees)
 	var painted := true
 	for k in 3:
-		var ac := game.res_layer.get_cell_atlas_coords(spots[k])
-		if ac == Vector2i(Art.RES_SAPLING, 0) or ac.x < 0:
+		var rn: String = game.view.res_name_at(spots[k])
+		if rn == "retono_0" or rn == "":
 			painted = false
-	check("y el mapa de casillas ya dibuja árboles", painted)
+	check("y ya se dibujan como árboles", painted)
 	await goto_resources()
 	sb = find_btn("sapling")
 	check("el contador vuelve a 0/30", sb != null and sb.sub == "0/%d" % Defs.PLANT_MAX, sb.sub if sb != null else "")
@@ -208,7 +208,7 @@ func _run() -> void:
 	var si := site.y * sim.W + site.x
 	check("al terminar hay un filón de oro", sim.rtype[si] == Defs.R_GOLD and int(sim.ramt[si]) > 300)
 	check("la obra ha desaparecido", bld != null and not bld.alive)
-	check("el mapa de casillas dibuja el oro", game.res_layer.get_cell_atlas_coords(site) == Vector2i(Art.RES_GOLD, 0), str(game.res_layer.get_cell_atlas_coords(site)))
+	check("se dibuja el filón de oro", game.view.res_name_at(site) == "oro_0", game.view.res_name_at(site))
 	check("el constructor pica el oro", v1.state == Sim.S_GATHER or v1.state == Sim.S_GATHER_GO or v1.state == Sim.S_RETURN, str(v1.state))
 	game.hud.refresh_now()
 	await frames(3)

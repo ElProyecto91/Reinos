@@ -10,6 +10,7 @@ var vis_list := PackedInt32Array()
 var img: Image
 var tex: ImageTexture
 var _offs: Dictionary = {}
+var _newly := PackedInt32Array()      # casillas exploradas por primera vez desde la última llamada a take_new()
 const A_UNEXPLORED := 1.0
 const A_EXPLORED := 0.5
 
@@ -121,6 +122,7 @@ func _reveal(c: Vector2i, r: int, out: PackedInt32Array) -> void:
 			out.append(idx)
 			if state[idx] != 2:
 				if state[idx] == 0:
+					_newly.append(idx)
 					_sim.explore_known[(ny / Sim.EX_CELL) * _sim.ex_w + nx / Sim.EX_CELL] += 1
 				state[idx] = 2
 				img.set_pixel(nx, ny, Color(0, 0, 0, 0.0))
@@ -137,6 +139,12 @@ func _bind(sim: Sim) -> void:
 		for x in W:
 			if state[y * W + x] != 0:
 				sim.explore_known[row + x / cell] += 1
+
+## Casillas exploradas por primera vez desde la última llamada (las usa la capa de sprites para mostrar los recursos).
+func take_new() -> PackedInt32Array:
+	var r := _newly
+	_newly = PackedInt32Array()
+	return r
 
 func visible_at(t: Vector2i) -> bool:
 	return t.x >= 0 and t.y >= 0 and t.x < W and t.y < H and state[t.y * W + t.x] == 2

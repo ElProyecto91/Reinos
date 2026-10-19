@@ -1,26 +1,18 @@
 class_name Art
 extends RefCounted
-## Sprites generados por código con Painter.
-## sheet(tipo) = hoja de fotogramas (3 capas), unit_icon(tipo, equipo), building_tex[tipo][equipo], res_atlas.
+## Arte del juego. Los sprites del mundo (edificios, unidades, árboles…) son isométricos y vienen horneados de modelos 3D
+## (tools/iso, ver README): `iso` es el atlas. Aquí viven además las texturas pequeñas pintadas por código (sombra,
+## humo, iconos de carga) y los iconos de los menús, que se tiñen con el color del equipo al pedirlos.
 
-const SKIN := Color(0.96, 0.80, 0.62)
-const BROWN := Color(0.45, 0.30, 0.16)
-const OUTLINE := Color(0.08, 0.07, 0.06, 0.9)
-
-var unit_sheets: Dictionary = {}     # tipo -> hoja con mipmaps (se carga la primera vez que hace falta)
-var _icons: Dictionary = {}
-var team_mod: Array[Color] = []        # color con el que se tiñe la capa de equipo de las hojas
-var building_tex: Dictionary = {}
-var res_atlas: ImageTexture
-var farm_tex: Array = []
-var shadow_tex: ImageTexture
+var iso: IsoArt
+var team_mod: Array[Color] = []        # color con el que se tiñen las partes de equipo de los sprites (modulate)
+var shadow_tex: ImageTexture           # elipse difusa bajo las unidades
 var puff_tex: ImageTexture             # disco blanco suave (humo, brillos): se tiñe al dibujar y se agrupa en una sola llamada
 var carry_atlas: ImageTexture          # iconos de carga en fila: oro, comida, madera (pintados a 2x)
 var carry_cell := 0                    # lado en píxeles de cada icono del atlas
-var _rings: Dictionary = {}            # anillos de selección ya pintados (clave = radio y achatamiento)
+var _icons: Dictionary = {}
 const CARRY_SS := 2.0                  # factor de supersampling de los iconos de carga
 const CARRY_HALF := 14.0               # mitad del lado del icono en píxeles de mundo (con k = 1)
-
 
 func build() -> void:
 	for c: Color in Defs.PLAYER_COLORS:
@@ -28,8 +20,7 @@ func build() -> void:
 		var lum := 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
 		var m := Color(lerpf(c.r, lum, 0.10), lerpf(c.g, lum, 0.10), lerpf(c.b, lum, 0.10), 1.0)
 		team_mod.append(Color(minf(1.0, m.r * 1.12), minf(1.0, m.g * 1.12), minf(1.0, m.b * 1.12), 1.0))
-	_build_buildings()
-	_build_resources()
+	iso = IsoArt.new()
 	_build_misc()
 
 func _new_img(w: int, h: int) -> Image:
@@ -37,429 +28,45 @@ func _new_img(w: int, h: int) -> Image:
 	img.fill(Color(0, 0, 0, 0))
 	return img
 
-# ------------------------------------------------------------------ unidades
+# ------------------------------------------------------------------ iconos de menús
 
-## Las hojas de unidades se dibujan una vez con tools/bake_units.gd y viajan como PNG (res://art/units).
-## Si no existe el PNG (o aún no está importado) se pintan en el momento con ArtUnits.
-func sheet(type: String) -> Texture2D:
-	var t: Texture2D = unit_sheets.get(type)
-	if t != null:
-		return t
-	var img: Image = null
-	var path := "res://art/units/%s.png" % type
-	if ResourceLoader.exists(path):
-		var src := load(path) as Texture2D
-		if src != null:
-			img = src.get_image()
-			if img != null and img.get_format() != Image.FORMAT_RGBA8:
-				img.convert(Image.FORMAT_RGBA8)
-	if img == null:
-		img = ArtUnits.build_sheet(type)
-	img.generate_mipmaps()
-	t = ImageTexture.create_from_image(img)
-	unit_sheets[type] = t
-	return t
-
-## Icono cuadrado (64x64) de una unidad con el color de un equipo, para menús e informes.
+## Icono cuadrado de una unidad con el color de un equipo, para menús e informes.
 func unit_icon(type: String, team: int) -> Texture2D:
-	var key := "%s#%d" % [type, team]
+	return _icon("ic_" + type, team)
+
+## Icono cuadrado de un edificio con el color de un equipo.
+func building_icon(type: String, team: int) -> Texture2D:
+	return _icon("ic_" + type, team)
+
+func _icon(name: String, team: int) -> Texture2D:
+	var key := "%s#%d" % [name, team % 4]
 	var t: Texture2D = _icons.get(key)
 	if t != null:
 		return t
-	var sh := sheet(type).get_image()
-	var cp := ArtUnits.cell_px(type)
-	var layers: Array[Image] = []
-	for l in 3:
-		layers.append(sh.get_region(ArtUnits.frame_rect(type, 0, l)))
-	var tc: Color = Defs.PLAYER_COLORS[team % 4]
-	var tm := layers[1]
-	for y in tm.get_height():
-		for x in tm.get_width():
-			var p := tm.get_pixel(x, y)
-			if p.a > 0.0:
-				tm.set_pixel(x, y, Color(minf(1.0, p.r * tc.r * 1.15), minf(1.0, p.g * tc.g * 1.15), minf(1.0, p.b * tc.b * 1.15), p.a))
-	var out := Image.create(cp.x, cp.y, false, Image.FORMAT_RGBA8)
-	out.fill(Color(0, 0, 0, 0))
-	for l in 3:
-		out.blend_rect(layers[l], Rect2i(0, 0, cp.x, cp.y), Vector2i.ZERO)
-	var used := out.get_used_rect()
-	if used.size.x < 2 or used.size.y < 2:
-		used = Rect2i(0, 0, cp.x, cp.y)
-	var crop := out.get_region(used)
-	var side := 64
-	var k := minf(float(side - 4) / float(crop.get_width()), float(side - 4) / float(crop.get_height()))
-	var w := maxi(1, int(round(crop.get_width() * k)))
-	var h := maxi(1, int(round(crop.get_height() * k)))
-	crop.resize(w, h, Image.INTERPOLATE_LANCZOS)
-	var icon := Image.create(side, side, false, Image.FORMAT_RGBA8)
-	icon.fill(Color(0, 0, 0, 0))
-	icon.blend_rect(crop, Rect2i(0, 0, w, h), Vector2i((side - w) / 2, (side - h) / 2))
-	t = ImageTexture.create_from_image(icon)
+	var img := iso.icon_image(name, team_mod[team % 4])
+	if img == null:
+		img = _placeholder_icon(Defs.PLAYER_COLORS[team % 4])
+	t = ImageTexture.create_from_image(img)
 	_icons[key] = t
 	return t
 
-# ------------------------------------------------------------------ edificios
+func _placeholder_icon(col: Color) -> Image:
+	var img := _new_img(64, 64)
+	Painter.disc(img, 32, 32, 22, Color(0.1, 0.1, 0.1, 0.8))
+	Painter.disc(img, 32, 32, 19, col)
+	return img
 
-func _build_buildings() -> void:
-	var sizes := {"centro": 96, "casa": 64, "almacen": 64, "cuartel": 96, "arqueria": 96, "establo": 96, "taller": 96, "puerto": 96, "torre": 64, "muralla": 64, "puerta": 64, "monasterio": 96, "castillo": 128, "herreria": 96, "mercado": 96, "mina": 64}
-	for type in sizes:
-		var px: int = sizes[type]
-		var ss := ArtBuildings.SS
-		var base := _new_img(px * ss, px * ss)
-		ArtBuildings.paint_base(ArtBuildings.Cv.new(base, float(ss)), type)
-		building_tex[type] = []
-		for team in 4:
-			var img := base.duplicate() as Image
-			ArtBuildings.paint_team(ArtBuildings.Cv.new(img, float(ss)), type, Defs.PLAYER_COLORS[team])
-			img.generate_mipmaps()
-			building_tex[type].append(ImageTexture.create_from_image(img))
-
-# ------------------------------------------------------------------ recursos
-# Cada casilla del atlas mide 64x64 (el doble que la rejilla): el pie del árbol cae en la parte
-# baja de la casilla y la copa sobresale hacia arriba. El mapa de casillas dibuja por filas,
-# así que los árboles de abajo tapan correctamente a los de arriba.
-
-const RES_CELL := 64
-const TREE_OAK_A := 0
-const TREE_OAK_B := 1
-const TREE_PINE := 2
-const RES_GOLD := 3
-const RES_BERRY := 4
-const RES_FISH0 := 5
-const RES_FISH1 := 6
-const TREE_SNOW := 7
-const TREE_PALM := 8
-const TREE_DRY := 9
-const TREE_AUTUMN := 10
-const TREE_PINE_B := 11
-const RES_STONE := 12
-const RES_DEER0 := 13        # ciervo parado / en marcha
-const RES_DEER1 := 14
-const RES_BOAR0 := 15        # jabalí parado / en marcha
-const RES_BOAR1 := 16
-const RES_SAPLING := 17      # retoño recién plantado (crece a árbol en 90 s)
-const TREE_OAK_C := 18       # más robles, pinos y nieve: variantes de color, tamaño y posición en la casilla
-const TREE_OAK_D := 19
-const TREE_OAK_E := 20
-const TREE_PINE_C := 21
-const TREE_SNOW_B := 22
-const TREE_AUTUMN_B := 23
-const ATLAS_N := 24
-
-func _build_resources() -> void:
-	var atlas := _new_img(RES_CELL * ATLAS_N, RES_CELL)
-	var put := func(idx: int, painter: Callable) -> void:
-		var t := _new_img(RES_CELL, RES_CELL)
-		painter.call(t)
-		atlas.blit_rect(t, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i(idx * RES_CELL, 0))
-	put.call(TREE_OAK_A, func(t: Image) -> void: _paint_oak(t, 0))
-	put.call(TREE_OAK_B, func(t: Image) -> void: _paint_oak(t, 1))
-	put.call(TREE_AUTUMN, func(t: Image) -> void: _paint_oak(t, 2))
-	put.call(TREE_PINE, func(t: Image) -> void: _paint_pine(t, false, 0))
-	put.call(TREE_PINE_B, func(t: Image) -> void: _paint_pine(t, false, 1))
-	put.call(TREE_SNOW, func(t: Image) -> void: _paint_pine(t, true, 0))
-	put.call(TREE_OAK_C, func(t: Image) -> void: _paint_oak(t, 3))
-	put.call(TREE_OAK_D, func(t: Image) -> void: _paint_oak(t, 4))
-	put.call(TREE_OAK_E, func(t: Image) -> void: _paint_oak(t, 5))
-	put.call(TREE_AUTUMN_B, func(t: Image) -> void: _paint_oak(t, 6))
-	put.call(TREE_PINE_C, func(t: Image) -> void: _paint_pine(t, false, 2))
-	put.call(TREE_SNOW_B, func(t: Image) -> void: _paint_pine(t, true, 3))
-	put.call(TREE_PALM, func(t: Image) -> void: _paint_palm(t))
-	put.call(TREE_DRY, func(t: Image) -> void: _paint_dry(t))
-	put.call(RES_GOLD, func(t: Image) -> void: _paint_gold(t))
-	put.call(RES_STONE, func(t: Image) -> void: _paint_stone(t))
-	put.call(RES_DEER0, func(t: Image) -> void: _paint_animal(t, 0, 0))
-	put.call(RES_DEER1, func(t: Image) -> void: _paint_animal(t, 0, 1))
-	put.call(RES_BOAR0, func(t: Image) -> void: _paint_animal(t, 1, 0))
-	put.call(RES_BOAR1, func(t: Image) -> void: _paint_animal(t, 1, 1))
-	put.call(RES_SAPLING, func(t: Image) -> void: _paint_sapling(t))
-	# bayas y peces se dibujan en 32x32 y se centran en la casilla de 64
-	var small := func(idx: int, painter: Callable) -> void:
-		var s := _new_img(32, 32)
-		painter.call(s)
-		var t := _new_img(RES_CELL, RES_CELL)
-		t.blit_rect(s, Rect2i(0, 0, 32, 32), Vector2i(16, 16))
-		atlas.blit_rect(t, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i(idx * RES_CELL, 0))
-	small.call(RES_BERRY, func(s: Image) -> void: _paint_berry(s))
-	small.call(RES_FISH0, func(s: Image) -> void: _paint_fish(s, 0))
-	small.call(RES_FISH1, func(s: Image) -> void: _paint_fish(s, 1))
-	atlas.generate_mipmaps()
-	res_atlas = ImageTexture.create_from_image(atlas)
-
-const LEAF_OUT := Color(0.03, 0.10, 0.04, 0.85)
-
-func _trunk(img: Image, x: float, y0: float, y1: float, w: float, col: Color) -> void:
-	Painter.rect(img, x - w * 0.5 - 1.0, y0, w + 2.0, y1 - y0, Color(0.1, 0.07, 0.04, 0.9))
-	Painter.rect(img, x - w * 0.5, y0, w, y1 - y0, col)
-	Painter.rect(img, x - w * 0.5, y0, maxf(1.2, w * 0.35), y1 - y0, Painter.shade(col, 1.3))
-	Painter.rect(img, x + w * 0.5 - 1.4, y0, 1.4, y1 - y0, Painter.shade(col, 0.7))
-
-# Variantes de árbol: color, tamaño y desplazamiento dentro de la casilla (rompen la cuadrícula del bosque).
-const OAK_BASES := [Color(0.15, 0.37, 0.14), Color(0.23, 0.44, 0.14), Color(0.58, 0.40, 0.10), Color(0.17, 0.41, 0.17), Color(0.28, 0.46, 0.14), Color(0.11, 0.31, 0.14), Color(0.64, 0.30, 0.10)]
-const OAK_SCALE := [1.0, 0.94, 1.0, 1.08, 0.88, 1.02, 0.96]
-const OAK_OFF := [Vector2(0, 0), Vector2(-3, 1), Vector2(2, 0), Vector2(3, -1), Vector2(-2, 2), Vector2(1, -2), Vector2(-3, 0)]
-const PINE_BASES := [Color(0.10, 0.33, 0.20), Color(0.08, 0.28, 0.17), Color(0.13, 0.36, 0.17), Color(0.09, 0.30, 0.22)]
-const PINE_TIERS := [4, 5, 4, 5]
-const PINE_HW := [1.0, 0.92, 1.08, 1.0]
-const PINE_OFF_X := [0.0, -2.0, 2.0, 1.0]
-const WOOD_PAL := [Color(0.15, 0.09, 0.06), Color(0.40, 0.27, 0.14), Color(0.62, 0.46, 0.27)]
-const SNOW_PAL := [Color(0.58, 0.68, 0.86), Color(0.90, 0.94, 0.99), Color(1.0, 1.0, 1.0)]
-const GOLD_PAL := [Color(0.40, 0.24, 0.02), Color(0.96, 0.76, 0.12), Color(1.0, 0.94, 0.52)]
-
-## Roble: copa de lóbulos esféricos con mechones de hojas, luz del noroeste y sombra suave hacia el sureste.
-func _paint_oak(img: Image, v: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 100 + v * 37
-	var base: Color = OAK_BASES[v]
-	var s: float = OAK_SCALE[v]
-	var off: Vector2 = OAK_OFF[v]
-	Painter.ellipse(img, 38.0 + off.x, 47.5 + off.y, 21.0 * s, 6.6, Color(0, 0, 0, 0.14))
-	Painter.ellipse(img, 36.0 + off.x, 47.0 + off.y, 15.0 * s, 4.8, Color(0, 0, 0, 0.20))
-	var vol := ArtVolume.new(RES_CELL, RES_CELL)
-	vol.cylinder(32.0 + off.x, 31.0 + off.y, 47.5 + off.y, 2.6, 3.9, -100.0, 1.0, 2)
-	var lobes := [Vector3(32, 22, 14), Vector3(20.5, 28, 10), Vector3(43.5, 28, 10.5), Vector3(26, 13, 9.5), Vector3(38.5, 14, 9.0), Vector3(32, 32, 10.0)]
-	for l: Vector3 in lobes:
-		var lx: float = 32.0 + (l.x - 32.0) * s + off.x + rng.randf_range(-1.6, 1.6)
-		var ly: float = 26.0 + (l.y - 26.0) * s + off.y + rng.randf_range(-1.4, 1.4)
-		vol.sphere(lx, ly, ly * 0.30, l.z * s * rng.randf_range(0.92, 1.10), 1.0 + rng.randf_range(-0.05, 0.05), 1)
-	vol.clumps(110, rng, 2.0, 3.8, 0.22, 1)
-	vol.grain(rng, 0.07)
-	var top: Image = vol.render([[], ArtVolume.pal(base, 0.26, 1.16), WOOD_PAL], {}, 17.0 + off.y, 44.0 + off.y, 0.46, Color(0.03, 0.09, 0.04), 0.60)
-	img.blend_rect(top, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
-
-## Pino: pisos cónicos de base elíptica; la nieve (si la hay) cubre la parte alta de cada piso.
-func _paint_pine(img: Image, snowy: bool, v: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 300 + v * 41
-	var base: Color = PINE_BASES[v]
-	var cx: float = 32.0 + float(PINE_OFF_X[v])
-	var hs: float = PINE_HW[v]
-	Painter.ellipse(img, cx + 5.0, 47.5, 17.0 * hs, 5.6, Color(0, 0, 0, 0.14))
-	Painter.ellipse(img, cx + 3.0, 47.0, 12.0 * hs, 4.2, Color(0, 0, 0, 0.20))
-	var vol := ArtVolume.new(RES_CELL, RES_CELL)
-	vol.cylinder(cx, 36.0, 47.5, 1.8, 2.8, -100.0, 1.0, 2)
-	var tiers: int = PINE_TIERS[v]
-	for i in tiers:
-		var bot: float = 44.0 - i * (30.0 / tiers) * 0.95
-		var top: float = bot - 17.0
-		var hw: float = (15.0 - i * (11.0 / tiers)) * hs
-		vol.cone(cx, top - 1.0, bot + 2.0, hw + 0.8, float(i) * 10.0, 1.0 + rng.randf_range(-0.05, 0.05), 1, 0.55 if snowy else 0.0, float(i) * 1.7)
-	vol.clumps(60, rng, 1.2, 2.2, 0.20, 1)
-	if snowy:
-		vol.clumps(26, rng, 1.4, 2.4, 0.05, 3)
-	vol.grain(rng, 0.08)
-	var top_img: Image = vol.render([[], ArtVolume.pal(base, 0.34, 1.38), WOOD_PAL, SNOW_PAL], {}, 22.0, 46.0, 0.28, Color(0.02, 0.08, 0.05), 0.60)
-	img.blend_rect(top_img, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
-
-func _paint_palm(img: Image) -> void:
-	Painter.ellipse(img, 37, 47, 14, 4.5, Color(0, 0, 0, 0.28))
-	var pts: Array[Vector2] = []
-	for i in 9:
-		var t := i / 8.0
-		var p0 := Vector2(31, 47)
-		var c0 := Vector2(26, 32)
-		var p1 := Vector2(35, 17)
-		pts.append(p0 * (1 - t) * (1 - t) + c0 * 2.0 * t * (1 - t) + p1 * t * t)
-	for i in range(pts.size() - 1):
-		Painter.line(img, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 5.6 - i * 0.2, Color(0.1, 0.07, 0.04, 0.9))
-	for i in range(pts.size() - 1):
-		var col := Color(0.62, 0.48, 0.28) if i % 2 == 0 else Color(0.53, 0.40, 0.23)
-		Painter.line(img, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 4.2 - i * 0.2, col)
-	var top := pts[8]
-	var leaf := Color(0.20, 0.50, 0.18)
-	var angs := [-2.9, -2.35, -1.8, -1.2, -0.7, -0.2, 0.2]
-	for a: float in angs:
-		var dir := Vector2(cos(a), sin(a))
-		var prev := top
-		for j in range(1, 6):
-			var t := j / 5.0
-			var p := top + dir * 18.0 * t + Vector2(0, 11.0 * t * t)
-			Painter.line(img, prev.x, prev.y, p.x, p.y, 4.4 - t * 3.2, LEAF_OUT)
-			prev = p
-		prev = top
-		for j in range(1, 6):
-			var t := j / 5.0
-			var p := top + dir * 18.0 * t + Vector2(0, 11.0 * t * t)
-			Painter.line(img, prev.x, prev.y, p.x, p.y, 3.4 - t * 2.6, Painter.shade(leaf, 1.25 if a < -1.5 else 0.9))
-			prev = p
-	Painter.disc(img, top.x - 1.5, top.y + 2.0, 2.2, Color(0.35, 0.24, 0.12))
-	Painter.disc(img, top.x + 1.8, top.y + 2.6, 2.0, Color(0.30, 0.20, 0.10))
-
-func _paint_dry(img: Image) -> void:
-	# arbusto seco / árbol muerto del desierto
-	Painter.ellipse(img, 35, 46, 14, 4.2, Color(0, 0, 0, 0.26))
-	var wood := Color(0.42, 0.32, 0.20)
-	var branches := [[32, 46, 31, 30], [31, 36, 22, 24], [31, 33, 41, 22], [32, 30, 28, 15], [37, 27, 46, 20], [24, 28, 17, 26]]
-	for b in branches:
-		Painter.line(img, b[0], b[1], b[2], b[3], 3.8, Color(0.1, 0.07, 0.04, 0.85))
-	for b in branches:
-		Painter.line(img, b[0], b[1], b[2], b[3], 2.4, wood)
-	for p in [Vector2(28, 15), Vector2(22, 24), Vector2(41, 22), Vector2(46, 20), Vector2(17, 26)]:
-		Painter.disc(img, p.x, p.y, 2.8, Color(0.55, 0.52, 0.22))
-		Painter.disc(img, p.x - 0.8, p.y - 0.8, 1.6, Color(0.70, 0.66, 0.30))
-
-const ROCK_COL := Color(0.52, 0.53, 0.57)
-
-## Roca grande: lóbulos esféricos con grava encima (material 5).
-func _rock_volume(blobs: Array, rng: RandomNumberGenerator) -> ArtVolume:
-	var vol := ArtVolume.new(RES_CELL, RES_CELL)
-	for b: Vector3 in blobs:
-		vol.sphere(b.x, b.y, b.y * 0.3, b.z, 1.0, 5, 0.92)
-	vol.clumps(60, rng, 2.4, 4.6, 0.0, 5)
-	vol.facets(13, rng, 5, 0.55, 0.55)
-	vol.grain(rng, 0.05)
-	return vol
-
-func _paint_gold(img: Image) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 501
-	Painter.ellipse(img, 36, 47.5, 23, 6.8, Color(0, 0, 0, 0.14))
-	Painter.ellipse(img, 34, 47, 19, 5.4, Color(0, 0, 0, 0.20))
-	var blobs := [Vector3(32, 36, 14), Vector3(20, 40, 9), Vector3(44, 40, 9.5), Vector3(28, 28, 9), Vector3(38, 29, 8)]
-	var vol := _rock_volume(blobs, rng)
-	# pepitas de oro con brillo: un aro de roca oscura las separa del fondo y la luz especular marca su volumen
-	var nug := [Vector3(26, 31, 4.6), Vector3(37, 27, 5.2), Vector3(33, 38, 4.4), Vector3(44, 38, 3.4), Vector3(19, 41, 3.2), Vector3(31, 22, 3.0)]
-	for n: Vector3 in nug:
-		vol.sphere(n.x, n.y, 36.0 + n.y * 0.3, n.z + 1.1, 0.40, 5)
-		vol.sphere(n.x, n.y, 41.0 + n.y * 0.3, n.z, 1.0, 4)
-	var top: Image = vol.render([[], [], [], [], GOLD_PAL, ArtVolume.pal(ROCK_COL, 0.34, 1.26)], {4: 0.9}, 30.0, 48.0, 0.30, Color(0.05, 0.05, 0.07), 0.70)
-	img.blend_rect(top, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
-
-## Cantera: peñascos gris azulado con grietas y alguna lasca suelta (se distingue del oro por no tener pepitas).
-func _paint_stone(img: Image) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 502
-	Painter.ellipse(img, 36, 47.5, 24, 6.8, Color(0, 0, 0, 0.14))
-	Painter.ellipse(img, 34, 47, 20, 5.4, Color(0, 0, 0, 0.20))
-	var blobs := [Vector3(32, 36, 14), Vector3(19, 41, 9.5), Vector3(45, 41, 10), Vector3(26, 27, 9.5), Vector3(40, 28, 9)]
-	var vol := _rock_volume(blobs, rng)
-	vol.sphere(52, 46, 14.0, 2.6, 1.0, 5)
-	vol.sphere(12, 47, 14.0, 2.2, 0.9, 5)
-	var top: Image = vol.render([[], [], [], [], [], ArtVolume.pal(Color(0.54, 0.57, 0.62), 0.34, 1.26)], {}, 30.0, 48.0, 0.30, Color(0.05, 0.06, 0.09), 0.70)
-	img.blend_rect(top, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
-	# grietas y musgo en la base
-	Painter.line(img, 30, 26, 28, 40, 1.0, Color(0.10, 0.11, 0.14, 0.70))
-	Painter.line(img, 28, 40, 33, 46, 1.0, Color(0.10, 0.11, 0.14, 0.70))
-	Painter.line(img, 41, 33, 44, 44, 0.9, Color(0.10, 0.11, 0.14, 0.65))
-	Painter.line(img, 17, 38, 22, 45, 0.9, Color(0.10, 0.11, 0.14, 0.65))
-	Painter.ellipse(img, 22, 46, 4, 1.6, Color(0.24, 0.40, 0.20, 0.7))
-
-## Retoño: montoncito de tierra, tutor de madera y un tallo con hojas tiernas.
-func _paint_sapling(img: Image) -> void:
-	Painter.ellipse(img, 33, 47.5, 11, 3.6, Color(0, 0, 0, 0.28))
-	Painter.ellipse(img, 32, 46.5, 9.5, 3.4, Color(0.10, 0.06, 0.03, 0.9))
-	Painter.ellipse(img, 32, 46.0, 8.6, 2.9, Color(0.36, 0.24, 0.13))
-	Painter.ellipse(img, 31, 45.4, 5.0, 1.5, Color(0.48, 0.33, 0.18))
-	# tutor
-	Painter.line(img, 39, 47, 39, 34, 2.4, Color(0.10, 0.07, 0.04, 0.9))
-	Painter.line(img, 39, 47, 39, 34.4, 1.4, Color(0.55, 0.42, 0.24))
-	# tallo
-	Painter.line(img, 32, 46, 32.4, 31, 2.8, Color(0.10, 0.07, 0.04, 0.9))
-	Painter.line(img, 32, 46, 32.4, 31.4, 1.7, Color(0.42, 0.30, 0.16))
-	# hojas: pares a los lados y un brote arriba
-	var leaf := Color(0.40, 0.68, 0.22)
-	var lobes := [Vector3(26.5, 37.5, 4.4), Vector3(38.0, 34.5, 4.2), Vector3(27.5, 31.0, 4.0), Vector3(33.0, 27.0, 4.8), Vector3(37.5, 40.0, 3.4)]
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x, l.y, l.z + 1.2, LEAF_OUT)
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x, l.y, l.z, Painter.shade(leaf, 0.72))
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x - 0.8, l.y - 1.0, l.z * 0.82, leaf)
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x - 1.5, l.y - 1.9, l.z * 0.42, Painter.shade(leaf, 1.38))
-
-## Animal de caza mirando a la derecha: kind 0 ciervo, 1 jabalí; f 0 parado, 1 en marcha (patas abiertas).
-func _paint_animal(img: Image, kind: int, f: int) -> void:
-	Painter.ellipse(img, 32, 50, 18 if kind == 0 else 17, 4.6, Color(0, 0, 0, 0.30))
-	var sw := 3.4 if f == 1 else 0.0
-	if kind == 0:
-		var fur := Color(0.62, 0.42, 0.22)
-		var dark := Color(0.28, 0.18, 0.10)
-		var belly := Color(0.84, 0.70, 0.50)
-		# patas (las del fondo, más oscuras)
-		Painter.line(img, 27, 40, 27 - sw, 50, 2.0, Painter.shade(dark, 0.8))
-		Painter.line(img, 41, 40, 41 + sw, 50, 2.0, Painter.shade(dark, 0.8))
-		Painter.line(img, 22, 40, 22 + sw, 50, 2.4, dark)
-		Painter.line(img, 37, 40, 37 - sw, 50, 2.4, dark)
-		# cuerpo, grupa blanca y cola
-		Painter.ellipse(img, 31, 36, 15, 8.2, Color(0.10, 0.06, 0.03, 0.9))
-		Painter.ellipse(img, 31, 36, 14, 7.4, fur)
-		Painter.ellipse(img, 31, 40, 11, 3.6, belly)
-		Painter.ellipse(img, 29, 32.6, 11, 3.2, Painter.shade(fur, 1.18))
-		Painter.disc(img, 19, 35, 3.4, Color(0.94, 0.88, 0.76))
-		Painter.tri(img, 17, 32, 13, 30, 17.6, 37, Color(0.92, 0.84, 0.70))
-		for sp in [Vector2(25, 32), Vector2(31, 30.4), Vector2(36, 33), Vector2(28, 36)]:
-			Painter.disc(img, sp.x, sp.y, 0.9, Color(0.96, 0.9, 0.78, 0.8))
-		# cuello, cabeza, hocico y oreja
-		Painter.line(img, 40, 32, 46, 21, 6.4, Color(0.10, 0.06, 0.03, 0.9))
-		Painter.line(img, 40, 32, 46, 21, 5.4, fur)
-		Painter.ellipse(img, 48, 19, 5.6, 3.9, Color(0.10, 0.06, 0.03, 0.9))
-		Painter.ellipse(img, 48, 19, 4.8, 3.2, fur)
-		Painter.ellipse(img, 53, 21, 3.0, 2.0, Painter.shade(fur, 0.82))
-		Painter.disc(img, 55.4, 21, 1.1, Color(0.08, 0.05, 0.04))
-		Painter.disc(img, 49.6, 18, 0.9, Color(0.08, 0.05, 0.04))
-		Painter.tri(img, 44.6, 16, 42.4, 11.5, 47.6, 15.4, Painter.shade(fur, 0.9))
-		# cornamenta
-		var ant := Color(0.88, 0.82, 0.64)
-		Painter.line(img, 47, 16, 45.6, 7, 1.5, ant)
-		Painter.line(img, 45.9, 11, 42.6, 8, 1.2, ant)
-		Painter.line(img, 45.7, 8.6, 48.6, 5, 1.2, ant)
-		Painter.line(img, 49.6, 16, 51.4, 7.4, 1.5, ant)
-		Painter.line(img, 51, 10, 54.4, 7.6, 1.2, ant)
-		Painter.line(img, 51.2, 8.4, 49, 4.6, 1.2, ant)
-	else:
-		var fur2 := Color(0.36, 0.27, 0.20)
-		var dark2 := Color(0.17, 0.12, 0.09)
-		Painter.line(img, 25, 44, 25 - sw * 0.8, 50, 2.6, Painter.shade(dark2, 0.8))
-		Painter.line(img, 41, 44, 41 + sw * 0.8, 50, 2.6, Painter.shade(dark2, 0.8))
-		Painter.line(img, 20, 44, 20 + sw * 0.8, 50, 3.0, dark2)
-		Painter.line(img, 36, 44, 36 - sw * 0.8, 50, 3.0, dark2)
-		Painter.ellipse(img, 30, 39, 16.5, 10.2, Color(0.08, 0.05, 0.03, 0.9))
-		Painter.ellipse(img, 30, 39, 15.5, 9.2, fur2)
-		Painter.ellipse(img, 35, 38, 9, 6.6, Painter.shade(fur2, 1.22))
-		Painter.ellipse(img, 29, 45, 12, 3.4, Painter.shade(fur2, 0.8))
-		# cerdas del lomo
-		for i in 8:
-			var bx := 17.0 + float(i) * 3.4
-			Painter.tri(img, bx - 1.8, 31.4 + absf(float(i) - 3.5) * 0.9, bx, 27.4 + absf(float(i) - 3.5) * 0.8, bx + 1.8, 31.6 + absf(float(i) - 3.5) * 0.9, dark2)
-		# cola rizada
-		Painter.line(img, 15, 37, 11.4, 34, 1.4, dark2)
-		Painter.line(img, 11.4, 34, 12.6, 31.6, 1.2, dark2)
-		# cabeza baja, hocico, colmillos y oreja
-		Painter.ellipse(img, 46, 40, 8, 6.4, Color(0.08, 0.05, 0.03, 0.9))
-		Painter.ellipse(img, 46, 40, 7.2, 5.6, Painter.shade(fur2, 1.05))
-		Painter.ellipse(img, 53, 42.4, 3.8, 3.0, Color(0.56, 0.42, 0.38))
-		Painter.disc(img, 56, 42, 1.3, Color(0.10, 0.06, 0.05))
-		Painter.tri(img, 49.4, 44.6, 53.2, 44.6, 52.6, 49.4, Color(0.96, 0.94, 0.84))
-		Painter.tri(img, 46.4, 45, 49.6, 44.8, 48.4, 48.8, Color(0.90, 0.88, 0.78))
-		Painter.disc(img, 47.6, 37.6, 1.0, Color(0.95, 0.85, 0.5))
-		Painter.disc(img, 47.8, 37.6, 0.55, Color(0.05, 0.03, 0.03))
-		Painter.tri(img, 42.6, 35.4, 41, 30.4, 46.4, 35, dark2)
-
-func _paint_berry(img: Image) -> void:
-	Painter.ellipse(img, 17, 27, 12, 3.4, Color(0, 0, 0, 0.28))
-	Painter.disc(img, 16, 19, 11.8, Color(0.05, 0.14, 0.06, 0.9))
-	Painter.disc(img, 16, 19, 10.5, Color(0.15, 0.40, 0.16))
-	Painter.disc(img, 9, 21, 7, Color(0.20, 0.50, 0.19))
-	Painter.disc(img, 23, 21, 7, Color(0.16, 0.42, 0.17))
-	Painter.disc(img, 13, 15, 6.5, Color(0.28, 0.58, 0.24))
-	for p in [Vector2(11, 15), Vector2(19, 13), Vector2(23, 20), Vector2(14, 22), Vector2(8, 22), Vector2(20, 24), Vector2(16, 18), Vector2(6, 18), Vector2(26, 23)]:
-		Painter.disc(img, p.x, p.y, 2.1, Color(0.38, 0.03, 0.08))
-		Painter.disc(img, p.x, p.y, 1.7, Color(0.88, 0.12, 0.18))
-		Painter.disc(img, p.x - 0.5, p.y - 0.6, 0.65, Color(1, 0.75, 0.75))
-
-func _paint_fish(img: Image, v: int) -> void:
-	Painter.ring(img, 16, 17, 11, 1.2, Color(1, 1, 1, 0.28))
-	var s := 1.0 if v == 0 else -1.0
-	var cx := 14.0 if v == 0 else 18.0
-	Painter.ellipse(img, cx, 15, 7, 3.6, Color(0.82, 0.88, 0.95))
-	Painter.tri(img, cx - 6 * s, 15, cx - 11 * s, 11, cx - 11 * s, 19, Color(0.7, 0.8, 0.9))
-	Painter.disc(img, cx + 4 * s, 14, 0.9, Color(0.1, 0.1, 0.15))
-	Painter.ellipse(img, cx + 14 * s * 0.0 + (6 if v == 0 else -6), 23, 4, 2, Color(0.75, 0.84, 0.92))
+# ------------------------------------------------------------------ texturas pequeñas
 
 func _build_misc() -> void:
 	var sh := _new_img(32, 32)
-	Painter.ellipse(sh, 16, 16, 14, 14, Color(0, 0, 0, 0.3))
+	# elipse con borde difuso (se escala a cada unidad)
+	for y in 32:
+		for x in 32:
+			var d := Vector2(x - 15.5, y - 15.5).length() / 15.5
+			var a := clampf((1.0 - d) / 0.55, 0.0, 1.0)
+			if a > 0.0:
+				sh.set_pixel(x, y, Color(0, 0, 0, 0.34 * a * a * (3.0 - 2.0 * a)))
 	shadow_tex = ImageTexture.create_from_image(sh)
 	var pf := _new_img(32, 32)
 	Painter.disc(pf, 16, 16, 15.0, Color(1, 1, 1, 1))
@@ -471,8 +78,7 @@ func _build_misc() -> void:
 		at.blit_rect(_paint_carry(kinds[i]), Rect2i(0, 0, carry_cell, carry_cell), Vector2i(i * carry_cell, 0))
 	carry_atlas = ImageTexture.create_from_image(at)
 
-## Icono de lo que lleva un aldeano o pescador (mismos trazos que se dibujaban con primitivas, pero como textura:
-## una sola llamada de dibujo en lugar de 4-6 por unidad).
+## Icono de lo que lleva un aldeano o pescador (como textura: una sola llamada de dibujo en lugar de 4-6 por unidad).
 func _paint_carry(kind: String) -> Image:
 	var n := int(CARRY_HALF * 2.0 * CARRY_SS)
 	var img := _new_img(n, n)
@@ -505,19 +111,3 @@ func _paint_carry(kind: String) -> Image:
 				Painter.rect(img, r.position.x, r.position.y, r.size.x, r.size.y, Color(0.62, 0.4, 0.18))
 				Painter.disc(img, r.end.x - 1.5 * s, r.get_center().y, 1.6 * s, Color(0.85, 0.65, 0.4))
 	return img
-
-## Anillo de selección elíptico (verde) de radio rr; ky = achatamiento vertical (0,55 a pie, 0,30 barcos).
-## Devuelve la textura; se dibuja en un rectángulo de (2·(rr+3)) × (2·(rr+3)·ky) centrado en el anillo.
-func ring_tex(rr: float, ky: float) -> ImageTexture:
-	var key := "%d_%d" % [int(round(rr * 2.0)), int(round(ky * 100.0))]
-	var t: ImageTexture = _rings.get(key)
-	if t != null:
-		return t
-	var ss := 2
-	var side := int(ceil((rr + 3.0) * 2.0)) * ss
-	var img := _new_img(side, side)
-	Painter.ring(img, side * 0.5, side * 0.5, rr * ss, 2.2 * ss, Color(0.2, 1.0, 0.3, 0.95))
-	img.resize(side, maxi(2, int(round(side * ky))), Image.INTERPOLATE_LANCZOS)
-	t = ImageTexture.create_from_image(img)
-	_rings[key] = t
-	return t

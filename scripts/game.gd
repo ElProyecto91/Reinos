@@ -7,7 +7,7 @@ signal load_failed
 signal sel_changed
 
 const T := Defs.TILE
-const ZOOM_MAX := 2.2
+const ZOOM_MAX := 2.0
 const MOVE_THRESHOLD := 16.0
 const LONG_PRESS := 0.45
 const AUTOSAVE_SEC := 90.0   # guardado periódico (tiempo real, sólo con la partida en marcha)
@@ -21,9 +21,15 @@ var audio: AudioMgr
 var human: int = 0
 var terrain_mat: ShaderMaterial
 var farm_tiles: Dictionary = {}
-var res_layer: TileMapLayer
+const Z_TERRAIN := -100
+const Z_DECALS := -50
+const Z_TOP := 50
+const Z_FOG := 100
+const Z_SKY := 110
+var view: IsoView                     # sprites del mundo (recursos, edificios, unidades, fauna)
 var l_terrain: WorldLayer
-var l_ents: WorldLayer
+var l_decals: WorldLayer              # marcas en el suelo: granjas, anillos de selección, órdenes, fantasma de obra
+var l_ents: WorldLayer                # por encima de los sprites: efectos, barras de vida, humo
 var l_fog: WorldLayer
 
 # estado de carga: 0 nada, 1 generando (hilo), 2 preparando, 3 listo, -1 error
@@ -107,6 +113,7 @@ var _idle_cycle := 0
 # ------------------------------------------------------------------ carga
 
 func start(c: Dictionary) -> void:
+	RenderingServer.set_default_clear_color(Color(0.03, 0.04, 0.05))     # fuera del rombo del mapa
 	cfg = c
 	_last_input_ms = Time.get_ticks_msec()
 	hud = Hud.new()
@@ -173,27 +180,40 @@ func _prepare() -> void:
 	human = sim.human_index
 	l_terrain = _make_layer(0)
 	l_terrain.material = terrain_mat
-	_build_tilemap()
+	l_terrain.transform = Iso.XF                 # el suelo se dibuja en coordenadas lógicas y se proyecta
+	l_terrain.z_index = Z_TERRAIN
+	l_decals = _make_layer(4)
+	l_decals.z_index = Z_DECALS
+	farm_tiles.clear()
+	fog = Fog.new(sim.W, sim.H)
+	view = IsoView.new()
+	view.game = self
+	add_child(view)
+	view.build()
 	l_ents = _make_layer(1)
+	l_ents.z_index = Z_TOP
 	l_ents.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	res_layer.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_build_atmosphere()
 	l_fog = _make_layer(2)
-	fog = Fog.new(sim.W, sim.H)
-	farm_tiles.clear()
+	l_fog.transform = Iso.XF
+	l_fog.z_index = Z_FOG
 	var st: Vector2i = sim.players[human].start_tile
-	cam_pos = sim.tile_center(st)
+	focus_on(sim.tile_center(st))
 	zoom = 1.0
 	if loading_save:
 		var gd: Dictionary = loaded.get("game", {})
 		if gd.get("cam") is Vector2:
 			cam_pos = gd["cam"]
-		zoom = clampf(float(gd.get("zoom", 1.0)), 0.25, ZOOM_MAX)
+			if not gd.get("iso", false):
+				cam_pos = Iso.proj(cam_pos)       # partida guardada con la cámara cenital: la posición era lógica
+		zoom = clampf(float(gd.get("zoom", 1.0)), ZOOM_FLOOR, ZOOM_MAX)
 		speed = clampf(float(gd.get("speed", 1.0)), 1.0, 3.0)
 		anim_t = float(gd.get("anim_t", 0.0))
 		SaveGame.restore_fog(gd, fog)
 		loaded = {}
 	fog.update(sim, human)
+	view.refresh_explored()
+	view.update(0.0)
 	l_terrain.queue_redraw()
 	l_fog.queue_redraw()
 	audio.start()
@@ -211,6 +231,8 @@ func _prepare() -> void:
 
 func _build_atmosphere() -> void:
 	l_sky = _make_layer(3)
+	l_sky.transform = Iso.XF
+	l_sky.z_index = Z_SKY
 	_sky_mat = ShaderMaterial.new()
 	_sky_mat.shader = load("res://shaders/clouds.gdshader")
 	_sky_mat.set_shader_parameter("nz1", terrain_mat.get_shader_parameter("nz1"))
@@ -271,68 +293,6 @@ func _make_layer(mode: int) -> WorldLayer:
 	add_child(l)
 	return l
 
-func _build_tilemap() -> void:
-	var ts := TileSet.new()
-	ts.tile_size = Vector2i(T, T)
-	var src := TileSetAtlasSource.new()
-	src.texture = art.res_atlas
-	src.texture_region_size = Vector2i(Art.RES_CELL, Art.RES_CELL)
-	for i in Art.ATLAS_N:
-		src.create_tile(Vector2i(i, 0))
-	ts.add_source(src, 0)
-	res_layer = TileMapLayer.new()
-	res_layer.tile_set = ts
-	add_child(res_layer)
-	var W := sim.W
-	for idx in W * sim.H:
-		var rt := sim.rtype[idx]
-		if rt == 0:
-			continue
-		var x := idx % W
-		var y := idx / W
-		var ai := _atlas_index(rt, x, y)
-		if ai >= 0:
-			res_layer.set_cell(Vector2i(x, y), 0, Vector2i(ai, 0))
-		elif rt == Defs.R_FARM:
-			farm_tiles[idx] = true
-
-## Roble de una de las cinco variantes (color, tamaño y posición distintos en la casilla).
-func _oak_variant(j: int) -> int:
-	return [Art.TREE_OAK_A, Art.TREE_OAK_B, Art.TREE_OAK_C, Art.TREE_OAK_D, Art.TREE_OAK_E][j % 5]
-
-func _atlas_index(rt: int, x: int, y: int) -> int:
-	var h := ((x * 73856093) ^ (y * 19349663)) & 0x7fffffff
-	match rt:
-		Defs.R_TREE:
-			# especie según el clima de la casilla
-			var heat := float(sim.heat[y * sim.W + x]) / 255.0
-			var k := (h >> 4) % 100
-			var j := (h >> 11) % 100          # segunda tirada: la variante dentro de la especie
-			if heat < 0.28:
-				return (Art.TREE_SNOW if j < 55 else Art.TREE_SNOW_B) if k < 72 else Art.TREE_PINE_B
-			elif heat < 0.42:
-				if k < 52:
-					return Art.TREE_PINE if j < 34 else (Art.TREE_PINE_B if j < 67 else Art.TREE_PINE_C)
-				return _oak_variant(j)
-			elif heat < 0.66:
-				if k < 62:
-					return _oak_variant(j)
-				if k < 85:
-					return Art.TREE_PINE if j < 34 else (Art.TREE_PINE_B if j < 67 else Art.TREE_PINE_C)
-				return Art.TREE_AUTUMN if k < 92 and j < 50 else (Art.TREE_AUTUMN_B if k < 92 else Art.TREE_PINE_B)
-			return Art.TREE_PALM if k < 52 else (Art.TREE_DRY if k < 88 else Art.TREE_OAK_B)
-		Defs.R_GOLD:
-			return Art.RES_GOLD
-		Defs.R_SAPLING:
-			return Art.RES_SAPLING
-		Defs.R_STONE:
-			return Art.RES_STONE
-		Defs.R_BERRY:
-			return Art.RES_BERRY
-		Defs.R_FISH:
-			return Art.RES_FISH0 + (h % 2)
-	return -1
-
 func _exit_tree() -> void:
 	if _thread != null and _thread.is_started():
 		_thread.wait_to_finish()
@@ -375,6 +335,7 @@ func _process(delta: float) -> void:
 		if _fog_t <= 0.0:
 			_fog_t = float(Settings.v("fog"))
 			fog.update(sim, human)
+			view.on_fog()
 			l_fog.queue_redraw()
 	_ui_t -= delta
 	if _ui_t <= 0.0:
@@ -388,7 +349,9 @@ func _process(delta: float) -> void:
 	var moved := sig != _cam_sig
 	_cam_sig = sig
 	if (not still) or moved or _dirty > 0 or not fx.is_empty() or not markers.is_empty():
+		view.update(delta)
 		l_ents.queue_redraw()
+		l_decals.queue_redraw()
 	_dirty = maxi(_dirty - 1, 0)
 	if _end_timer >= 0.0:
 		_end_timer -= delta
@@ -479,20 +442,25 @@ func _notification(what: int) -> void:
 
 # ------------------------------------------------------------------ cámara
 
+## Mundo isométrico: `cam_pos` es el centro de la pantalla en el plano isométrico (ver Iso). Los sistemas (simulación, niebla,
+## audio, guardado) siguen en coordenadas lógicas: aquí se convierte.
+const ZOOM_FLOOR := 0.3
+
 func zoom_min() -> float:
-	return maxf(0.25, _vs.x / (sim.W * T * 1.05))
+	var fit := _vs.x / (float(sim.W + sim.H) * T * 1.05)
+	return maxf(ZOOM_FLOOR, fit)
 
 func _apply_camera() -> void:
 	zoom = clampf(zoom, zoom_min(), ZOOM_MAX)
+	# el centro de la vista se mantiene dentro del mapa (en coordenadas lógicas); con todo el mapa a la vista se centra
 	var maxp := Vector2(sim.W, sim.H) * T
-	var half := _vs * 0.5 / zoom
-	for ax in 2:
-		var lo := half[ax]
-		var hi := maxp[ax] - half[ax]
-		if lo > hi:
-			cam_pos[ax] = maxp[ax] * 0.5
-		else:
-			cam_pos[ax] = clampf(cam_pos[ax], lo, hi)
+	var lg := Iso.unproj(cam_pos)
+	var half_w := _vs.x * 0.5 / zoom
+	if half_w * 2.0 >= float(sim.W + sim.H) * T * 0.98:
+		lg = maxp * 0.5
+	else:
+		lg = Vector2(clampf(lg.x, 0.0, maxp.x), clampf(lg.y, 0.0, maxp.y))
+	cam_pos = Iso.proj(lg)
 	# Sólo se escribe si cambia: cada escritura al servidor de dibujo cuenta como «hay cambios» y, con el modo de
 	# bajo consumo del motor, obliga a dibujar el fotograma entero aunque no se mueva nada (pausa, fin de partida).
 	var xf := Transform2D(Vector2(zoom, 0), Vector2(0, zoom), _vs * 0.5 - cam_pos * zoom)
@@ -500,23 +468,40 @@ func _apply_camera() -> void:
 		_last_xf = xf
 		get_viewport().canvas_transform = xf
 
-func screen_to_world(p: Vector2) -> Vector2:
+## Punto de pantalla -> plano isométrico (donde están los sprites)
+func screen_to_iso(p: Vector2) -> Vector2:
 	return (p - _vs * 0.5) / zoom + cam_pos
 
-func world_to_screen(p: Vector2) -> Vector2:
-	return (p - cam_pos) * zoom + _vs * 0.5
+## Punto de pantalla -> suelo lógico (el punto del mapa que queda bajo ese píxel)
+func screen_to_world(p: Vector2) -> Vector2:
+	return Iso.unproj(screen_to_iso(p))
 
-func view_rect(margin: float = 0.0) -> Rect2:
+func world_to_screen(p: Vector2) -> Vector2:
+	return (Iso.proj(p) - cam_pos) * zoom + _vs * 0.5
+
+## Rectángulo visible en el plano isométrico.
+func view_iso(margin: float = 0.0) -> Rect2:
 	var half := _vs * 0.5 / zoom
 	return Rect2(cam_pos - half, half * 2.0).grow(margin)
 
+## Rectángulo lógico que contiene lo visible (cota: el rombo del mapa visible dentro de un rectángulo).
+func view_rect(margin: float = 0.0) -> Rect2:
+	var vi := view_iso(margin)
+	var a := Iso.unproj(vi.position)
+	var b := Iso.unproj(Vector2(vi.end.x, vi.position.y))
+	var c := Iso.unproj(vi.end)
+	var d := Iso.unproj(Vector2(vi.position.x, vi.end.y))
+	var lo := Vector2(minf(minf(a.x, b.x), minf(c.x, d.x)), minf(minf(a.y, b.y), minf(c.y, d.y)))
+	var hi := Vector2(maxf(maxf(a.x, b.x), maxf(c.x, d.x)), maxf(maxf(a.y, b.y), maxf(c.y, d.y)))
+	return Rect2(lo, hi - lo)
+
 func focus_on(wp: Vector2) -> void:
-	cam_pos = wp
+	cam_pos = Iso.proj(wp)
 
 func zoom_at(screen_pos: Vector2, factor: float) -> void:
-	var before := screen_to_world(screen_pos)
+	var before := screen_to_iso(screen_pos)
 	zoom = clampf(zoom * factor, zoom_min(), ZOOM_MAX)
-	var after := screen_to_world(screen_pos)
+	var after := screen_to_iso(screen_pos)
 	cam_pos += before - after
 
 # ------------------------------------------------------------------ visibilidad
@@ -626,17 +611,17 @@ func _consume_events() -> void:
 					sfx("place", ev["pos"])
 			"planted":
 				var pt: Vector2i = ev["tile"]
-				res_layer.set_cell(pt, 0, Vector2i(Art.RES_SAPLING, 0))
+				view.res_changed(pt)
 				if ev["owner"] == human:
 					sfx("place", ev["pos"])
 			"grown":
 				var gt: Vector2i = ev["tile"]
-				res_layer.set_cell(gt, 0, Vector2i(_atlas_index(Defs.R_TREE, gt.x, gt.y), 0))
+				view.res_changed(gt)
 				if _seen(sim.tile_center(gt)):
 					_fx({"t": "puff", "p": sim.tile_center(gt) + Vector2(0, -6), "r": 8.0, "life": 0.5})
 			"mine_open":
 				var mt: Vector2i = ev["tile"]
-				res_layer.set_cell(mt, 0, Vector2i(Art.RES_GOLD, 0))
+				view.res_changed(mt)
 				if ev["owner"] == human:
 					sfx("built", ev["pos"])
 					hud.toast(Lang.t("toast_mine_open", [Defs.MINE_YIELD]), Color(1.0, 0.88, 0.4))
@@ -668,7 +653,7 @@ func _consume_events() -> void:
 				if rt == Defs.R_FARM:
 					farm_tiles.erase(t.y * sim.W + t.x)
 				else:
-					res_layer.erase_cell(t)
+					view.res_changed(t)
 					if rt == Defs.R_TREE and _seen(sim.tile_center(t)):
 						_fx({"t": "puff", "p": sim.tile_center(t), "r": 10.0, "life": 0.5})
 			"tech":
@@ -805,41 +790,22 @@ func _prune_selection() -> void:
 			garrison_mode = false
 		sel_changed.emit()
 
-func pick_at(wp: Vector2) -> Ent:
-	var best: Ent = null
-	var bd := 1e9
-	var probe := wp + Vector2(0, 10.0)
-	for u in sim.query(wp, 50.0):
-		if u.is_building or not can_see_unit(u):
-			continue
-		if u.naval:
-			# un barco es largo: se acierta sobre el casco o los mástiles, no sólo junto al centro
-			var top := Renderer.unit_top(u)
-			var dxn := absf(wp.x - u.pos.x)
-			var dyn := absf(wp.y - (u.pos.y - top * 0.4))
-			if dxn < float(Renderer.SHIP_HALF[u.type]) + 6.0 and dyn < top * 0.5 + 8.0:
-				var dn := Vector2(dxn * 0.6, dyn).length()
-				if dn < bd:
-					bd = dn
-					best = u
-			continue
-		var d := probe.distance_to(u.pos)
-		if d < u.radius + 14.0 and d < bd:
-			bd = d
-			best = u
-	if best != null:
-		return best
-	for b in sim.buildings:
-		if b.alive and b.rect().grow(4.0).has_point(wp) and can_see_building(b):
-			return b
-	return null
+## Entidad bajo un punto del plano isométrico (unidades primero, después edificios).
+func pick_at(ip: Vector2) -> Ent:
+	var u := view.pick_unit(ip)
+	if u != null:
+		return u
+	return view.pick_building(ip)
 
+## Selección con caja: `a` y `b` son puntos de pantalla; se eligen las unidades propias cuyo cuerpo cae dentro.
 func select_in_box(a: Vector2, b: Vector2) -> void:
 	var r := Rect2(a, b - a).abs()
 	var list: Array = []
 	for u in sim.units:
-		if u.alive and u.owner == human and r.has_point(u.pos):
-			list.append(u)
+		if u.alive and u.owner == human and not u.stowed:
+			var sp := world_to_screen(u.pos) + Vector2(0, -view.unit_top(u) * 0.5 * zoom)
+			if r.has_point(sp):
+				list.append(u)
 	if list.is_empty():
 		clear_selection()
 		return
@@ -849,10 +815,10 @@ func select_in_box(a: Vector2, b: Vector2) -> void:
 	sfx("click")
 
 func select_same_type_on_screen(e: Ent) -> void:
-	var vr := view_rect(0.0)
+	var vr := view_iso(0.0)
 	var list: Array = []
 	for u in sim.units:
-		if u.alive and u.owner == human and u.type == e.type and vr.has_point(u.pos):
+		if u.alive and u.owner == human and u.type == e.type and vr.has_point(Iso.proj(u.pos)):
 			list.append(u)
 	if list.is_empty():
 		list.append(e)
@@ -922,10 +888,8 @@ func _on_touch(ev: InputEventScreenTouch) -> void:
 			return
 		if box_active:
 			box_active = false
-			var a := screen_to_world(box_start)
-			var b := screen_to_world(box_end)
-			if (b - a).length() * zoom > 14.0:
-				select_in_box(a, b)
+			if (box_end - box_start).length() > 14.0:
+				select_in_box(box_start, box_end)
 				select_mode = false
 				hud.refresh_now()
 				return
@@ -995,8 +959,7 @@ func _long_press_check() -> void:
 		Input.vibrate_handheld(25)
 
 func _right_click(sp: Vector2) -> void:
-	var wp := screen_to_world(sp)
-	_order_at(wp, true)
+	_order_at(sp, true)
 
 # ------------------------------------------------------------------ toques
 
@@ -1005,7 +968,8 @@ func _tap(sp: Vector2) -> void:
 	var dbl := now - _last_tap_t < 0.35 and sp.distance_to(_last_tap_pos) < 40.0
 	_last_tap_t = now
 	_last_tap_pos = sp
-	var wp := screen_to_world(sp)
+	var ip := screen_to_iso(sp)
+	var wp := Iso.unproj(ip)
 	if placing_type != "":
 		place_tile = _ghost_from_world(wp)
 		if Defs.is_plot(placing_type):
@@ -1029,7 +993,7 @@ func _tap(sp: Vector2) -> void:
 		return
 	if garrison_mode:
 		garrison_mode = false
-		var gh := pick_at(wp)
+		var gh := pick_at(ip)
 		var gus := sel_own_units()
 		if gh != null and gh.owner == human and gh.is_building and not gus.is_empty():
 			var room: int = int(sim.garrison_rooms(human).get(gh.id, 0))
@@ -1049,7 +1013,7 @@ func _tap(sp: Vector2) -> void:
 		if b != null:
 			# si se toca junto a un árbol, mina o granja, el punto de reunión se pega al recurso
 			# (los aldeanos nuevos irán a recolectarlo solos)
-			var rtile := _res_at(wp)
+			var rtile := _res_at(wp, ip)
 			if rtile.x < 0 and b.def.get("dock", false):
 				rtile = _fish_at(wp)
 			var rl := rtile if rtile.x >= 0 else sim.tile_of(wp)
@@ -1070,7 +1034,7 @@ func _tap(sp: Vector2) -> void:
 		amove_mode = false
 		sel_changed.emit()
 		return
-	var hit := pick_at(wp)
+	var hit := pick_at(ip)
 	if hit != null and hit.owner == human:
 		var mine := sel_own_units()
 		if _try_board(hit, mine):
@@ -1086,7 +1050,7 @@ func _tap(sp: Vector2) -> void:
 			select_ents([hit])
 		sfx("click")
 		return
-	_order_at(wp, false, hit)
+	_order_at(sp, false, hit)
 
 func _count_type(list: Array[Ent], t: String) -> int:
 	var n := 0
@@ -1152,10 +1116,12 @@ func _fish_at(wp: Vector2) -> Vector2i:
 				best = q
 	return best
 
-func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
-	## Orden contextual con la selección actual sobre un punto del mundo.
+func _order_at(sp: Vector2, right_click: bool, hit: Ent = null) -> void:
+	## Orden contextual con la selección actual sobre un punto de la pantalla.
+	var ip := screen_to_iso(sp)
+	var wp := Iso.unproj(ip)
 	if hit == null:
-		hit = pick_at(wp)
+		hit = pick_at(ip)
 	var mine := sel_own_units()
 	if hit != null and sim.is_hostile(human, hit.owner):
 		var attackers: Array = _ids_of(mine, "", true)
@@ -1203,7 +1169,7 @@ func _order_at(wp: Vector2, right_click: bool, hit: Ent = null) -> void:
 				if not rest.is_empty():
 					sim.cmd_move(human, _ids_of(rest), tile, false)
 				return
-		var rt := _res_at(wp)
+		var rt := _res_at(wp, ip)
 		if rt.x >= 0 and _count_type(mine, "aldeano") > 0:
 			sim.cmd_gather(human, _ids_of(mine, "aldeano"), rt)
 			add_marker(sim.tile_center(rt), Color(0.5, 1, 0.5))
@@ -1228,7 +1194,15 @@ func _res_name(t: Vector2i) -> String:
 		return Lang.t("res_sapling")
 	return Lang.t("res_" + String(Defs.RES_INFO[rt]["kind"]))
 
-func _res_at(wp: Vector2) -> Vector2i:
+## Casilla de recurso tocada. Los recursos se dibujan hacia arriba (copas, edificios de mina): también se acierta sobre el
+## sprite, cuyo pie queda por debajo del punto tocado.
+func _res_at(wp: Vector2, ip: Vector2 = Vector2.INF) -> Vector2i:
+	var best := _res_near(wp, 30.0)
+	if best.x < 0 and ip != Vector2.INF:
+		best = _res_near(Iso.unproj(ip + Vector2(0, 22.0)), 34.0)
+	return best
+
+func _res_near(wp: Vector2, rad: float) -> Vector2i:
 	var t := sim.tile_of(wp)
 	var best := Vector2i(-1, -1)
 	var bd := 1e9
@@ -1244,7 +1218,7 @@ func _res_at(wp: Vector2) -> Vector2i:
 			if rt == Defs.R_FARM and sim.rowner[idx] != human:
 				continue
 			var d := wp.distance_to(sim.tile_center(q))
-			if d < 30.0 and d < bd:
+			if d < rad and d < bd:
 				bd = d
 				best = q
 	return best
@@ -1316,7 +1290,7 @@ func ui_begin_place(type: String) -> void:
 	wall_tiles = []
 	wall_anchor = Vector2i(-1, -1)
 	wall_state = 0
-	place_tile = _ghost_from_world(cam_pos + Vector2(0, -40))
+	place_tile = _ghost_from_world(screen_to_world(_vs * 0.5 + Vector2(0, -40)))
 	sfx("click")
 	sel_changed.emit()
 

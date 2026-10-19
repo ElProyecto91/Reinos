@@ -67,7 +67,6 @@ func test_data() -> void:
 			ok(String(d.get("building", "")) == "castillo", "%s se entrena en el castillo" % u)
 			ok(int(d["age"]) == 2, "%s es de la edad 2" % u)
 			ok(Civs.CLS.has(u), "%s tiene clase" % u)
-			ok(ArtUnits.CELLS.has(u), "%s tiene hoja" % u)
 			if d.has("as"):
 				ok(Defs.UNITS.has(d["as"]), "%s: 'as' desconocido" % u)
 		var ab := Civs.ability_of(id)

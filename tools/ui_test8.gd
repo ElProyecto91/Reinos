@@ -105,13 +105,13 @@ func _run() -> void:
 	game.hud.hide_pause()
 	await get_tree().create_timer(1.5).timeout
 	check("al reanudar avanza el tiempo", sim.time > t1 + 0.5, "%.1f -> %.1f" % [t1, sim.time])
-	# --- el fondo del mapa dibujado coincide (los árboles talados no reaparecen)
+	# --- los sprites de recursos coinciden con la simulación (los árboles talados no reaparecen)
 	var depleted_ok := true
 	for i in sim.W * sim.H:
-		if sim.rtype[i] == 0 and game.res_layer.get_cell_source_id(Vector2i(i % sim.W, i / sim.W)) != -1:
+		if sim.rtype[i] == 0 and game.view.res_name_at(Vector2i(i % sim.W, i / sim.W)) != "":
 			depleted_ok = false
 			break
-	check("sin recursos fantasma en el mapa dibujado", depleted_ok)
+	check("sin recursos fantasma dibujados", depleted_ok)
 	# --- guardado periódico en otro hilo
 	game._autosave_t = 0.0
 	await frames(3)

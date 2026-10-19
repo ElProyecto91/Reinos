@@ -13,7 +13,16 @@ FACTOR = 2
 
 SHADOW_MAX = 0.60      # alfa de la sombra más densa (medida: la luz directa aporta ~60 % del brillo del suelo)
 
-def process(path, origin=ORIGIN, shadow=False):   # devuelve (imagen recortada, [ox, oy, ancho, alto])
+def load_mask(path, h, w):
+    """Máscara de equipo horneada (R = 1 en las partes que se tiñen): promedio FACTOR x FACTOR ponderado por la cobertura."""
+    im = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32) / 255.0
+    m = im[..., 0:1] * im[..., 3:4]
+    a = im[..., 3:4]
+    m2 = m.reshape(h // FACTOR, FACTOR, w // FACTOR, FACTOR, 1).mean(axis=(1, 3))
+    a2 = a.reshape(h // FACTOR, FACTOR, w // FACTOR, FACTOR, 1).mean(axis=(1, 3))
+    return np.where(a2 > 1e-4, m2 / np.maximum(a2, 1e-4), 0.0)[..., 0]
+
+def process(path, origin=ORIGIN, shadow=False, mask_path=None):   # devuelve (imagen recortada, [ox, oy, ancho, alto], máscara recortada o None)
     im = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32) / 255.0
     h, w = im.shape[:2]
     if shadow:
@@ -32,7 +41,7 @@ def process(path, origin=ORIGIN, shadow=False):   # devuelve (imagen recortada, 
     out = np.concatenate([np.clip(rgb, 0, 1), a2], axis=-1)
     ys, xs = np.where(out[..., 3] > 0.02)
     if len(xs) == 0:
-        return None, None
+        return None, None, None
     if xs.min() <= 1 or ys.min() <= 1 or xs.max() >= out.shape[1] - 2 or ys.max() >= out.shape[0] - 2:
         print("AVISO: el contenido toca el borde del lienzo (recortado): " + os.path.basename(path))
     x0, x1, y0, y1 = max(xs.min() - 1, 0), xs.max() + 2, max(ys.min() - 1, 0), ys.max() + 2
@@ -40,7 +49,12 @@ def process(path, origin=ORIGIN, shadow=False):   # devuelve (imagen recortada, 
     img = Image.fromarray((crop * 255.0 + 0.5).astype(np.uint8), "RGBA")
     ox = origin[0] / FACTOR - x0
     oy = origin[1] / FACTOR - y0
-    return img, [round(ox, 2), round(oy, 2), img.width, img.height]
+    mimg = None
+    if mask_path and os.path.exists(mask_path):
+        mk = load_mask(mask_path, h, w)[y0:y1, x0:x1]
+        mk = np.where(crop[..., 3] > 0.02, mk, 0.0)
+        mimg = Image.fromarray((np.clip(mk, 0, 1) * 255.0 + 0.5).astype(np.uint8), "L")
+    return img, [round(ox, 2), round(oy, 2), img.width, img.height], mimg
 
 def main():
     src, dst = sys.argv[1], sys.argv[2]
@@ -54,15 +68,17 @@ def main():
     if os.path.exists(op):
         origins = json.load(open(op))
     for f in sorted(os.listdir(src)):
-        if not f.endswith(".png"):
+        if not f.endswith(".png") or f.endswith("_m.png"):
             continue
         nm = f[:-4]
-        img, anc = process(os.path.join(src, f), origins.get(nm, ORIGIN), nm.endswith("_sh"))
+        img, anc, mimg = process(os.path.join(src, f), origins.get(nm, ORIGIN), nm.endswith("_sh"), os.path.join(src, nm + "_m.png"))
         if img is None:
             print("vacío:", f)
             continue
         name = f[:-4]
         img.save(os.path.join(dst, name + ".png"), optimize=True)
+        if mimg is not None:
+            mimg.save(os.path.join(dst, name + "_m.png"), optimize=True)
         anchors[name] = anc
     with open(os.path.join(dst, "anchors.json"), "w") as fh:
         json.dump(anchors, fh, indent=0)

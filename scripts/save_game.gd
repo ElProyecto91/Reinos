@@ -146,7 +146,7 @@ static func snapshot(g: Game) -> Dictionary:
 		"saved_at": Time.get_unix_time_from_system(),
 		"cfg": g.cfg.duplicate(true),
 		"sim": snapshot_sim(s),
-		"game": {"cam": g.cam_pos, "zoom": g.zoom, "speed": g.speed, "anim_t": g.anim_t, "fog": g.fog.state.duplicate()},
+		"game": {"cam": g.cam_pos, "iso": true, "zoom": g.zoom, "speed": g.speed, "anim_t": g.anim_t, "fog": g.fog.state.duplicate()},
 		"meta": {"time": s.time, "size": s.W, "rivals": s.players.size() - 1, "age": human.age, "pop": human.pop},
 	}
 

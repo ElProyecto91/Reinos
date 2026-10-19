@@ -67,7 +67,7 @@ func play(name: String, pos: Vector2 = Vector2(-1e9, -1e9)) -> void:
 		return
 	var gain := 1.0
 	if pos.x > -1e8 and game != null and game.load_state == 3:
-		var d := pos.distance_to(game.cam_pos) * game.zoom
+		var d := Iso.proj(pos).distance_to(game.cam_pos) * game.zoom
 		var reach := game._vs.x * 0.75
 		gain = clampf(1.15 - d / reach, 0.0, 1.0)
 		if gain < 0.06:
@@ -101,7 +101,7 @@ func _process(delta: float) -> void:
 
 func _sample_surroundings() -> void:
 	var sim := game.sim
-	var c := sim.tile_of(game.cam_pos)
+	var c := sim.tile_of(Iso.unproj(game.cam_pos))
 	var water := 0
 	var trees := 0
 	var total := 0

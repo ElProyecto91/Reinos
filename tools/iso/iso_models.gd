@@ -202,8 +202,19 @@ static func tmat(tex: Texture2D, per_unit: float, tint: Color = Color.WHITE, rou
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return m
 
+## Color de equipo con el que se construyen los modelos que se hornean: un gris neutro (r = g = b). Todo material creado con
+## fmat() a partir de un gris neutro (o de `TEAM_BASE.darkened(...)`) se anota en team_mats: el baker lo pinta de blanco en el
+## pase de máscara y el juego lo tiñe con el color del jugador. Ningún otro material de los modelos usa grises neutros.
+const TEAM_BASE := Color(0.75, 0.75, 0.75)
+static var team_mats: Array = []
+
+static func _is_team(c: Color) -> bool:
+	return absf(c.r - c.g) < 0.0005 and absf(c.g - c.b) < 0.0005
+
 static func fmat(col: Color, rough: float = 0.85, spec: float = 0.5) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
+	if _is_team(col) and not lego:
+		team_mats.append(m)
 	m.albedo_color = _pop(col) if lego else col
 	m.roughness = 0.34 if lego else rough
 	m.metallic_specular = 0.5 if lego else spec
@@ -890,4 +901,48 @@ static func persona_bloques(kind: String, team: Color, phase: float) -> Node3D:
 			box(sh, Vector3(0.04, 0.24, 0.18), Vector3(-0.08, -0.18, 0.04), fmat(team))
 		if kind == "aldeano" and side == 1:
 			box(sh, Vector3(0.03, 0.30, 0.03), Vector3(0.02, -0.36, 0.08), fmat(Color(0.40, 0.26, 0.12)))
+	return root
+
+# ------------------------------------------------------------------ muralla por enlaces (poste + brazos)
+
+const DIRS8 := [Vector2(0, -1), Vector2(1, -1), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1), Vector2(-1, 1), Vector2(-1, 0), Vector2(-1, -1)]
+
+## Poste de muralla (la casilla entera): pilar cuadrado con almenas y una placa del color del equipo en el frente.
+static func muralla_poste() -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(250)
+	_wall_block(root, S, 0.60, 1.18, 0.60, Vector3.ZERO)
+	box(root, Vector3(0.20, 0.20, 0.03), Vector3(0.0, 0.78, 0.31), fmat(TEAM_BASE, 0.7, 0.3))
+	box(root, Vector3(0.03, 0.20, 0.20), Vector3(0.31, 0.78, 0.0), fmat(TEAM_BASE, 0.7, 0.3))
+	return root
+
+## Brazo de muralla desde el centro de la casilla hacia la dirección d (0..7, como DIRS8).
+static func muralla_brazo(d: int) -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(250)
+	var dir: Vector2 = DIRS8[d]
+	var diag := dir.x != 0.0 and dir.y != 0.0
+	var L := 0.7071 if diag else 0.5
+	var body := Node3D.new()
+	root.add_child(body)
+	_wall_block(body, S, L + 0.04, 1.05, 0.46, Vector3(L * 0.5, 0, 0))
+	body.rotation.y = atan2(-dir.y, dir.x)
+	return root
+
+## Puerta de muralla: dos jambas de piedra, dintel y hojas de madera. along_x = la muralla sigue a lo largo de x (se pasa por z).
+static func puerta(along_x: bool) -> Node3D:
+	var root := Node3D.new()
+	var S := _stone_set(260)
+	var body := Node3D.new()
+	root.add_child(body)
+	for sx in [-1, 1]:
+		_wall_block(body, S, 0.34, 1.32, 0.56, Vector3(sx * 0.33, 0, 0))
+	_wall_block(body, S, 1.0, 0.30, 0.50, Vector3(0, 0.95, 0))
+	var door := tmat(tex_wood(262, Color(0.34, 0.22, 0.11)), 1.6)
+	box(body, Vector3(0.32, 0.78, 0.07), Vector3(-0.16, 0.39, 0.0), door)
+	box(body, Vector3(0.32, 0.78, 0.07), Vector3(0.16, 0.39, 0.0), door)
+	for yy in [0.22, 0.58]:
+		box(body, Vector3(0.66, 0.045, 0.09), Vector3(0, yy, 0), fmat(Color(0.22, 0.22, 0.25), 0.5, 0.6))
+	box(body, Vector3(0.20, 0.20, 0.03), Vector3(0.0, 1.30, 0.29), fmat(TEAM_BASE, 0.7, 0.3))
+	body.rotation_degrees.y = 0.0 if along_x else 90.0
 	return root

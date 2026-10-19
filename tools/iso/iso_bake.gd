@@ -16,7 +16,7 @@ var ground: MeshInstance3D
 var origins: Dictionary = {}
 var out_dir := "/tmp/iso_raw"
 var only := PackedStringArray()
-var teams := PackedStringArray(["blue", "red"])
+var teams := PackedStringArray(["blue", "red"])   # ya no se usa: los nombres no llevan equipo
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -119,14 +119,36 @@ func _shadows_only(n: Node) -> void:
 	for c in n.get_children():
 		_shadows_only(c)
 
-func _shot(model: Node3D, yaw: float, name: String, shadow: bool = false) -> void:
-	_log("shot " + name + " start")
+func _unshaded(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = c
+	return m
+
+## Pase de máscara de equipo: las partes con material de equipo (IsoModels.team_mats) en blanco, todo lo demás en negro, sin luz.
+func _mask_swap(n: Node, white: Material, black: Material, saved: Array) -> void:
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		var orig: Material = mi.material_override
+		saved.append([mi, orig])
+		mi.material_override = white if (orig != null and IsoModels.team_mats.has(orig)) else black
+	for c in n.get_children():
+		_mask_swap(c, white, black, saved)
+
+func _shot(model: Node3D, yaw: float, name: String, shadow: bool = false, mask: bool = false) -> void:
 	holder.add_child(model)
 	model.rotation_degrees.y = yaw
 	await _frames()
 	var img := vp.get_texture().get_image()
 	img.save_png("%s/%s.png" % [out_dir, name])
 	origins[name] = [ORIGIN.x, ORIGIN.y]
+	if mask:
+		var saved: Array = []
+		_mask_swap(model, _unshaded(Color.WHITE), _unshaded(Color.BLACK), saved)
+		await _frames()
+		vp.get_texture().get_image().save_png("%s/%s_m.png" % [out_dir, name])
+		for e in saved:
+			(e[0] as MeshInstance3D).material_override = e[1]
 	if shadow:
 		# segundo pase: sólo se dibujan las sombras sobre un suelo blanco (iso_post.py las convierte en alfa)
 		sun.visible = false
@@ -146,51 +168,32 @@ func _want(n: String) -> bool:
 	return only.is_empty() or only.has(n)
 
 func _run() -> void:
-	var blue := Color(0.20, 0.42, 0.88)
-	var red := Color(0.80, 0.18, 0.16)
-	if _want("casa"):
-		await _shot(IsoModels.casa(blue), 0.0, "casa_blue", true)
-		await _shot(IsoModels.casa(red), 0.0, "casa_red")
-	if _want("centro"):
-		await _shot(IsoModels.centro(blue), 0.0, "centro_blue", true)
-	if _want("torre"):
-		await _shot(IsoModels.torre(blue), 0.0, "torre_blue", true)
-	if _want("torrec"):
-		await _shot(IsoModels.torre_cuadrada(blue), 0.0, "torrec_blue", true)
-		await _shot(IsoModels.torre_cuadrada(red), 0.0, "torrec_red")
-	if _want("atalaya"):
-		await _shot(IsoModels.atalaya(blue), 0.0, "atalaya_blue", true)
-	if _want("muralla"):
-		await _shot(IsoModels.muralla(false), 0.0, "muralla_x", true)
-		await _shot(IsoModels.muralla(true), 0.0, "muralla_z", true)
-	if _want("castillo"):
-		_configure(1900, 1500, 640, 880)
-		await _shot(IsoModels.castillo(blue), 0.0, "castillo_blue", true)
-		_configure(1152, 1024, 448, 720)
-	if _want("asedio"):
-		await _shot(IsoModels.trabuquete(blue), 0.0, "trabuquete_blue", true)
-		await _shot(IsoModels.catapulta(blue), 0.0, "catapulta_blue", true)
-	if _want("roble"):
-		for v in 7:
-			await _shot(IsoModels.roble(v), 0.0, "roble_%d" % v, true)
-	if _want("pino"):
-		for v in 2:
-			await _shot(IsoModels.pino(v), 0.0, "pino_%d" % v, true)
-	if _want("roca"):
-		await _shot(IsoModels.roca(0, false), 0.0, "roca_0", true)
-		await _shot(IsoModels.roca(1, true), 0.0, "oro_0", true)
-	for kind in ["aldeano", "espadachin"]:
-		if not _want(kind):
+	var groups := IsoCatalog.groups()
+	var total := 0
+	for id in groups:
+		if _want(id):
+			total += (groups[id]["jobs"] as Array).size()
+	var done := 0
+	for id in groups:
+		if not _want(id):
 			continue
-		for team in teams:
-			var col: Color = blue if team == "blue" else red
-			for d in 8:
-				await _shot(IsoModels.persona(kind, col, -1.0), float(d) * 45.0, "%s_%s_%d_idle" % [kind, team, d])
-				for f in 4:
-					await _shot(IsoModels.persona(kind, col, float(f) * 0.25), float(d) * 45.0, "%s_%s_%d_w%d" % [kind, team, d, f])
-	# orígenes por sprite (iso_post.py los lee)
+		var g: Dictionary = groups[id]
+		var cfg: Array = g["cfg"]
+		_configure(int(cfg[0]), int(cfg[1]), float(cfg[2]), float(cfg[3]))
+		for j: Array in g["jobs"]:
+			IsoModels.team_mats.clear()
+			await _shot((j[1] as Callable).call(), float(j[2]), String(j[0]), bool(j[3]), bool(j[4]))
+			done += 1
+			if done % 50 == 0:
+				_log("%s %d/%d" % [id, done, total])
 	var op := out_dir + "/origins.json"
+	if FileAccess.file_exists(op):      # se acumula: se hornea por partes (only=...) en la misma carpeta
+		var old = JSON.parse_string(FileAccess.get_file_as_string(op))
+		if old is Dictionary:
+			for k in old:
+				if not origins.has(k):
+					origins[k] = old[k]
 	var f := FileAccess.open(op, FileAccess.WRITE)
 	f.store_string(JSON.stringify(origins))
 	f.close()
-	print("INFO horneado en ", out_dir)
+	print("INFO horneado en ", out_dir, " (", done, " sprites)")

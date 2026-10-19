@@ -1,6 +1,6 @@
 extends Node
 ## Banco de pruebas del dibujo de entidades: una aldea densa a la vista (unidades de todos los tipos,
-## edificios, murallas y granjas). Mide el tiempo de GDScript de Renderer.draw_entities por fotograma y las
+## edificios, murallas y granjas). Mide el tiempo de GDScript de Renderer.draw_overlay por fotograma y las
 ## llamadas de dibujo del motor, y puede guardar una captura determinista para comparar antes/después.
 ## Uso: xvfb-run -a godot --path . res://tools/draw_bench.tscn --rendering-driver opengl3 --resolution 1280x720 -- frames=240 zoom=0.8 shot=/tmp/a.png
 ## Con shot=… la partida se pausa y la captura es idéntica entre ejecuciones (misma semilla).
@@ -151,13 +151,13 @@ func _run() -> void:
 			"terrain": game.l_terrain.visible = false
 			"sky": game.l_sky.visible = false
 			"fog": game.l_fog.visible = false
-			"res": game.res_layer.visible = false
+			"res": game.view.visible = false
 			"ents": game.l_ents.visible = false
 	if noter:
 		game.l_terrain.visible = false
 		game.l_sky.visible = false
 		game.l_fog.visible = false
-		game.res_layer.visible = false
+		game.view.visible = false
 	# calentar y medir
 	for j in 30:
 		await get_tree().process_frame

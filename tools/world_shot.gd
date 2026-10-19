@@ -63,16 +63,18 @@ func _run() -> void:
 		game._sky_mat.set_shader_parameter("cover", rain_force)
 	game.zoom = zoom_v
 	if at == "start":
-		game.cam_pos = sim.tile_center(sim.players[game.human].start_tile)
+		game.focus_on(sim.tile_center(sim.players[game.human].start_tile))
 	elif at == "center":
-		game.cam_pos = Vector2(sim.W, sim.H) * Defs.TILE * 0.5
+		game.focus_on(Vector2(sim.W, sim.H) * Defs.TILE * 0.5)
 	elif at == "minimap":
-		game.cam_pos = Vector2(sim.W, sim.H) * Defs.TILE * 0.5
+		game.focus_on(Vector2(sim.W, sim.H) * Defs.TILE * 0.5)
 	else:
 		var p := at.split(",")
-		game.cam_pos = sim.tile_center(Vector2i(int(p[0]), int(p[1])))
+		game.focus_on(sim.tile_center(Vector2i(int(p[0]), int(p[1]))))
 	if not fog_on:
 		game.l_fog.visible = false
+		game.fog.state.fill(2)
+		game.view.refresh_explored()
 	game.paused = true
 	game.hud.visible = false
 	game.hud.set_process(false)

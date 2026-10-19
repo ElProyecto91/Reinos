@@ -3,7 +3,8 @@ extends CanvasLayer
 ## Interfaz táctil: barra de recursos, minimapa, panel de selección, órdenes, avisos y menús.
 
 const TOP_H := 56.0
-const MM := 170.0
+const MM := 232.0                  # ancho del minimapa (el mapa isométrico es un rombo 2:1: alto = MM / 2)
+const MM_H := 132.0
 const CELL := Vector2(86, 76)
 const GAP := 5.0
 const COLS := 5
@@ -131,8 +132,8 @@ func layout() -> void:
 	menu_btn.size = Vector2(56, 52)
 	speed_btn.position = Vector2(vs.x - 64 - 70, 2)
 	speed_btn.size = Vector2(62, 52)
-	minimap.position = Vector2(8, vs.y - MM - 8)
-	minimap.size = Vector2(MM, MM)
+	minimap.position = Vector2(8, vs.y - MM_H - 8)
+	minimap.size = Vector2(MM, MM_H)
 	var gx := vs.x - (CELL.x * COLS + GAP * (COLS - 1)) - 8.0
 	var gy := vs.y - (CELL.y * 2 + GAP) - 8.0
 	for i in grid.size():
@@ -634,7 +635,7 @@ func _fill_grid(p: Player) -> int:
 				elif t == "arbol":
 					kind = "sapling"
 				else:
-					tex = g.art.building_tex[t][g.human % 4]
+					tex = g.art.building_icon(t, g.human % 4)
 				var sub := "" if okage else Lang.t("needs_age_%d" % int(Defs.BUILDINGS[t]["age"]))
 				if t == "arbol":
 					sub = "%d/%d" % [g.sim.sapling_count(g.human), Defs.PLANT_MAX]
@@ -643,12 +644,12 @@ func _fill_grid(p: Player) -> int:
 				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, sub)
 				idx += 1
 			if grid_mode == "build":
-				_slot(idx, Lang.t("military"), g.art.building_tex["cuartel"][g.human % 4], "", {}, res, true, (func() -> void:
+				_slot(idx, Lang.t("military"), g.art.building_icon("cuartel", g.human % 4), "", {}, res, true, (func() -> void:
 					grid_mode = "military"
 					g.sfx("click")
 					refresh_now()))
 				idx += 1
-				_slot(idx, Lang.t("defenses"), g.art.building_tex["muralla"][g.human % 4], "", {}, res, p.age >= 1, (func() -> void:
+				_slot(idx, Lang.t("defenses"), g.art.building_icon("muralla", g.human % 4), "", {}, res, p.age >= 1, (func() -> void:
 					grid_mode = "defense"
 					g.sfx("click")
 					refresh_now()), false, -1.0, "" if p.age >= 1 else Lang.t("needs_feudal"))
@@ -868,9 +869,23 @@ class Minimap extends Control:
 		img_tex = ImageTexture.create_from_image(img)
 		_built = true
 
+	## escala de píxeles isométricos del mundo a píxeles del minimapa, y origen (el vértice izquierdo del rombo)
+	func _k() -> float:
+		var sim := hud.game.sim
+		return (size.x - 8.0) / (float(sim.W + sim.H) * Defs.TILE)
+
+	func _origin() -> Vector2:
+		var sim := hud.game.sim
+		return Vector2(4.0 + float(sim.H) * Defs.TILE * _k(), (size.y - float(sim.W + sim.H) * Defs.TILE * 0.5 * _k()) * 0.5)
+
+	## punto lógico del mundo -> punto del control
+	func _tp(p: Vector2) -> Vector2:
+		return Iso.proj(p) * _k() + _origin()
+
 	func _to_world(p: Vector2) -> Vector2:
 		var sim := hud.game.sim
-		return (p / size) * Vector2(sim.W, sim.H) * Defs.TILE
+		var w := Iso.unproj((p - _origin()) / _k())
+		return Vector2(clampf(w.x, 0.0, sim.W * Defs.TILE), clampf(w.y, 0.0, sim.H * Defs.TILE))
 
 	func _gui_input(ev: InputEvent) -> void:
 		if hud.game.load_state != 3:
@@ -892,26 +907,38 @@ class Minimap extends Control:
 		if not _built:
 			_build()
 		var sim := g.sim
-		var r := Rect2(Vector2.ZERO, size)
+		var k := _k()
+		var o := _origin()
+		var T := float(Defs.TILE)
+		# el mapa (cuadrado lógico) se dibuja con la proyección isométrica: es un rombo
+		draw_set_transform_matrix(Transform2D(Vector2(k, 0.5 * k), Vector2(-k, 0.5 * k), o))
+		var r := Rect2(0, 0, sim.W * T, sim.H * T)
 		draw_texture_rect(img_tex, r, false)
 		draw_texture_rect(g.fog.tex, r, false)
-		var k := size / (Vector2(sim.W, sim.H) * Defs.TILE)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
 		for b in sim.buildings:
 			if b.alive and g.can_see_building(b):
 				var c: Color = Defs.PLAYER_COLORS[b.owner % 4]
 				var s := 3.0 + b.size
-				draw_rect(Rect2(b.center() * k - Vector2(s, s) * 0.5, Vector2(s, s)), c, true)
-				draw_rect(Rect2(b.center() * k - Vector2(s, s) * 0.5, Vector2(s, s)), Color(0, 0, 0, 0.7), false, 1.0)
+				var bp := _tp(b.center())
+				draw_rect(Rect2(bp - Vector2(s, s) * 0.5, Vector2(s, s)), c, true)
+				draw_rect(Rect2(bp - Vector2(s, s) * 0.5, Vector2(s, s)), Color(0, 0, 0, 0.7), false, 1.0)
 		for u in sim.units:
 			if u.alive and g.can_see_unit(u):
 				var c2: Color = Defs.PLAYER_COLORS[u.owner % 4]
-				draw_rect(Rect2(u.pos * k - Vector2(1.5, 1.5), Vector2(3, 3)), c2, true)
-		var vr := g.view_rect(0.0)
-		draw_rect(Rect2(vr.position * k, vr.size * k), Color(1, 1, 1, 0.9), false, 1.5)
+				draw_rect(Rect2(_tp(u.pos) - Vector2(1.5, 1.5), Vector2(3, 3)), c2, true)
+		# cuadro de lo que se ve en pantalla (un rectángulo en el plano isométrico)
+		var vi := g.view_iso(0.0)
+		draw_rect(Rect2(vi.position * k + o, vi.size * k), Color(1, 1, 1, 0.9), false, 1.5)
 		if g.sim.time - g.alarm_time < 6.0 and g.alarm_pos.x >= 0:
 			var ph := fmod(Time.get_ticks_msec() / 400.0, 1.0)
-			draw_arc(g.alarm_pos * k, 4.0 + 12.0 * ph, 0.0, TAU, 20, Color(1, 0.2, 0.2, 1.0 - ph), 2.5)
+			draw_arc(_tp(g.alarm_pos), 4.0 + 12.0 * ph, 0.0, TAU, 20, Color(1, 0.2, 0.2, 1.0 - ph), 2.5)
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.55, 0.43, 0.22), false, 3.0)
+		var tp := _tp(Vector2.ZERO)
+		var rp := _tp(Vector2(sim.W * T, 0.0))
+		var bp2 := _tp(Vector2(sim.W * T, sim.H * T))
+		var lp := _tp(Vector2(0.0, sim.H * T))
+		draw_polyline(PackedVector2Array([tp, rp, bp2, lp, tp]), Color(0.55, 0.43, 0.22, 0.9), 1.5)
 
 class InfoPanel extends Control:
 	var hud: Hud
@@ -984,7 +1011,7 @@ class InfoPanel extends Control:
 		var font := get_theme_default_font()
 		if list.size() == 1:
 			var e: Ent = list[0]
-			var tex: Texture2D = g.art.building_tex[e.type][e.owner % 4] if e.is_building else g.art.unit_icon(e.type, e.owner)
+			var tex: Texture2D = g.art.building_icon(e.type, e.owner % 4) if e.is_building else g.art.unit_icon(e.type, e.owner)
 			draw_texture_rect(tex, Rect2(12, 10, 64, 64), false)
 			var name_txt := Lang.t(("b_" if e.is_building else "u_") + e.type)
 			var oc: Color = Defs.PLAYER_COLORS[e.owner % 4]
