@@ -25,6 +25,8 @@ UNIT_DIR = re.compile(r"^[a-z_]+_([0-7])_[a-z0-9]+(_sh|_m)?$")
 BAKED_DIRS = {"1", "2", "3", "4", "5"}
 UNIT_CATS = set(CATS[CATS.index("aldeano"):CATS.index("ariete")])
 ICON = 96
+HIT_CELL = 4          # lado (px de sprite) de las celdas de la máscara de toque de los edificios
+HIT_CATS = set(CATS[CATS.index("casa"):CATS.index("aldeano")])
 
 def skip(name):
     m = UNIT_DIR.match(name)
@@ -72,6 +74,22 @@ def make_icons(src, dst):
     msheet.save(os.path.join(dst, "icons_m.png"), optimize=True)
     json.dump(rects, open(os.path.join(dst, "icons.json"), "w"))
     print("iconos:", len(rects))
+
+def hit_mask(im):
+    """Máscara de toque: una celda de HIT_CELL x HIT_CELL px vale 1 si algún píxel es opaco. Devuelve [ancho, alto, hex]
+    (filas de bits, de izquierda a derecha en el bit más alto, rellenas hasta un byte)."""
+    h, w = im.shape[:2]
+    cw, ch = (w + HIT_CELL - 1) // HIT_CELL, (h + HIT_CELL - 1) // HIT_CELL
+    a = np.zeros((ch * HIT_CELL, cw * HIT_CELL), np.uint8)
+    a[:h, :w] = im[..., 3]
+    cells = (a.reshape(ch, HIT_CELL, cw, HIT_CELL).max(axis=(1, 3)) > 40)
+    rowb = (cw + 7) // 8
+    out = bytearray()
+    for r in range(ch):
+        row = np.zeros(rowb * 8, np.uint8)
+        row[:cw] = cells[r]
+        out += np.packbits(row).tobytes()
+    return [cw, ch, out.hex()]
 
 def cat_of(name):
     base = name[:-3] if name.endswith("_sh") else name
@@ -146,6 +164,7 @@ def main():
     pages = [(np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET), np.uint8))]
     packers = [MaxRects(SHEET, SHEET)]
     placed = {}
+    hits = {}
     for n in names:
         im = np.asarray(Image.open(os.path.join(src, n + ".png")).convert("RGBA"))
         h, w = im.shape[:2]
@@ -163,6 +182,8 @@ def main():
             pages[-1][1][py:py + h, px:px + w] = mk
         a = anchors[n]
         placed[n] = [len(pages) - 1, px, py, w, h, a[0], a[1]]
+        if not n.endswith("_sh") and n.split("_")[0] in HIT_CATS:
+            hits[n] = hit_mask(im)
     sheets = []
     for i, (col, mk) in enumerate(pages):
         # recorta el alto sobrante de la hoja (la textura no tiene por qué ser cuadrada)
@@ -173,7 +194,7 @@ def main():
         Image.fromarray(mk[:hh], "L").save(os.path.join(dst, "mask_%d.png" % i), optimize=True)
         sheets.append(["atlas_%d.png" % i, "mask_%d.png" % i])
         print("hoja %d: %dx%d" % (i, SHEET, hh))
-    json.dump({"sheets": sheets, "sprites": placed}, open(os.path.join(dst, "atlas.json"), "w"))
+    json.dump({"sheets": sheets, "sprites": placed, "hit": hits}, open(os.path.join(dst, "atlas.json"), "w"))
     make_icons(src, dst)
     tot = sum(os.path.getsize(os.path.join(dst, f)) for s in sheets for f in s)
     print("sprites:", len(placed), "hojas:", len(sheets), "peso PNG: %.2f MB" % (tot / 1e6))

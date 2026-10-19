@@ -13,6 +13,9 @@ var sheets: Array[ImageTexture] = []
 var masks: Array[ImageTexture] = []
 var mats: Array[ShaderMaterial] = []  # un material por hoja (cada una lleva su máscara)
 var _atex: Dictionary = {}            # nombre -> AtlasTexture
+var _hit_raw: Dictionary = {}         # nombre -> [ancho, alto, hex] de la máscara de toque (edificios)
+var _hit: Dictionary = {}             # nombre -> [ancho, alto, bytes por fila, PackedByteArray] ya decodificada
+const HIT_CELL := 4
 var _noteam_mats: Array[ShaderMaterial] = []
 
 func _init() -> void:
@@ -27,6 +30,9 @@ func _init() -> void:
 		var r: Array = sp[nm]
 		rects[nm] = [int(r[0]), Rect2(float(r[1]), float(r[2]), float(r[3]), float(r[4]))]
 		anchors[nm] = Vector2(float(r[5]), float(r[6]))
+	var hh: Variant = (data as Dictionary).get("hit", {})
+	if hh is Dictionary:
+		_hit_raw = hh
 	var shader := load("res://shaders/iso_sprite.gdshader") as Shader
 	for s: Array in (data as Dictionary)["sheets"]:
 		var img := (load(DIR + String(s[0])) as Texture2D).get_image()
@@ -85,6 +91,30 @@ func icon_image(name: String, team: Color) -> Image:
 
 func has(name: String) -> bool:
 	return rects.has(name)
+
+## ¿Hay un píxel opaco del sprite `name` a menos de `tol` celdas (de 4 px de sprite) del punto `p` (en píxeles del sprite, con el
+## origen en la esquina del PNG recortado)? Sprites sin máscara: se acepta todo el rectángulo.
+func hit_test(name: String, p: Vector2, tol: int = 1) -> bool:
+	var m: Array = _hit.get(name, [])
+	if m.is_empty():
+		var raw: Array = _hit_raw.get(name, [])
+		if raw.is_empty():
+			var r: Rect2 = (rects[name] as Array)[1]
+			return Rect2(Vector2.ZERO, r.size).has_point(p)
+		var cw := int(raw[0])
+		m = [cw, int(raw[1]), (cw + 7) / 8, String(raw[2]).hex_decode()]
+		_hit[name] = m
+	var cx := floori(p.x / float(HIT_CELL))
+	var cy := floori(p.y / float(HIT_CELL))
+	var w: int = m[0]
+	var h: int = m[1]
+	var rb: int = m[2]
+	var bytes: PackedByteArray = m[3]
+	for y in range(maxi(cy - tol, 0), mini(cy + tol, h - 1) + 1):
+		for x in range(maxi(cx - tol, 0), mini(cx + tol, w - 1) + 1):
+			if (bytes[y * rb + (x >> 3)] >> (7 - (x & 7))) & 1 == 1:
+				return true
+	return false
 
 func tex(name: String) -> AtlasTexture:
 	var t: AtlasTexture = _atex.get(name)

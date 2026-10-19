@@ -771,10 +771,11 @@ func pick_building(ip: Vector2) -> Ent:
 			continue
 		var hit := b.rect().grow(4.0).has_point(gp)
 		if not hit and not b.def.get("wall", false):
-			var dims := building_dims(b.type)
-			var c := Iso.proj(b.center())
-			var r := Rect2(c + dims.position, dims.size).grow(-dims.size.x * 0.12)
-			hit = r.has_point(ip)
+			# píxeles del sprite (con un margen de unas celdas para el dedo); los edificios de delante tapan a los de detrás
+			var nm := building_sprite(b.type, b.orient)
+			if nm != "":
+				var c := Iso.proj(b.center())
+				hit = ia.hit_test(nm, (ip - c) / S + ia.anchors[nm], 2)
 		if hit:
 			var key := b.center().x + b.center().y
 			if key > bk:

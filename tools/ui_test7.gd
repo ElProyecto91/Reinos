@@ -75,6 +75,12 @@ func tap_world(wp: Vector2) -> void:
 	await frames(3)
 	await tap(game.world_to_screen(wp))
 
+## Toque sobre el cuerpo de una unidad (en isométrico el punto del suelo de un barco puede caer sobre otro que va delante)
+func tap_unit(u: Ent) -> void:
+	game.focus_on(u.pos)
+	await frames(3)
+	await tap(game.world_to_screen(u.pos) + Vector2(0, -game.view.unit_top(u) * 0.5 * game.zoom))
+
 func _process(_d: float) -> void:
 	if game.load_state == 3 and not _started:
 		_started = true
@@ -199,7 +205,7 @@ func _run() -> void:
 		warriors.append(sim._spawn_unit("piquero", h, sim.nearest_free_tile(base + Vector2i(k, 4), 6)))
 	game.select_ents(warriors)
 	await frames(3)
-	await tap_world(transport.pos)
+	await tap_unit(transport)
 	var going := 0
 	for w in warriors:
 		if w.state == Sim.S_BOARD_GO or w.stowed:
@@ -247,7 +253,7 @@ func _run() -> void:
 		w2.append(sim._spawn_unit("arquero", h, sim.nearest_free_tile(base + Vector2i(k, 5), 6)))
 	game.select_ents(w2)
 	await frames(2)
-	await tap_world(transport.pos)
+	await tap_unit(transport)
 	await run_sim(60.0)
 	check("2 arqueros a bordo", transport.cargo.size() == 2, str(transport.cargo.size()))
 	game.select_ents([transport])
@@ -262,7 +268,7 @@ func _run() -> void:
 	await frames(3)
 	check("la galera tiene botón de atacar-mover", find_slot(Lang.t("attack_move")) != null)
 	var hp0 := enemy.hp
-	await tap_world(enemy.pos)
+	await tap_unit(enemy)
 	await run_sim(40.0)
 	check("tocar al barco enemigo lo ataca", (not enemy.alive) or enemy.hp < hp0, "hp %.0f -> %.0f" % [hp0, enemy.hp])
 	print("DONE fails=", fails)

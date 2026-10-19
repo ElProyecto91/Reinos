@@ -177,7 +177,10 @@ func _run() -> void:
 	await tap_control(find_btn("garrison"))
 	check("«Refugiar» activa el modo", game.garrison_mode)
 	var tw: Ent = spots["torre"]
-	game._tap(game.world_to_screen(tw.center()))
+	# se toca el fuste de la torre (en isométrico el pie queda tapado por el mercado de delante)
+	var tap_tw := game.world_to_screen(tw.center()) + Vector2(0, -90.0 * game.zoom)
+	check("el toque en el fuste coge la torre", game.pick_at(game.screen_to_iso(tap_tw)) == tw)
+	game._tap(tap_tw)
 	check("tocar la torre sale del modo", not game.garrison_mode)
 	var going := 0
 	for s in soldiers:

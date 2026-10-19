@@ -70,13 +70,13 @@ func _run() -> void:
 			tc = b
 	# 1. caja con pulsación larga: mantener 0.6 s y arrastrar
 	var c := game.world_to_screen(tc.center())
-	touch(0, c + Vector2(-200, 60), true)
+	touch(0, c + Vector2(-230, -50), true)   # en isométrico los aldeanos salen en diagonal a la izquierda del centro urbano
 	await get_tree().create_timer(0.7).timeout
 	check("long press activates box", game.box_active)
 	for i in 5:
-		move_touch(0, c, c + Vector2(260, 220))
+		move_touch(0, c, c + Vector2(70, 150))
 		await get_tree().process_frame
-	touch(0, c + Vector2(260, 220), false)
+	touch(0, c + Vector2(70, 150), false)
 	await frames(4)
 	check("box selects villagers", game.sel.size() == 5)
 	# 2. botón Construir por toque real
