@@ -335,10 +335,30 @@ func test_bell_and_flee() -> void:
 	run(sim, 30.0)
 	ok(not victim.stowed, "pasado el peligro, sale solo")
 
+## Punto cercano a `want` desde el que todas las posiciones de prueba de las posturas (hasta 16 casillas al sur) son terreno libre:
+## el reparto de las bases cambia con el generador de mapas y no debe decidir si la prueba coloca a las unidades en el mar.
+func _open_field(sim: Sim, want: Vector2i) -> Vector2i:
+	var offs := [Vector2i(0, 0), Vector2i(5, 0), Vector2i(0, 8), Vector2i(1, 8), Vector2i(0, 16), Vector2i(3, 16)]
+	for r in range(0, 40):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dy)) != r:
+					continue
+				var b := want + Vector2i(dx, dy)
+				var good := true
+				for o: Vector2i in offs:
+					var t := b + o
+					if not sim.in_bounds(t) or sim.is_solid_tile(t):
+						good = false
+						break
+				if good:
+					return b
+	return want
+
 func test_stances() -> void:
 	var sim := make_sim()
 	var p := rich(sim, 0, 2)
-	var base := p.start_tile + Vector2i(12, 12)
+	var base := _open_field(sim, p.start_tile + Vector2i(12, 12))
 	var mk := func(type: String, owner: int, off: Vector2i) -> Ent:
 		return sim._spawn_unit(type, owner, sim.nearest_free_tile(base + off, 6))
 	# mantener posición: no persigue

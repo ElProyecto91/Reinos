@@ -2915,9 +2915,11 @@ func _u_move(e: Ent, step_px: float) -> void:
 			_unload(e)
 			e.unload_at = Vector2i(-1, -1)
 		if e.explore and r == 2 and e.xp_cell >= 0:
-			e.xp_bad.append(e.xp_cell)       # no hay camino hasta allí: no se vuelve a intentar un rato
-			if e.xp_bad.size() > 16:
-				e.xp_bad.pop_front()
+			# no hay camino hasta allí: no se vuelve a intentar mientras dure esta exploración (con un tope de 16 las celdas
+			# inalcanzables volvían a salir una y otra vez y el explorador no terminaba nunca; ahora, si ya no queda nada
+			# alcanzable, _explore_pick falla y la exploración acaba y avisa)
+			if not e.xp_bad.has(e.xp_cell):
+				e.xp_bad.append(e.xp_cell)
 
 # --- transporte marítimo
 

@@ -75,6 +75,35 @@ func tap_world(wp: Vector2) -> void:
 	await frames(3)
 	await tap(game.world_to_screen(wp))
 
+## Casilla de peces cercana (de la misma agua que el puerto) a la que tocar sin pillar ningún barco propio ni el puerto: con las bases
+## más al interior el banco más próximo queda pegado al muelle y el toque seleccionaría el barco en vez de mandarlo a pescar.
+func _fish_to_tap(sim: Sim, from: Vector2i, port: Ent) -> Vector2i:
+	var wc: int = sim.water_comp_at(from)
+	var best := Vector2i(-1, -1)
+	var bd := 1e9
+	for y in range(maxi(0, from.y - 40), mini(sim.H, from.y + 41)):
+		for x in range(maxi(0, from.x - 40), mini(sim.W, from.x + 41)):
+			var i: int = y * sim.W + x
+			if sim.rtype[i] != Defs.R_FISH or sim.ramt[i] <= 0:
+				continue
+			var t := Vector2i(x, y)
+			if sim.water_comp_at(t) != wc:
+				continue
+			if Vector2(t).distance_to(Vector2(port.dock_tile)) < 4.5:
+				continue
+			var near_ship := false
+			for u in sim.units:
+				if u.alive and u.owner == game.human and Vector2(sim.tile_of(u.pos)).distance_to(Vector2(t)) < 3.5:
+					near_ship = true
+					break
+			if near_ship:
+				continue
+			var d := Vector2(t).distance_to(Vector2(from))
+			if d < bd:
+				bd = d
+				best = t
+	return best
+
 ## Toque sobre el cuerpo de una unidad (en isométrico el punto del suelo de un barco puede caer sobre otro que va delante)
 func tap_unit(u: Ent) -> void:
 	game.focus_on(u.pos)
@@ -176,7 +205,7 @@ func _run() -> void:
 	game.select_ents(fishers)
 	await frames(3)
 	check("pesqueros sin botón Construir", find_slot(Lang.t("build")) == null)
-	var ft := sim.find_fish(sim.tile_of(fishers[0].pos), 40)
+	var ft := _fish_to_tap(sim, sim.tile_of(fishers[0].pos), port)
 	check("hay peces", ft.x >= 0)
 	if ft.x >= 0:
 		var food0: int = p.gathered["food"]

@@ -193,7 +193,9 @@ func test_abilities() -> void:
 			ok(sim.zones.size() == 1, "%s: hay una zona de fuego" % id)
 			run(sim, 4.0)
 			ok(victim.hp < hp_before - 10.0 or not victim.alive, "%s: el fuego daña (%.1f → %.1f)" % [id, hp_before, victim.hp])
-			# amigos no sufren
+			# amigos no sufren (el enemigo, si sigue vivo, atacaría al amigo y falsearía la medida: solo se mide el fuego)
+			if victim.alive:
+				sim._kill(victim, null)
 			var friend := sim._spawn_unit("espadachin", 0, etile + Vector2i(1, 0))
 			var fh := friend.hp
 			run(sim, 2.0)

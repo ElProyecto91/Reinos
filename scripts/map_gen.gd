@@ -10,6 +10,10 @@ static var bias_base := 0.45
 static var fall_k := 1.8
 static var fall_pow := 3.5
 static var rad_k := 0.25
+## Distancia real (en casillas) al agua que se intenta dar a cada base; si el continente no deja, baja de uno en uno hasta el mínimo.
+## -1 = automático (10 en el mapa pequeño, donde hace falta no juntar demasiado a los rivales; 12 en el resto); 0 = criterio antiguo (pruebas).
+static var start_water_goal := -1.0
+static var start_water_min := 8.0
 
 static func generate(size: int, seed_value: int, n_players: int) -> Dictionary:
 	var last: Dictionary = {}
@@ -130,25 +134,44 @@ static func _try(size: int, sd: int, n: int, attempt: int) -> Dictionary:
 	# Distancia a la costa (desde tierra) y al litoral (desde agua)
 	var dw := _bfs_dist(land, size, 1, true)   # distancia a agua, medida en tierra
 	var dl := _bfs_dist(land, size, 0, false)  # distancia a tierra, medida en agua
-	# Candidatos para bases: interior de la masa principal
-	var min_dw := 8
-	var cands: Array[Vector2i] = []
-	while cands.is_empty() and min_dw >= 5:
+	# Candidatos para bases: interior de la masa principal, lo más lejos del mar que el continente permita (hasta start_water_goal
+	# casillas de distancia real al agua): un galeón dispara a 7 casillas (+1,5 del borde del centro urbano y las mejoras de alcance),
+	# así que una base a 6-8 casillas de la costa se bombardea desde el mar sin que nadie pueda impedirlo.
+	var min_sep := size * 0.22
+	var starts: Array[Vector2i] = []
+	var de := _edt(land, size)
+	var depth := start_water_goal if start_water_goal >= 0.0 else (10.0 if size < 192 else 12.0)
+	while starts.is_empty() and depth >= start_water_min:
+		var deep: Array[Vector2i] = []
 		for y in range(0, size, 3):
 			for x in range(0, size, 3):
 				var idx := y * size + x
-				if comp[idx] == main_comp and dw[idx] >= min_dw:
-					cands.append(Vector2i(x, y))
-		if cands.is_empty():
-			min_dw -= 1
-	if cands.size() < n:
-		return {"ok": false}
-	var starts := _pick_starts(cands, n)
-	var min_sep := size * 0.22
-	for i in n:
-		for j in range(i + 1, n):
-			if Vector2(starts[i]).distance_to(Vector2(starts[j])) < min_sep:
-				return {"ok": false}
+				if comp[idx] == main_comp and de[idx] >= depth:
+					deep.append(Vector2i(x, y))
+		if deep.size() >= n:
+			var pick := _pick_starts(deep, n)
+			if _min_separation(pick) >= min_sep:
+				starts = pick
+		if starts.is_empty():
+			depth -= 1.0
+	if starts.is_empty():
+		# Continente pequeño o estrecho: el criterio antiguo (distancia en casillas hasta el agua >= 8, bajando hasta 5)
+		depth = 0.0
+		var min_dw := 8
+		var cands: Array[Vector2i] = []
+		while cands.is_empty() and min_dw >= 5:
+			for y in range(0, size, 3):
+				for x in range(0, size, 3):
+					var idx := y * size + x
+					if comp[idx] == main_comp and dw[idx] >= min_dw:
+						cands.append(Vector2i(x, y))
+			if cands.is_empty():
+				min_dw -= 1
+		if cands.size() < n:
+			return {"ok": false}
+		starts = _pick_starts(cands, n)
+		if _min_separation(starts) < min_sep:
+			return {"ok": false}
 	# Terreno
 	var terrain := PackedByteArray()
 	terrain.resize(total)
@@ -406,6 +429,73 @@ static func _starts_connected(terrain: PackedByteArray, rock: PackedByteArray, s
 		if terrain[i] != Defs.T_WATER and rock[i] == 0 and seen[i] == 1:
 			main_land += 1
 	return float(main_land) >= 0.9 * float(land_total) or land_total - main_land < 60
+
+## Separación mínima entre las bases (distancia más corta entre cualquier pareja).
+static func _min_separation(starts: Array[Vector2i]) -> float:
+	var m := 1e9
+	for i in starts.size():
+		for j in range(i + 1, starts.size()):
+			m = minf(m, Vector2(starts[i]).distance_to(Vector2(starts[j])))
+	return m
+
+## Distancia euclídea exacta de cada casilla de tierra al agua más cercana (0 en el agua): transformada de distancia de Felzenszwalb.
+static func _edt(land: PackedByteArray, size: int) -> PackedFloat32Array:
+	var inf := 1e12
+	var f := PackedFloat64Array()
+	f.resize(size * size)
+	for i in size * size:
+		f[i] = 0.0 if land[i] == 0 else inf
+	var col := PackedFloat64Array()
+	col.resize(size)
+	for x in size:
+		for y in size:
+			col[y] = f[y * size + x]
+		var d := _edt_1d(col, size)
+		for y in size:
+			f[y * size + x] = d[y]
+	var row := PackedFloat64Array()
+	row.resize(size)
+	var out := PackedFloat32Array()
+	out.resize(size * size)
+	for y in size:
+		for x in size:
+			row[x] = f[y * size + x]
+		var d := _edt_1d(row, size)
+		for x in size:
+			out[y * size + x] = sqrt(minf(d[x], inf))
+	return out
+
+static func _edt_1d(g: PackedFloat64Array, n: int) -> PackedFloat64Array:
+	var d := PackedFloat64Array()
+	d.resize(n)
+	var v := PackedInt32Array()
+	v.resize(n)
+	var z := PackedFloat64Array()
+	z.resize(n + 1)
+	var k := 0
+	v[0] = 0
+	z[0] = -1e30
+	z[1] = 1e30
+	for q in range(1, n):
+		var sq := 0.0
+		while true:
+			var vk: int = v[k]
+			sq = ((g[q] + float(q * q)) - (g[vk] + float(vk * vk))) / float(2 * q - 2 * vk)
+			if sq <= z[k]:
+				k -= 1          # z[0] = -inf: k no baja de 0
+			else:
+				break
+		k += 1
+		v[k] = q
+		z[k] = sq
+		z[k + 1] = 1e30
+	k = 0
+	for q in n:
+		while z[k + 1] < float(q):
+			k += 1
+		var vk2: int = v[k]
+		d[q] = float((q - vk2) * (q - vk2)) + g[vk2]
+	return d
 
 static func _pick_starts(cands: Array[Vector2i], n: int) -> Array[Vector2i]:
 	var cx := 0.0
