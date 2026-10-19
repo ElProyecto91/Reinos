@@ -86,8 +86,9 @@ func _ready() -> void:
 	root.add_child(_quit)
 	_upd_btn = UiButton.new()
 	_upd_btn.font_size = 20
+	_upd_btn.sub_size = 17
 	_upd_btn.visible = false
-	_upd_btn.action = func() -> void: _upd.open_download()
+	_upd_btn.action = func() -> void: _upd.activate()
 	root.add_child(_upd_btn)
 	_help = Hud.HelpPanel.new()
 	_help.visible = false
@@ -98,7 +99,7 @@ func _ready() -> void:
 	root.add_child(_civ_panel)
 	_upd = Updater.new()
 	add_child(_upd)
-	_upd.update_found.connect(_on_update_found)
+	_upd.state_changed.connect(_refresh_upd)
 	_upd.check()
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -172,15 +173,19 @@ func _layout() -> void:
 	_quit.position = Vector2(x + w * 0.5 + 6, y + 132)
 	_civ_panel.position = Vector2.ZERO
 	_civ_panel.size = vs
-	_upd_btn.size = Vector2(480, 42)
-	_upd_btn.position = Vector2(vs.x - 492, 10)
+	_upd_btn.size = Vector2(560, 62)
+	_upd_btn.position = Vector2(vs.x - 572, 8)
 	_help.position = Vector2.ZERO
 	_help.size = vs
 	root.queue_redraw()
 
-func _on_update_found(build: int) -> void:
-	_upd_btn.text = Lang.t("update_available") % build
-	_upd_btn.visible = true
+## El botón de arriba a la derecha sigue al actualizador: aviso, permiso, barra de descarga, instalación...
+func _refresh_upd() -> void:
+	_upd_btn.visible = _upd.state != Updater.IDLE
+	_upd_btn.text = _upd.label()
+	_upd_btn.sub = _upd.sub_text()
+	_upd_btn.progress = _upd.progress if _upd.state == Updater.DOWNLOADING else -1.0
+	_upd_btn.accent = Color(0.5, 0.95, 0.5) if _upd.state == Updater.DONE else Color(0.82, 0.64, 0.25)
 	_upd_btn.queue_redraw()
 
 func _refresh() -> void:

@@ -29,6 +29,7 @@ static var auto_pause := true
 static var check_updates := true      # aviso de versión nueva (única conexión a Internet del juego)
 static var last_update_check := 0     # segundos Unix de la última comprobación
 static var known_build := 0           # última build publicada que se conoce
+static var known_size := 0            # bytes de su APK según GitHub (0 = no consta); solo para mostrarlo
 static var civ := "random"             # civilización elegida en el menú ("random" = al azar)
 static var _loaded := false
 
@@ -43,6 +44,7 @@ static func ensure_loaded() -> void:
 		check_updates = bool(cf.get_value("actualizaciones", "avisar", true))
 		last_update_check = int(cf.get_value("actualizaciones", "ultima", 0))
 		known_build = int(cf.get_value("actualizaciones", "conocida", 0))
+		known_size = int(cf.get_value("actualizaciones", "tamano", 0))
 		var cv := String(cf.get_value("partida", "civilizacion", "random"))
 		civ = cv if (cv == "random" or Civs.valid(cv)) else "random"
 
@@ -53,6 +55,7 @@ static func save() -> void:
 	cf.set_value("actualizaciones", "avisar", check_updates)
 	cf.set_value("actualizaciones", "ultima", last_update_check)
 	cf.set_value("actualizaciones", "conocida", known_build)
+	cf.set_value("actualizaciones", "tamano", known_size)
 	cf.set_value("partida", "civilizacion", civ)
 	cf.save(PATH)
 

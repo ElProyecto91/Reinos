@@ -160,7 +160,9 @@ jobs:
           cp android_extra/AndroidManifest.xml android/build/AndroidManifest.xml
           cp -r android_extra/src/. android/build/src/
           sed -i 's#^gradle_build/use_gradle_build=.*#gradle_build/use_gradle_build=true#' export_presets.cfg
-          grep -n "use_gradle_build" export_presets.cfg
+          # sin esto Gradle guarda las bibliotecas nativas SIN comprimir y el APK pasa de 39 a 91 MB (cada actualización lo descarga entero)
+          sed -i 's#^gradle_build/compress_native_libraries=.*#gradle_build/compress_native_libraries=true#' export_presets.cfg
+          grep -n "use_gradle_build\|compress_native" export_presets.cfg
           # las bibliotecas nativas de Godot ya vienen sin símbolos: no hace falta el NDK
           echo "ORG_GRADLE_PROJECT_doNotStrip=true" >> "$GITHUB_ENV"
           ls android/build android/build/src/com/*
@@ -176,7 +178,7 @@ jobs:
         run: |
           aapt2="$SDK/build-tools/35.0.1/aapt2"
           "$aapt2" dump xmltree --file AndroidManifest.xml build/reinos.apk > manifest.txt
-          grep -E "uses-permission|plugin.v2|package=|versionCode|screenOrientation" manifest.txt | sed 's/^ */::notice title=Manifiesto::/' | head -20
+          grep -E "uses-permission|plugin.v2|package=|versionCode|screenOrientation|minSdkVersion|targetSdkVersion" manifest.txt | sed 's/^ */::notice title=Manifiesto::/' | head -20
           grep -q "org.godotengine.plugin.v2.ReinosInstaller" manifest.txt || { echo "::error title=Instalador::falta el componente en el manifiesto"; exit 1; }
           grep -q "android.permission.REQUEST_INSTALL_PACKAGES" manifest.txt || { echo "::error title=Instalador::falta el permiso de instalar"; exit 1; }
           unzip -p build/reinos.apk 'classes*.dex' | grep -aq "com/reinos/juego/InstallerPlugin" || { echo "::error title=Instalador::la clase no está en el APK"; exit 1; }

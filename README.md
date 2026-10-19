@@ -46,10 +46,10 @@ Hecho con Godot 4.4.1 (gratuito). Todo el arte y los sonidos se generan por cód
 
 Qué se ha hecho y qué NO se puede prometer («100 % segura» no existe):
 
-- **Permisos del APK:** solo `VIBRATE` e `INTERNET`. Internet se usa únicamente para el aviso de versión nueva (se desactiva en el menú, «Actualizaciones: No») y no envía ningún dato tuyo. No pide ubicación, contactos, cámara, micrófono ni almacenamiento. El flujo de GitHub **falla** si el APK pide cualquier otro permiso o es depurable.
+- **Permisos del APK:** solo `VIBRATE`, `INTERNET` e `REQUEST_INSTALL_PACKAGES`. Internet se usa únicamente para el aviso de versión nueva y, si lo tocas, para descargar la actualización (se desactiva en el menú, «Actualizaciones: No») y no envía ningún dato tuyo. `REQUEST_INSTALL_PACKAGES` es el permiso que Android exige para entregar un APK al instalador del sistema: la primera vez te llevará a *Ajustes → «Permitir de esta fuente»*. No pide ubicación, contactos, cámara, micrófono ni almacenamiento. El flujo de GitHub **falla** si el APK pide cualquier otro permiso o es depurable.
 - **Datos:** solo `ajustes.cfg` (perfil, auto-pausa, avisos) y `partida.sav`/`partida.json` (tu partida guardada, comprimida) en el almacenamiento privado de la app. No hay cuentas, ni publicidad, ni estadísticas. El juego no ejecuta nada que venga de fuera.
 - **Firma:** el APK es *release* (no depurable) y va firmado con una clave privada que **solo existe en los secretos de GitHub** (`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`). Su huella SHA-256 está en `.github/signing-cert.sha256` y en las notas de cada release; el flujo se niega a publicar si la huella no coincide.
-- **Actualizaciones:** el juego consulta (HTTPS) la última release; si hay una nueva, avisa en el menú. Al tocar el aviso abre en el navegador una dirección fija del código. La instala Android, que **solo acepta un APK firmado con la misma clave** que el instalado: uno manipulado no puede sustituirlo. Android no permite instalar sin que toques «Instalar»; esto no se puede automatizar más sin permisos peores.
+- **Actualizaciones:** el juego consulta (HTTPS) la última release; si hay una nueva, avisa en el menú con su tamaño. Al tocar el aviso **descarga el APK dentro del juego** (barra de progreso; tocar otra vez cancela), comprueba que su SHA-256 coincide con el de `reinos.apk.sha256` y se lo entrega al instalador de Android (`PackageInstaller`); tú solo tocas «Instalar». La dirección de descarga se construye siempre con el host fijo `github.com/ElProyecto91/reinos` y un número de build validado como solo dígitos: nada de lo que diga la respuesta de la API decide qué se descarga. La suma SHA-256 detecta descargas corruptas; la **autenticidad** la garantiza Android, que **solo acepta un APK firmado con la misma clave** que el instalado: uno manipulado no puede sustituirlo aunque llegara a descargarse. Si algo falla (sin permiso, sin red, suma distinta, el instalador no responde) el botón ofrece reintentar y después abrir la descarga en el navegador. Android no permite instalar del todo en silencio fuera de Google Play: el toque en «Instalar» no se puede quitar. **No está probado en un móvil real**: las pruebas automáticas cubren la descarga, el hash y el recorrido de estados con un instalador simulado; el tramo del plugin Java con `PackageInstaller` solo se ha compilado y comprobado dentro del APK.
 - **Cadena de compilación:** Godot y sus plantillas se verifican con SHA-512 fijados, las acciones de terceros van fijadas por commit y el token del flujo es de solo lectura salvo para publicar la release.
 - **Verificar tú mismo un APK:** `sha256sum -c reinos.apk.sha256` y `apksigner verify --print-certs reinos.apk` (la huella debe ser la de `.github/signing-cert.sha256`).
 
@@ -78,7 +78,7 @@ Lo que NO está cubierto:
 
 1. Sube esta carpeta a GitHub (incluye `.github/workflows/apk.yml`) y configura la firma (ver «Seguridad»).
 2. Cada subida a `main` compila y, si todo está correcto, publica una *Release* `build-N` con `reinos.apk` y `reinos.apk.sha256`. También puedes lanzarlo a mano: **Actions → APK Android → Run workflow**.
-3. Descarga `reinos.apk` de **Releases → Latest** (si el repositorio es público, desde el navegador del móvil sin iniciar sesión) e instálalo. Las actualizaciones se instalan encima sin desinstalar.
+3. Descarga `reinos.apk` de **Releases → Latest** (si el repositorio es público, desde el navegador del móvil sin iniciar sesión) e instálalo. Las actualizaciones se instalan encima sin desinstalar, y desde la primera build con actualizador integrado las siguientes se descargan desde el propio menú del juego.
 
 Sin los secretos de firma el flujo compila igualmente, pero con una clave desechable: el artefacto se llama `reinos-apk-SIN-CLAVE-FIJA`, no se publica y no se podrá actualizar encima de otro.
 
@@ -90,6 +90,8 @@ Sin los secretos de firma el flujo compila igualmente, pero con una clave desech
 4. *Editor → Ajustes del editor → Exportar → Android*: ruta del SDK, ruta del JDK y la clave de depuración (Godot puede crearla con `keytool`).
 5. *Proyecto → Exportar → Android* (ya está configurado en `export_presets.cfg`: arm64, sin Gradle, horizontal) → *Exportar proyecto*.
 6. Activa la instalación de orígenes desconocidos en el móvil y copia el `.apk`.
+
+Una exportación local así **no lleva el instalador de actualizaciones** (el plugin `ReinosInstaller` y su permiso van en `android_extra/` y solo los incluye el flujo de GitHub, que compila con la plantilla Gradle de Godot y comprime las bibliotecas nativas para que el APK pese ~40 MB y no ~90 MB): en ese caso el aviso de versión nueva abre el navegador, como antes.
 
 Para publicar en Google Play necesitarías un `.aab` firmado con tu propia clave (y una cuenta de desarrollador, que tiene coste). Eso queda fuera del «coste 0».
 
@@ -205,9 +207,11 @@ xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/frames_menu.t
 $GODOT --headless --path . --script res://tools/save_test.gd -- seed=8 size=256 min=11
 xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/ui_test8.tscn --rendering-driver opengl3 --resolution 1280x720
 
-# aviso de actualización (necesita el servidor de pruebas en marcha)
+# aviso y descarga de actualización: suma SHA-256, redirecciones, cortes, permiso, cancelar, errores del instalador (necesita el servidor de pruebas en marcha)
 python3 tools/mock_release_server.py 18765 &
 $GODOT --headless --path . --script res://tools/updater_test.gd -- port=18765
+# capturas del botón del menú en cada estado de la actualización
+xvfb-run -a -s "-screen 0 1280x720x24" $GODOT --path . res://tools/update_shot.tscn --rendering-driver opengl3 --resolution 1280x720 -- out=/tmp/upd
 
 # conectividad de mapas, exploración autónoma y filtro de búsqueda de enemigos
 $GODOT --headless --path . --script res://tools/connect_test.gd
