@@ -15,3 +15,6 @@ build/
 
 # plantilla de Android que el flujo de GitHub instala al compilar (ver android_extra/)
 /android/
+
+# caché de Python de las herramientas de arte
+__pycache__/
