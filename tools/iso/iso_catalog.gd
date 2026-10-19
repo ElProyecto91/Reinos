@@ -76,7 +76,7 @@ static func groups() -> Dictionary:
 	g["monasterio"] = _g(DEFAULT_CFG, [["monasterio", func() -> Node3D: return IsoBuild.monasterio(T), 0.0, true, true]])
 	g["herreria"] = _g(DEFAULT_CFG, [["herreria", func() -> Node3D: return IsoBuild.herreria(T), 0.0, true, true]])
 	g["mercado"] = _g(DEFAULT_CFG, [["mercado", func() -> Node3D: return IsoBuild.mercado(T), 0.0, true, true]])
-	g["mina"] = _g(SMALL_CFG, [["mina", func() -> Node3D: return IsoBuild.mina(T), 0.0, true, true]])
+	g["mina"] = _g(DEFAULT_CFG, [["mina", func() -> Node3D: return IsoBuild.mina(T), 0.0, true, true]])
 	var pw: Array = []
 	for o in 4:
 		var oo := o

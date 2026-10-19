@@ -186,14 +186,9 @@ static func _draw_pier(c: CanvasItem, b: Ent) -> void:
 
 static var _smoke: PackedFloat32Array = PackedFloat32Array()   # x, y, radio, alfa de cada bocanada del fotograma
 
-## Chimeneas (px de pantalla respecto al centro de la huella) y ventanas (x, y, ancho, alto) para el brillo nocturno
-const SMOKE := {"casa": Vector2(18, -78), "centro": Vector2(30, -128), "cuartel": Vector2(24, -100), "herreria": Vector2(-20, -92)}
-const WINDOWS := {
-	"casa": [[-14, -34, 7, 8], [10, -28, 7, 8]],
-	"centro": [[-30, -50, 8, 10], [26, -44, 8, 10]],
-	"cuartel": [[-30, -46, 8, 9], [26, -40, 8, 9]],
-	"puerto": [[-24, -40, 7, 8], [20, -34, 7, 8]],
-}
+## Chimeneas (px de pantalla respecto al centro de la huella, calculadas con las medidas de los modelos 3D: ((x − z)·32, (x + z)·16 − y·39,2)).
+## Las ventanas de noche no se dibujan aquí: brillan en el propio sprite (canal G de la máscara, ver shaders/iso_sprite.gdshader).
+const SMOKE := {"casa": Vector2(-8, -70), "cuartel": Vector2(42, -78), "herreria": Vector2(53, -68)}
 
 static func draw_overlay(g: Game, c: CanvasItem) -> void:
 	var sim := g.sim
@@ -254,12 +249,6 @@ static func _overlay_building(g: Game, c: CanvasItem, b: Ent, ctr: Vector2, view
 				_smoke.append(p.y)
 				_smoke.append(2.2 + ph * 6.5)
 				_smoke.append(0.42 * (1.0 - ph) * minf(1.0, ph * 6.0))
-		if g.night > 0.12 and WINDOWS.has(b.type):
-			for w: Array in WINDOWS[b.type]:
-				var wr := Rect2(ctr + Vector2(float(w[0]), float(w[1])), Vector2(float(w[2]), float(w[3])))
-				var gr := wr.size.x * 1.6
-				c.draw_texture_rect(g.art.puff_tex, Rect2(wr.get_center() - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.78, 0.38, 0.10 * g.night))
-				c.draw_rect(wr, Color(1.0, 0.84, 0.45, 0.88 * g.night), true)
 	var show_bar := b.hp < b.max_hp or g.sel_set.has(b.id) or not done
 	if show_bar:
 		var dims := view.building_dims(b.type)

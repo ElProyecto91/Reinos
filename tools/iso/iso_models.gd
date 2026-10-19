@@ -207,6 +207,13 @@ static func tmat(tex: Texture2D, per_unit: float, tint: Color = Color.WHITE, rou
 ## pase de máscara y el juego lo tiñe con el color del jugador. Ningún otro material de los modelos usa grises neutros.
 const TEAM_BASE := Color(0.75, 0.75, 0.75)
 static var team_mats: Array = []
+## Cristal de ventanas (se anota aparte): el baker lo pinta de verde en la máscara y de noche el juego lo hace brillar.
+static var window_mats: Array = []
+
+static func glass_mat() -> StandardMaterial3D:
+	var m := fmat(Color(0.10, 0.14, 0.22), 0.3, 0.8)
+	window_mats.append(m)
+	return m
 
 static func _is_team(c: Color) -> bool:
 	return absf(c.r - c.g) < 0.0005 and absf(c.g - c.b) < 0.0005
@@ -318,7 +325,7 @@ static func _flag(parent: Node3D, pos: Vector3, team: Color, h: float = 0.7) -> 
 	box(parent, Vector3(0.10, 0.06, 0.014), pos + Vector3(0.20, h - 0.10, 0), fmat(Color(1, 1, 1), 0.9, 0.1))
 
 static func _window(parent: Node3D, pos: Vector3, size: Vector3, wood: Material) -> void:
-	box(parent, size, pos, fmat(Color(0.10, 0.14, 0.22), 0.3, 0.8))
+	box(parent, size, pos, glass_mat())
 	var fr := 0.025
 	box(parent, Vector3(size.x + 0.06, fr, size.z + 0.015) if size.z < size.x else Vector3(size.x + 0.015, fr, size.z + 0.06), pos + Vector3(0, size.y * 0.5 + fr * 0.5, 0), wood)
 

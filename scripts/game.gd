@@ -280,6 +280,8 @@ func _atmosphere() -> void:
 	col = col.lerp(Color(0.72, 0.76, 0.84), overcast * 0.40)
 	var dim := 1.0 - 0.12 * rain
 	canvas_mod.color = Color(col.r * dim, col.g * dim, col.b * dim, 1.0)
+	if art != null and art.iso != null:
+		art.iso.set_night(night, canvas_mod.color)
 	_sky_mat.set_shader_parameter("cover", overcast)
 	terrain_mat.set_shader_parameter("full", 0.0 if Settings.profile == 0 else 1.0)
 	_rain_rect.visible = rain > 0.03

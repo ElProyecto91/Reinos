@@ -14,13 +14,18 @@ FACTOR = 2
 SHADOW_MAX = 0.60      # alfa de la sombra más densa (medida: la luz directa aporta ~60 % del brillo del suelo)
 
 def load_mask(path, h, w):
-    """Máscara de equipo horneada (R = 1 en las partes que se tiñen): promedio FACTOR x FACTOR ponderado por la cobertura."""
+    """Máscara horneada -> dos planos (promedio FACTOR x FACTOR ponderado por la cobertura):
+    R = equipo (blanco en el horneado), G = cristal de ventana (verde puro: G alto y R bajo; el blanco del equipo no cuenta)."""
     im = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32) / 255.0
-    m = im[..., 0:1] * im[..., 3:4]
     a = im[..., 3:4]
-    m2 = m.reshape(h // FACTOR, FACTOR, w // FACTOR, FACTOR, 1).mean(axis=(1, 3))
+    team = im[..., 0:1] * a
+    win = np.clip(im[..., 1:2] - im[..., 0:1], 0.0, 1.0) * a
     a2 = a.reshape(h // FACTOR, FACTOR, w // FACTOR, FACTOR, 1).mean(axis=(1, 3))
-    return np.where(a2 > 1e-4, m2 / np.maximum(a2, 1e-4), 0.0)[..., 0]
+    outs = []
+    for m in (team, win):
+        m2 = m.reshape(h // FACTOR, FACTOR, w // FACTOR, FACTOR, 1).mean(axis=(1, 3))
+        outs.append(np.where(a2 > 1e-4, m2 / np.maximum(a2, 1e-4), 0.0)[..., 0])
+    return np.stack(outs, axis=-1)
 
 def process(path, origin=ORIGIN, shadow=False, mask_path=None):   # devuelve (imagen recortada, [ox, oy, ancho, alto], máscara recortada o None)
     im = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32) / 255.0
@@ -52,8 +57,9 @@ def process(path, origin=ORIGIN, shadow=False, mask_path=None):   # devuelve (im
     mimg = None
     if mask_path and os.path.exists(mask_path):
         mk = load_mask(mask_path, h, w)[y0:y1, x0:x1]
-        mk = np.where(crop[..., 3] > 0.02, mk, 0.0)
-        mimg = Image.fromarray((np.clip(mk, 0, 1) * 255.0 + 0.5).astype(np.uint8), "L")
+        mk = np.where(crop[..., 3:4] > 0.02, mk, 0.0)
+        mk3 = np.concatenate([mk, np.zeros_like(mk[..., :1])], axis=-1)     # R equipo, G cristal, B sin uso
+        mimg = Image.fromarray((np.clip(mk3, 0, 1) * 255.0 + 0.5).astype(np.uint8), "RGB")
     return img, [round(ox, 2), round(oy, 2), img.width, img.height], mimg
 
 def main():

@@ -13,6 +13,7 @@ var sel := false
 var hud_on := false
 var at_off := Vector2i(0, 0)
 var _started := false
+var tod_v := -1.0
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -23,6 +24,7 @@ func _ready() -> void:
 		elif a.begins_with("secs="): secs = float(a.substr(5))
 		elif a.begins_with("sel="): sel = a.substr(4) == "1"
 		elif a.begins_with("hud="): hud_on = a.substr(4) == "1"
+		elif a.begins_with("tod="): tod_v = float(a.substr(4))   # hora del día 0..1 (0,85 = noche; 0,5 = mediodía)
 	Settings.ensure_loaded()
 	Settings.profile = 1
 	Settings.auto_pause = false
@@ -131,6 +133,9 @@ func _run() -> void:
 			game.view.update(0.016)
 			await get_tree().process_frame
 	await get_tree().create_timer(0.4).timeout
+	if tod_v >= 0.0:
+		sim.time = fposmod(tod_v - 0.30, 1.0) * Game.DAY_LEN
+		game._atmosphere()
 	for k in 3:
 		game.l_ents.queue_redraw()
 		game.l_decals.queue_redraw()

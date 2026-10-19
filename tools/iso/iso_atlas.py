@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Empaqueta los sprites isométricos (salida de iso_post.py) en hojas de atlas para el juego.
 Escribe en <destino> (normalmente art/iso): atlas_N.png (RGBA, con el color de los bordes extendido a los píxeles
-transparentes para que el filtrado bilineal no deje halos oscuros), mask_N.png (L, mismo reparto: 255 = parte que se
-tiñe con el color del jugador) y atlas.json ({"sheets": [[atlas, máscara], ...], "sprites": {nombre: [hoja, x, y, w, h, ox, oy]}}).
+transparentes para que el filtrado bilineal no deje halos oscuros), mask_N.png (RGB, mismo reparto: R = parte que se
+tiñe con el color del jugador, G = cristal de ventana que brilla de noche) y atlas.json ({"sheets": [[atlas, máscara], ...], "sprites": {nombre: [hoja, x, y, w, h, ox, oy]}}).
 Las categorías van seguidas (lo que se dibuja junto comparte hoja: menos cambios de textura al ordenar por profundidad).
 Uso: python3 tools/iso/iso_atlas.py /tmp/iso_sprites art/iso"""
 import json, os, re, sys
@@ -61,7 +61,7 @@ def make_icons(src, dst):
     for i, n in enumerate(names):
         sp = I.open(os.path.join(src, targets[n] + ".png")).convert("RGBA")
         mp = os.path.join(src, targets[n] + "_m.png")
-        mk = I.open(mp).convert("L") if os.path.exists(mp) else I.new("L", sp.size, 0)
+        mk = I.open(mp).convert("RGB").split()[0] if os.path.exists(mp) else I.new("L", sp.size, 0)   # canal R: sólo el equipo
         k = min((ICON - 8) / sp.width, (ICON - 8) / sp.height)
         w, h = max(1, round(sp.width * k)), max(1, round(sp.height * k))
         sp2 = sp.resize((w, h), I.LANCZOS)
@@ -74,6 +74,14 @@ def make_icons(src, dst):
     msheet.save(os.path.join(dst, "icons_m.png"), optimize=True)
     json.dump(rects, open(os.path.join(dst, "icons.json"), "w"))
     print("iconos:", len(rects))
+
+def load_mask_rgb(path):
+    """Máscara de un sprite como RGB (R equipo, G cristal): las antiguas, de un solo canal (L), sólo traen equipo."""
+    im = Image.open(path)
+    if im.mode == "L":
+        a = np.asarray(im)
+        return np.stack([a, np.zeros_like(a), np.zeros_like(a)], axis=-1)
+    return np.asarray(im.convert("RGB"))
 
 def hit_mask(im):
     """Máscara de toque: una celda de HIT_CELL x HIT_CELL px vale 1 si algún píxel es opaco. Devuelve [ancho, alto, hex]
@@ -161,7 +169,7 @@ def main():
         if (f.startswith("atlas_") or f.startswith("mask_")) and f.endswith(".png"):
             os.remove(os.path.join(dst, f))
     names = sorted([n for n in anchors if not skip(n)], key=lambda n: (cat_of(n), -anchors[n][3], n))
-    pages = [(np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET), np.uint8))]
+    pages = [(np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET, 3), np.uint8))]
     packers = [MaxRects(SHEET, SHEET)]
     placed = {}
     hits = {}
@@ -169,10 +177,10 @@ def main():
         im = np.asarray(Image.open(os.path.join(src, n + ".png")).convert("RGBA"))
         h, w = im.shape[:2]
         mp = os.path.join(src, n + "_m.png")
-        mk = np.asarray(Image.open(mp).convert("L")) if os.path.exists(mp) else None
+        mk = load_mask_rgb(mp) if os.path.exists(mp) else None
         pos = packers[-1].place(w + PAD, h + PAD)
         if pos is None:
-            pages.append((np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET), np.uint8)))
+            pages.append((np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET, 3), np.uint8)))
             packers.append(MaxRects(SHEET, SHEET))
             pos = packers[-1].place(w + PAD, h + PAD)
         x, y = pos
@@ -191,7 +199,7 @@ def main():
         hh = min(SHEET, used)
         col = bleed(col[:hh])
         Image.fromarray(col, "RGBA").save(os.path.join(dst, "atlas_%d.png" % i), optimize=True)
-        Image.fromarray(mk[:hh], "L").save(os.path.join(dst, "mask_%d.png" % i), optimize=True)
+        Image.fromarray(mk[:hh], "RGB").save(os.path.join(dst, "mask_%d.png" % i), optimize=True)
         sheets.append(["atlas_%d.png" % i, "mask_%d.png" % i])
         print("hoja %d: %dx%d" % (i, SHEET, hh))
     json.dump({"sheets": sheets, "sprites": placed, "hit": hits}, open(os.path.join(dst, "atlas.json"), "w"))

@@ -39,8 +39,8 @@ func _init() -> void:
 		img.generate_mipmaps()
 		var t := ImageTexture.create_from_image(img)
 		var mimg := (load(DIR + String(s[1])) as Texture2D).get_image()
-		if mimg.get_format() != Image.FORMAT_R8:
-			mimg.convert(Image.FORMAT_R8)
+		if mimg.get_format() != Image.FORMAT_RG8:
+			mimg.convert(Image.FORMAT_RG8)
 		mimg.generate_mipmaps()
 		var mt := ImageTexture.create_from_image(mimg)
 		var m := ShaderMaterial.new()
@@ -50,6 +50,15 @@ func _init() -> void:
 		masks.append(mt)
 		mats.append(m)
 	_load_icons()
+
+## Brillo de las ventanas: `night` 0 día .. 1 noche; `tint` es el tinte global del lienzo (el brillo se compensa para que no se apague).
+func set_night(night: float, tint: Color) -> void:
+	var warm := Color(1.0, 0.80, 0.42)
+	var g := Vector3(warm.r / maxf(tint.r, 0.35), warm.g / maxf(tint.g, 0.35), warm.b / maxf(tint.b, 0.35))
+	var glow := smoothstep(0.12, 0.55, night)
+	for m in mats:
+		m.set_shader_parameter("glow", glow)
+		m.set_shader_parameter("glow_col", g)
 
 var _icon_img: Image
 var _icon_mask: Image

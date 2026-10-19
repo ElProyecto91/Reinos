@@ -26,7 +26,7 @@ static func mats(seed_v: int) -> Dictionary:
 		"iron": M.fmat(Color(0.25, 0.25, 0.28), 0.6, 0.5),
 		"steel": M.fmat(Color(0.56, 0.58, 0.64), 0.4, 0.7),
 		"dark": M.fmat(Color(0.07, 0.06, 0.08), 0.9, 0.1),
-		"glass": M.fmat(Color(0.10, 0.14, 0.22), 0.3, 0.8),
+		"glass": M.glass_mat(),
 		"hay": M.fmat(Color(0.84, 0.72, 0.34), 0.95, 0.1),
 		"straw": M.fmat(Color(0.88, 0.78, 0.45), 0.95, 0.1),
 		"sack": M.fmat(Color(0.74, 0.64, 0.46), 0.95, 0.1),

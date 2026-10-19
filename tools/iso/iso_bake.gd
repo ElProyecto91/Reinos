@@ -126,14 +126,19 @@ func _unshaded(c: Color) -> StandardMaterial3D:
 	return m
 
 ## Pase de máscara de equipo: las partes con material de equipo (IsoModels.team_mats) en blanco, todo lo demás en negro, sin luz.
-func _mask_swap(n: Node, white: Material, black: Material, saved: Array) -> void:
+func _mask_swap(n: Node, white: Material, black: Material, saved: Array, green: Material = null) -> void:
 	if n is MeshInstance3D:
 		var mi := n as MeshInstance3D
 		var orig: Material = mi.material_override
 		saved.append([mi, orig])
-		mi.material_override = white if (orig != null and IsoModels.team_mats.has(orig)) else black
+		if orig != null and IsoModels.team_mats.has(orig):
+			mi.material_override = white
+		elif orig != null and green != null and IsoModels.window_mats.has(orig):
+			mi.material_override = green        # cristal: canal G de la máscara (brilla de noche)
+		else:
+			mi.material_override = black
 	for c in n.get_children():
-		_mask_swap(c, white, black, saved)
+		_mask_swap(c, white, black, saved, green)
 
 func _shot(model: Node3D, yaw: float, name: String, shadow: bool = false, mask: bool = false) -> void:
 	holder.add_child(model)
@@ -144,7 +149,7 @@ func _shot(model: Node3D, yaw: float, name: String, shadow: bool = false, mask: 
 	origins[name] = [ORIGIN.x, ORIGIN.y]
 	if mask:
 		var saved: Array = []
-		_mask_swap(model, _unshaded(Color.WHITE), _unshaded(Color.BLACK), saved)
+		_mask_swap(model, _unshaded(Color.WHITE), _unshaded(Color.BLACK), saved, _unshaded(Color(0, 1, 0)))
 		await _frames()
 		vp.get_texture().get_image().save_png("%s/%s_m.png" % [out_dir, name])
 		for e in saved:
