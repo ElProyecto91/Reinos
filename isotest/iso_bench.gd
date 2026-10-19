@@ -10,7 +10,7 @@ const UNIT_SC := 0.52
 const SITE := Vector2i(80, 44)            # claro de hierba junto a la costa en la semilla 4
 const SEED := 4
 const SHEET_DIR := "res://isotest/sprites/"
-const MAX_UNITS := 800
+const MAX_UNITS := 3200
 const AREA := Rect2(-12.0, -9.0, 26.0, 21.0)   # zona (casillas locales) por la que pasean las unidades
 
 var sim: Sim
@@ -63,6 +63,8 @@ var meas_t := 0.0
 var meas_len := 10.0
 var meas_ms: PackedFloat32Array = PackedFloat32Array()
 var meas_cfg := ""
+var upd_ms := 0.0                          # lo que tarda en cada fotograma mover las unidades y cambiar sus sprites (script puro)
+var meas_proc := 0.0                       # suma del tiempo de script por fotograma (s), para separar CPU de GPU
 var ladder: Array = []                     # pasos pendientes de la prueba escalonada (nº de unidades)
 var ladder_res: Array = []
 var ladder_on := false
@@ -598,11 +600,13 @@ func _start_measure(secs: float) -> void:
 	meas_t = 0.0
 	meas_len = secs
 	meas_ms = PackedFloat32Array()
+	meas_proc = 0.0
 	meas_cfg = _config_text()
 	result_lbl.text = "Midiendo… no toques la pantalla"
 
 func _start_ladder() -> void:
-	ladder = [150, 300, 500, 800]
+	# [unidades, zoom]: 1,4 ≈ zoom de juego (casilla como en Age of Empires); 0,6 = todo el mapa a la vista (el caso de la prueba anterior)
+	ladder = [[300, 1.4], [800, 1.4], [800, 0.6], [1600, 1.4], [2400, 1.4], [3200, 1.4]]
 	ladder_res = []
 	ladder_on = true
 	_ladder_next()
@@ -619,12 +623,14 @@ func _ladder_next() -> void:
 		if autotest > 0.0:
 			get_tree().quit()
 		return
-	var target: int = ladder.pop_front()
+	var step: Array = ladder.pop_front()
+	var target: int = step[0]
+	_zoom_at(get_viewport_rect().size * 0.5, float(step[1]))
 	if units.size() < target:
 		_spawn_units(target - units.size())
 	elif units.size() > target:
 		_remove_units(units.size() - target)
-	_start_measure(5.0)
+	_start_measure(4.0)
 
 func _finish_measure() -> void:
 	measuring = false
@@ -640,12 +646,12 @@ func _finish_measure() -> void:
 	avg /= maxf(1.0, float(n))
 	var p99 := s[mini(n - 1, int(float(n) * 0.99))]
 	if ladder_on:
-		ladder_res.append("%d unidades: %.0f FPS (%.1f ms) · 1 %% peor %.0f FPS · peor %.1f ms" % [units.size(), 1000.0 / maxf(avg, 0.001), avg, 1000.0 / maxf(p99, 0.001), s[n - 1]])
+		ladder_res.append("%d uds, zoom %.1f: %.0f FPS (%.1f ms) · 1 %% peor %.0f FPS · peor %.1f ms · mover unidades %.1f ms" % [units.size(), zoom, 1000.0 / maxf(avg, 0.001), avg, 1000.0 / maxf(p99, 0.001), s[n - 1], meas_proc * 1000.0 / float(n)])
 		result_lbl.text = "Escalonada…\n" + "\n".join(PackedStringArray(ladder_res))
 		_ladder_next()
 		return
-	var txt := "RESULTADO: %.0f FPS de media (%.1f ms) · 1 %% peor: %.0f FPS (%.1f ms) · peor fotograma %.1f ms\n%s\n%s" % [
-		1000.0 / maxf(avg, 0.001), avg, 1000.0 / maxf(p99, 0.001), p99, s[n - 1], meas_cfg, _gpu_text()]
+	var txt := "RESULTADO: %.0f FPS de media (%.1f ms) · 1 %% peor: %.0f FPS (%.1f ms) · peor fotograma %.1f ms · mover unidades %.1f ms\n%s\n%s" % [
+		1000.0 / maxf(avg, 0.001), avg, 1000.0 / maxf(p99, 0.001), p99, s[n - 1], meas_proc * 1000.0 / float(n), meas_cfg, _gpu_text()]
 	result_lbl.text = txt
 	print("INFO ", txt.replace("\n", " | "))
 	if shot_path != "":
@@ -660,7 +666,9 @@ func _gpu_text() -> String:
 	return "GPU: %s · %s · Godot %s" % [RenderingServer.get_video_adapter_name(), RenderingServer.get_video_adapter_vendor(), Engine.get_version_info()["string"]]
 
 func _process(dt: float) -> void:
+	var t0 := Time.get_ticks_usec()
 	_update_units(dt)
+	upd_ms = float(Time.get_ticks_usec() - t0) / 1000.0
 	(terrain_poly.material as ShaderMaterial).set_shader_parameter("tm", anim_t)
 	# ventana de las últimas 2 s para el contador en pantalla
 	frame_ms.append(dt * 1000.0)
@@ -670,6 +678,7 @@ func _process(dt: float) -> void:
 		meas_t += dt
 		if meas_t > 0.5:
 			meas_ms.append(dt * 1000.0)
+			meas_proc += upd_ms / 1000.0
 		var k := meas_t / meas_len
 		var a := iso(P(3.0, 2.0))
 		centre = a + Vector2(sin(k * TAU * 1.0) * 520.0, sin(k * TAU * 2.0 + 0.6) * 260.0)
