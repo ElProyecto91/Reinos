@@ -12,3 +12,6 @@ build/
 *.pem
 *.b64
 .env
+
+# plantilla de Android que el flujo de GitHub instala al compilar (ver android_extra/)
+/android/

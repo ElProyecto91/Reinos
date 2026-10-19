@@ -32,7 +32,7 @@ env:
   GODOT_ZIP_SHA512: ef4e76880a514257175544952c61191106fdef3095b909bafed9fcbeb230c3e5533920a0f3012882dd4bbde83028a67549825794e2d2c3cf76eba7918b71370e
   GODOT_TPZ_SHA512: 8f461c7d6e91a0fbabfc95b1e4ca70ff1732c6f2920956a16b086ec2a85b5f7e238baf4dbce60dcc5630fae3bcb9a1fa2ae2027b92cb495c02d082705715e441
   # Lista cerrada de permisos que puede pedir el APK (el flujo falla si aparece otro).
-  ALLOWED_PERMISSIONS: "android.permission.VIBRATE android.permission.INTERNET"
+  ALLOWED_PERMISSIONS: "android.permission.VIBRATE android.permission.INTERNET android.permission.REQUEST_INSTALL_PACKAGES"
 
 jobs:
   apk:
@@ -58,7 +58,7 @@ jobs:
         run: |
           export SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;34.0.0" "build-tools;35.0.1" "platforms;android-35" "cmdline-tools;latest"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "build-tools;34.0.0" "build-tools;35.0.1" "platforms;android-34" "platforms;android-35" "cmdline-tools;latest"
           echo "SDK=$SDK" >> "$GITHUB_ENV"
 
       - name: Descargar Godot y las plantillas (verificadas por SHA-512)
@@ -147,12 +147,40 @@ jobs:
           grep -n "^version" export_presets.cfg
           cat data/build.json
 
+      - name: Plantilla de Android (compilación con Gradle y el instalador de actualizaciones)
+        run: |
+          # La plantilla de Godot (android_source.zip, ya descargada con las plantillas verificadas) se instala en android/build y se le
+          # añade lo propio de android_extra/: el manifiesto (permiso REQUEST_INSTALL_PACKAGES y el componente) y InstallerPlugin.java.
+          tpl="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_source.zip"
+          test -f "$tpl"
+          mkdir -p android/build
+          unzip -q "$tpl" -d android/build
+          printf '%s' "${GODOT_VERSION}.stable" > android/.build_version
+          : > android/build/.gdignore
+          cp android_extra/AndroidManifest.xml android/build/AndroidManifest.xml
+          cp -r android_extra/src/. android/build/src/
+          sed -i 's#^gradle_build/use_gradle_build=.*#gradle_build/use_gradle_build=true#' export_presets.cfg
+          grep -n "use_gradle_build" export_presets.cfg
+          # las bibliotecas nativas de Godot ya vienen sin símbolos: no hace falta el NDK
+          echo "ORG_GRADLE_PROJECT_doNotStrip=true" >> "$GITHUB_ENV"
+          ls android/build android/build/src/com/*
+
       - name: Importar recursos y exportar (release)
         run: |
           mkdir -p build
           godot --headless --path . --import || true
           godot --headless --path . --export-release "Android" build/reinos.apk
           ls -la build
+
+      - name: Comprobar que el instalador de actualizaciones va dentro del APK
+        run: |
+          aapt2="$SDK/build-tools/35.0.1/aapt2"
+          "$aapt2" dump xmltree --file AndroidManifest.xml build/reinos.apk > manifest.txt
+          grep -E "uses-permission|plugin.v2|package=|versionCode|screenOrientation" manifest.txt | sed 's/^ */::notice title=Manifiesto::/' | head -20
+          grep -q "org.godotengine.plugin.v2.ReinosInstaller" manifest.txt || { echo "::error title=Instalador::falta el componente en el manifiesto"; exit 1; }
+          grep -q "android.permission.REQUEST_INSTALL_PACKAGES" manifest.txt || { echo "::error title=Instalador::falta el permiso de instalar"; exit 1; }
+          unzip -p build/reinos.apk 'classes*.dex' | grep -aq "com/reinos/juego/InstallerPlugin" || { echo "::error title=Instalador::la clase no está en el APK"; exit 1; }
+          echo "::notice title=Instalador::presente (manifiesto, permiso y clase)"
 
       - name: Comprobar que el APK no es depurable
         run: |
