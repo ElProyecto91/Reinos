@@ -12,7 +12,7 @@ static var lego := false
 
 ## Colores de plástico: más saturados y algo más claros que los realistas.
 static func _pop(c: Color) -> Color:
-	return Color.from_hsv(c.h, minf(1.0, c.s * 1.4 + (0.05 if c.s > 0.15 else 0.0)), minf(1.0, c.v * 1.06))
+	return Color.from_hsv(c.h, minf(1.0, c.s * 1.25 + (0.04 if c.s > 0.15 else 0.0)), minf(1.0, c.v * 0.94))
 
 ## Hileras de ladrillos de plástico: cada ladrillo un tono plano, junta fina y oscura, hileras desfasadas.
 static func _lego_bricks(seed_v: int, base: Color, bw: int = 32, bh: int = 16) -> ImageTexture:
@@ -196,17 +196,17 @@ static func tmat(tex: Texture2D, per_unit: float, tint: Color = Color.WHITE, rou
 	m.albedo_color = tint
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3(per_unit, per_unit, per_unit)
-	m.roughness = 0.30 if lego else rough
+	m.roughness = 0.36 if lego else rough
 	if lego:
-		m.metallic_specular = 0.75
+		m.metallic_specular = 0.5
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	return m
 
 static func fmat(col: Color, rough: float = 0.85, spec: float = 0.5) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = _pop(col) if lego else col
-	m.roughness = 0.28 if lego else rough
-	m.metallic_specular = 0.75 if lego else spec
+	m.roughness = 0.34 if lego else rough
+	m.metallic_specular = 0.5 if lego else spec
 	return m
 
 static func _add(parent: Node3D, mesh: Mesh, pos: Vector3, m: Material) -> MeshInstance3D:
@@ -429,7 +429,7 @@ static func roble(variant: int) -> Node3D:
 	var bases := [Color(0.24, 0.46, 0.16), Color(0.30, 0.50, 0.17), Color(0.20, 0.42, 0.18), Color(0.34, 0.46, 0.15),
 		Color(0.78, 0.42, 0.10), Color(0.66, 0.34, 0.10), Color(0.80, 0.64, 0.16)]
 	if lego:
-		bases = [Color(0.12, 0.58, 0.20), Color(0.28, 0.68, 0.16), Color(0.08, 0.50, 0.22), Color(0.42, 0.68, 0.14),
+		bases = [Color(0.10, 0.50, 0.18), Color(0.22, 0.58, 0.14), Color(0.06, 0.42, 0.18), Color(0.36, 0.58, 0.12),
 			Color(0.96, 0.48, 0.06), Color(0.82, 0.30, 0.08), Color(0.98, 0.78, 0.08)]
 	var base: Color = bases[variant % bases.size()]
 	var leaf_d := tmat(tex_leaf(40 + variant, base), 1.6, Color.WHITE, 0.95)
@@ -580,9 +580,9 @@ static func persona(kind: String, team: Color, phase: float) -> Node3D:
 static func _stone_set(seed_v: int) -> Dictionary:
 	if lego:
 		return {
-			"wall": tmat(tex_stone(seed_v, Color(0.62, 0.64, 0.68)), 1.3),
-			"dark": tmat(tex_stone(seed_v + 1, Color(0.36, 0.38, 0.43)), 1.3),
-			"light": tmat(tex_stone(seed_v + 2, Color(0.78, 0.79, 0.81)), 1.3),
+			"wall": tmat(tex_stone(seed_v, Color(0.50, 0.52, 0.57)), 1.3),
+			"dark": tmat(tex_stone(seed_v + 1, Color(0.30, 0.32, 0.37)), 1.3),
+			"light": tmat(tex_stone(seed_v + 2, Color(0.66, 0.67, 0.70)), 1.3),
 			"trim": fmat(Color(0.96, 0.72, 0.08), 0.3, 0.7),
 			"ivy": fmat(Color(0.16, 0.62, 0.22), 0.3, 0.7),
 			"slit": fmat(Color(0.04, 0.04, 0.06), 0.9, 0.1),

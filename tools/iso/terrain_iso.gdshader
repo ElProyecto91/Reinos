@@ -99,7 +99,7 @@ void fragment() {
 		float snow_f = 1.0 - smoothstep(0.20, 0.34, hn);
 		float desert_f = smoothstep(0.66, 0.78, hn);
 		// suelo de bosque más oscuro y musgoso (no en nieve ni desierto)
-		grass = mix(grass, vec3(0.12, 0.28, 0.13), forest * 0.80 * (0.8 + 0.4 * b.g));
+		grass = mix(grass, vec3(0.12, 0.28, 0.13), forest * (lego > 0.5 ? 0.30 : 0.80) * (0.8 + 0.4 * b.g));
 		vec3 desert = mix(vec3(0.87, 0.74, 0.47), vec3(0.78, 0.62, 0.38), b.r);
 		desert *= 0.94 + 0.12 * c.g;
 		desert *= 0.93 + 0.10 * (0.5 + 0.5 * sin(q.x * 0.55 + q.y * 0.30 + a.r * 9.0));   // dunas
@@ -117,14 +117,14 @@ void fragment() {
 		// relieve suave: luz desde el noroeste sobre el propio ruido
 		vec2 L = vec2(-1.0, 0.0) * 0.16;   // la luz viene de arriba a la izquierda de la pantalla = -x en casillas
 		float h0 = a.r * 0.55 + b.r * 0.45;
-		if (full > 0.5) {
+		if (full > 0.5 && lego < 0.5) {
 			float h1 = texture(nz1, (q + L) * 0.0125).r * 0.55 + texture(nz1, (q + L) * 0.05).r * 0.45;
 			land *= 1.0 + (h0 - h1) * 4.5 * (1.0 - sandw * 0.6);
 		}
 		// montañas
 		float rh = rockh + (b.g - 0.5) * 0.45 + (c.r - 0.5) * 0.18;
 		float rock = smoothstep(0.40, 0.52, rh);
-		if (full > 0.5) {
+		if (full > 0.5 && lego < 0.5) {
 			float occl = smoothstep(0.45, 0.80, texture(data, (q + vec2(-1.3, 0.0)) / map_size).a);
 			land *= 1.0 - 0.30 * occl * (1.0 - rock);                   // sombra proyectada al sureste
 		}
@@ -163,8 +163,8 @@ void fragment() {
 			vec2 id = floor(cq);
 			vec2 fc = fract(cq) - 0.5;
 			float hs = hash21(id);
-			float gap = smoothstep(0.36, 0.47, max(abs(fc.x) * 1.05, abs(fc.y) * 1.30));
-			vec3 cob = mix(vec3(0.60, 0.56, 0.50), vec3(0.78, 0.72, 0.62), hs);
+			float gap = lego > 0.5 ? 0.0 : smoothstep(0.36, 0.47, max(abs(fc.x) * 1.05, abs(fc.y) * 1.30));
+			vec3 cob = lego > 0.5 ? mix(vec3(0.50, 0.52, 0.57), vec3(0.58, 0.60, 0.65), floor(hs * 3.0) / 3.0) : mix(vec3(0.60, 0.56, 0.50), vec3(0.78, 0.72, 0.62), hs);
 			cob *= 0.90 + 0.18 * c.g;
 			cob = mix(cob, cob * 0.42, gap);
 			cob = mix(cob, land * 0.80, (1.0 - smoothstep(0.50, 0.70, em)) * 0.65);   // el borde se funde con la hierba
