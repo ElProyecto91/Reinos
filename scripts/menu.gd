@@ -85,8 +85,8 @@ func _ready() -> void:
 	_quit.action = func() -> void: quit_pressed.emit()
 	root.add_child(_quit)
 	_upd_btn = UiButton.new()
-	_upd_btn.font_size = 20
-	_upd_btn.sub_size = 17
+	_upd_btn.font_size = 19
+	_upd_btn.sub_size = 16
 	_upd_btn.visible = false
 	_upd_btn.action = func() -> void: _upd.activate()
 	root.add_child(_upd_btn)
@@ -173,8 +173,8 @@ func _layout() -> void:
 	_quit.position = Vector2(x + w * 0.5 + 6, y + 132)
 	_civ_panel.position = Vector2.ZERO
 	_civ_panel.size = vs
-	_upd_btn.size = Vector2(560, 62)
-	_upd_btn.position = Vector2(vs.x - 572, 8)
+	_upd_btn.size = Vector2(330, 62)
+	_upd_btn.position = Vector2(vs.x - 342, 8)
 	_help.position = Vector2.ZERO
 	_help.size = vs
 	root.queue_redraw()
@@ -183,7 +183,8 @@ func _layout() -> void:
 func _refresh_upd() -> void:
 	_upd_btn.visible = _upd.state != Updater.IDLE
 	_upd_btn.text = _upd.label()
-	_upd_btn.sub = _upd.sub_text()
+	var sub := _upd.sub_text()
+	_upd_btn.sub = sub if sub.length() <= 44 else sub.left(43) + "…"
 	_upd_btn.progress = _upd.progress if _upd.state == Updater.DOWNLOADING else -1.0
 	_upd_btn.accent = Color(0.5, 0.95, 0.5) if _upd.state == Updater.DONE else Color(0.82, 0.64, 0.25)
 	_upd_btn.queue_redraw()
@@ -225,7 +226,10 @@ func _on_play() -> void:
 class MenuBg extends Control:
 	var menu: MenuScreen
 	var _islands: Array = []
+	var _logo: Texture2D
 	func _ready() -> void:
+		if ResourceLoader.exists("res://art/logo/logotipo_menu.png"):
+			_logo = load("res://art/logo/logotipo_menu.png")
 		var r := RandomNumberGenerator.new()
 		r.seed = 12
 		for i in 9:
@@ -243,9 +247,15 @@ class MenuBg extends Control:
 			draw_circle(Vector2.ZERO, rr, Color(0.3, 0.55, 0.28, 0.55))
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		var font := get_theme_default_font()
-		draw_string(font, Vector2(3, 103), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(0, 0, 0, 0.5))
-		draw_string(font, Vector2(0, 100), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(1, 0.9, 0.5))
-		draw_string(font, Vector2(0, 140), Lang.t("subtitle"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(0.85, 0.92, 1.0))
+		if _logo != null:
+			# logotipo (emblema + REINOS + lema), dibujado a 2x: 620 x 140 lógicos, centrado, sobre las filas de ajustes (y = 154)
+			var lw := 620.0
+			var lh := lw * float(_logo.get_height()) / float(_logo.get_width())
+			draw_texture_rect(_logo, Rect2((size.x - lw) * 0.5, 8.0, lw, lh), false)
+		else:
+			draw_string(font, Vector2(3, 103), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(0, 0, 0, 0.5))
+			draw_string(font, Vector2(0, 100), Lang.t("title"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 86, Color(1, 0.9, 0.5))
+			draw_string(font, Vector2(0, 140), Lang.t("subtitle"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(0.85, 0.92, 1.0))
 		draw_string(font, Vector2(14, size.y - 12), Settings.build_label(), HORIZONTAL_ALIGNMENT_LEFT, size.x, 18, Color(1, 1, 1, 0.55))
 		if menu != null and menu.notice != "":
 			draw_string(font, Vector2(0, size.y - 14), menu.notice, HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(1, 0.62, 0.52))

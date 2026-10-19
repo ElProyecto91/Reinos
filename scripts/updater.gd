@@ -441,7 +441,7 @@ func _set_state(s: int) -> void:
 func label() -> String:
 	match state:
 		AVAILABLE:
-			return Lang.t("update_available") % [target_build, (", " + size_text(target_size)) if target_size > 0 else ""]
+			return Lang.t("update_available") % target_build
 		PERMISSION:
 			return Lang.t("update_permission")
 		DOWNLOADING:
@@ -464,6 +464,8 @@ func label() -> String:
 
 func sub_text() -> String:
 	match state:
+		AVAILABLE:
+			return Lang.t("update_available_sub") % size_text(target_size) if target_size > 0 else Lang.t("update_available_sub0")
 		DOWNLOADING:
 			return Lang.t("update_tap_cancel")
 		PERMISSION:
