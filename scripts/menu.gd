@@ -235,27 +235,32 @@ func _on_play() -> void:
 
 class MenuBg extends Control:
 	var menu: MenuScreen
-	var _islands: Array = []
 	var _logo: Texture2D
+	var _bg: Texture2D
 	func _ready() -> void:
 		if ResourceLoader.exists("res://art/logo/logotipo_menu.png"):
 			_logo = load("res://art/logo/logotipo_menu.png")
-		var r := RandomNumberGenerator.new()
-		r.seed = 12
-		for i in 9:
-			_islands.append([r.randf(), r.randf_range(0.55, 0.95), r.randf_range(0.04, 0.12)])
+		# Un reino al atardecer pintado por tools/menu_bg/make_bg.py (2,4:1). Sin ella, un degradado liso.
+		if ResourceLoader.exists("res://art/menu/fondo.png"):
+			_bg = load("res://art/menu/fondo.png")
 	func _draw() -> void:
-		var top := Color(0.07, 0.17, 0.30)
-		var bot := Color(0.14, 0.42, 0.55)
-		var pts := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y)])
-		draw_polygon(pts, PackedColorArray([top, top, bot, bot]))
-		for isl in _islands:
-			var c := Vector2(isl[0] * size.x, isl[1] * size.y)
-			var rr: float = float(isl[2]) * size.x
-			draw_set_transform(c, 0.0, Vector2(1.0, 0.35))
-			draw_circle(Vector2.ZERO, rr * 1.15, Color(0.85, 0.8, 0.55, 0.35))
-			draw_circle(Vector2.ZERO, rr, Color(0.3, 0.55, 0.28, 0.55))
-			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		if _bg != null:
+			# «cover»: llena la pantalla sin deformar y recorta lo que sobre (a los lados en pantallas más cuadradas)
+			var sc := maxf(size.x / float(_bg.get_width()), size.y / float(_bg.get_height()))
+			var dw := float(_bg.get_width()) * sc
+			var dh := float(_bg.get_height()) * sc
+			draw_texture_rect(_bg, Rect2((size.x - dw) * 0.5, (size.y - dh) * 0.5, dw, dh), false)
+		else:
+			var top := Color(0.05, 0.07, 0.20)
+			var bot := Color(0.55, 0.30, 0.35)
+			var pts := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y)])
+			draw_polygon(pts, PackedColorArray([top, top, bot, bot]))
+		if menu != null and menu._seg.has("seed_y"):
+			# cristal oscuro tras los ajustes: se lee igual sobre el resplandor del sol que sobre el cielo
+			var pw := 760.0 + 44.0
+			var py := 146.0
+			draw_style_box(UiButton.box(Color(0.02, 0.035, 0.085, 0.60), Color(0.55, 0.43, 0.22, 0.55), 16, 2),
+				Rect2((size.x - pw) * 0.5, py, pw, float(menu._seg["seed_y"]) + 198.0 - py))
 		var font := get_theme_default_font()
 		if _logo != null:
 			# logotipo (emblema + REINOS + lema), dibujado a 2x: 620 x 140 lógicos, centrado, sobre las filas de ajustes (y = 154)
