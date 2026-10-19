@@ -3,7 +3,9 @@ extends Node
 ## Actualización del juego. Es la ÚNICA conexión a Internet de Reinos y es opcional (Menú → Actualizaciones).
 ##
 ## 1) Aviso: pide a GitHub (HTTPS, sin enviar ningún dato tuyo) cuál es la última release "build-N" y la
-##    compara con la build instalada. Si hay una más nueva avisa en el menú.
+##    compara con la build instalada. Si hay una más nueva avisa en el menú. Lo hace sola al abrir el menú (como mucho cada
+##    15 min y solo si «Actualizaciones» está en Sí) y también cuando el jugador toca «Buscar actualizaciones», que ignora
+##    ese límite y siempre dice qué pasó (nueva versión, «estás al día» o el motivo del fallo).
 ## 2) Al tocar el aviso, y solo entonces: descarga el APK dentro del juego (con barra de progreso), comprueba su
 ##    SHA-256 y se lo entrega al instalador de Android (PackageInstaller, plugin «ReinosInstaller»). Android sigue
 ##    pidiendo un toque en «Instalar» (no hay forma de saltarse eso fuera de Google Play) y SOLO acepta un APK firmado
@@ -17,14 +19,16 @@ extends Node
 signal update_found(build: int)
 signal state_changed
 
-enum { IDLE, AVAILABLE, PERMISSION, DOWNLOADING, VERIFYING, INSTALLING, CONFIRMING, RETRY, FALLBACK, DONE }
+## IDLE: no hay nada que anunciar (el botón del menú ofrece «Buscar actualizaciones»). CHECKING / UPTODATE / CHECK_FAIL: comprobación
+## pedida por el jugador y su resultado (antes se callaba todo y no había forma de saber si se había comprobado o no).
+enum { IDLE, AVAILABLE, PERMISSION, DOWNLOADING, VERIFYING, INSTALLING, CONFIRMING, RETRY, FALLBACK, DONE, CHECKING, UPTODATE, CHECK_FAIL }
 
 const PAGE_URL := "https://github.com/ElProyecto91/reinos/releases/latest"
 const DEFAULT_API := "https://api.github.com/repos/ElProyecto91/reinos/releases/latest"
 const DEFAULT_DL := "https://github.com/ElProyecto91/reinos/releases/download"
 const APK_ASSET := "reinos.apk"
 const UPDATE_DIR := "user://update"
-const CHECK_EVERY := 6 * 3600   # segundos entre comprobaciones
+const CHECK_EVERY := 15 * 60    # segundos mínimos entre comprobaciones automáticas (al abrir el menú); el botón manual las ignora
 const MAX_BODY := 262144        # se ignora cualquier respuesta mayor de 256 KB
 const TIMEOUT := 8.0
 const MAX_APK := 200 * 1024 * 1024
@@ -46,6 +50,7 @@ var target_size := 0            # bytes del APK según la API (0 = desconocido)
 var detail := ""                # último problema, en texto para el jugador
 
 var _req: HTTPRequest           # comprobación de versión
+var _manual := false            # la consulta en curso la pidió el jugador: su resultado se muestra (también si no hay nada nuevo o falla)
 var _hreq: HTTPRequest          # suma SHA-256
 var _areq: HTTPRequest          # APK
 var _part := ""
@@ -158,6 +163,26 @@ func check() -> void:
 	var now := int(Time.get_unix_time_from_system())
 	if now - Settings.last_update_check < CHECK_EVERY and now >= Settings.last_update_check:
 		return
+	_request()   # automática: si no hay nada nuevo o falla, no dice nada
+
+## El jugador toca «Buscar actualizaciones»: consulta ya (sin mirar cuándo fue la última vez ni el interruptor del menú: lo ha pedido él)
+## y enseña el resultado sea cual sea: versión nueva, «estás al día» o por qué no se pudo comprobar.
+func check_now() -> void:
+	if state != IDLE and state != UPTODATE and state != CHECK_FAIL:
+		return   # ya hay una consulta, un aviso o una descarga en marcha
+	_manual = true
+	detail = ""
+	if current_build() <= 0:
+		_check_failed("update_check_local")
+		return
+	_set_state(CHECKING)
+	if not _request():
+		_check_failed("update_check_net")
+
+## Lanza la consulta a GitHub (si ya hay una en vuelo, se aprovecha esa). false si ni siquiera pudo salir.
+func _request() -> bool:
+	if is_instance_valid(_req) and not _req.is_queued_for_deletion():
+		return true
 	_req = HTTPRequest.new()
 	_req.timeout = TIMEOUT
 	_req.body_size_limit = MAX_BODY
@@ -167,26 +192,52 @@ func check() -> void:
 	var headers := PackedStringArray(["Accept: application/vnd.github+json", "User-Agent: Reinos-update-check"])
 	if _req.request(api_url, headers) != OK:
 		_req.queue_free()
+		_req = null
+		return false
+	return true
 
 func _on_done(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if is_instance_valid(_req):
 		_req.queue_free()
-	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-		return   # sin red, repositorio privado, límite de GitHub...: en silencio
+	_req = null
+	var manual := _manual
+	_manual = false
+	if result != HTTPRequest.RESULT_SUCCESS:
+		if manual:
+			_check_failed("update_check_net")   # sin red, DNS, tiempo agotado...
+		return
+	if code != 200:
+		if manual:
+			if code == 403 or code == 429:
+				_check_failed("update_check_limit")   # límite de consultas de GitHub
+			else:
+				_check_failed("update_check_http", code)   # 404 (repositorio privado o renombrado)...
+		return
 	var text := body.get_string_from_utf8()
 	var remote := parse_release(text)
 	var size := parse_size(text)
-	Settings.last_update_check = int(Time.get_unix_time_from_system())
 	if remote > 0:
+		Settings.last_update_check = int(Time.get_unix_time_from_system())
 		Settings.known_build = remote
 		Settings.known_size = size
-	Settings.save()
+		Settings.save()
 	if is_newer(remote, current_build()):
 		offer(remote, size)
+	elif manual:
+		if remote > 0:
+			detail = ""
+			_set_state(UPTODATE)
+		else:
+			_check_failed("update_check_data")   # la respuesta no es una release «build-N» estable
+
+func _check_failed(key: String, code: int = 0) -> void:
+	_manual = false
+	detail = (Lang.t(key) % code) if code > 0 else Lang.t(key)
+	_set_state(CHECK_FAIL)
 
 ## Hay una build más nueva: se anuncia (salvo que ya se esté descargando o instalando otra).
 func offer(build: int, size: int = 0) -> void:
-	if state != IDLE and state != AVAILABLE:
+	if state != IDLE and state != AVAILABLE and state != CHECKING and state != UPTODATE and state != CHECK_FAIL:
 		return
 	target_build = build
 	target_size = size
@@ -200,6 +251,8 @@ func offer(build: int, size: int = 0) -> void:
 ## Un toque en el botón del menú, según en qué punto esté.
 func activate() -> void:
 	match state:
+		IDLE, UPTODATE, CHECK_FAIL:
+			check_now()
 		AVAILABLE, RETRY, PERMISSION:
 			start()
 		DOWNLOADING:
@@ -460,6 +513,14 @@ func label() -> String:
 			return Lang.t("update_browser")
 		DONE:
 			return Lang.t("update_done")
+		IDLE:
+			return Lang.t("update_check")
+		CHECKING:
+			return Lang.t("update_checking")
+		UPTODATE:
+			return Lang.t("update_uptodate")
+		CHECK_FAIL:
+			return Lang.t("update_check_fail")
 	return ""
 
 func sub_text() -> String:
@@ -472,6 +533,10 @@ func sub_text() -> String:
 			return Lang.t("update_permission_sub")
 		CONFIRMING:
 			return Lang.t("update_confirm_sub")
-		RETRY, FALLBACK:
+		RETRY, FALLBACK, CHECK_FAIL:
 			return detail
+		IDLE:
+			return Lang.t("update_check_sub") % current_build()
+		UPTODATE:
+			return Lang.t("update_uptodate_sub") % current_build()
 	return ""

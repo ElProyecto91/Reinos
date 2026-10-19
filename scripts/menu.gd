@@ -101,6 +101,7 @@ func _ready() -> void:
 	add_child(_upd)
 	_upd.state_changed.connect(_refresh_upd)
 	_upd.check()
+	_refresh_upd()
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 	_refresh()
@@ -179,14 +180,23 @@ func _layout() -> void:
 	_help.size = vs
 	root.queue_redraw()
 
-## El botón de arriba a la derecha sigue al actualizador: aviso, permiso, barra de descarga, instalación...
+## El botón de arriba a la derecha sigue al actualizador: «Buscar actualizaciones» (siempre, salvo en compilaciones locales sin build),
+## el aviso de versión nueva, permiso, barra de descarga, instalación... y el resultado de cada comprobación.
 func _refresh_upd() -> void:
-	_upd_btn.visible = _upd.state != Updater.IDLE
+	var st := _upd.state
+	_upd_btn.visible = st != Updater.IDLE or Updater.current_build() > 0
 	_upd_btn.text = _upd.label()
 	var sub := _upd.sub_text()
 	_upd_btn.sub = sub if sub.length() <= 44 else sub.left(43) + "…"
-	_upd_btn.progress = _upd.progress if _upd.state == Updater.DOWNLOADING else -1.0
-	_upd_btn.accent = Color(0.5, 0.95, 0.5) if _upd.state == Updater.DONE else Color(0.82, 0.64, 0.25)
+	_upd_btn.progress = _upd.progress if st == Updater.DOWNLOADING else -1.0
+	var gold := Color(0.82, 0.64, 0.25)
+	if st == Updater.DONE or st == Updater.UPTODATE:
+		_upd_btn.accent = Color(0.5, 0.95, 0.5)
+	elif st == Updater.CHECK_FAIL:
+		_upd_btn.accent = Color(0.95, 0.5, 0.4)
+	else:
+		_upd_btn.accent = gold
+	_upd_btn.toggled = st != Updater.IDLE and st != Updater.CHECKING   # en reposo y buscando, discreto; el color (borde y fondo) es de los avisos y resultados
 	_upd_btn.queue_redraw()
 
 func _refresh() -> void:

@@ -60,6 +60,8 @@ class H(http.server.BaseHTTPRequestHandler):
             self._send(200, "<html>hola</html>", "text/html")
         elif p == "/big":
             self._send(200, json.dumps({"tag_name": "build-99999", "pad": "x" * 400000}))
+        elif p == "/limit":    # límite de consultas de GitHub sin autenticar
+            self._send(403, json.dumps({"message": "API rate limit exceeded"}))
         elif p == "/slow":
             time.sleep(20); self._send(200, "{}")
         else:

@@ -88,26 +88,150 @@ func _main() -> void:
 	Settings.check_updates = false
 	check("desactivado no consulta", await _run_case("/ok", 1.5) == -1)
 	Settings.check_updates = true
-	# la comprobación no se repite antes de 6 h
-	Settings.last_update_check = int(Time.get_unix_time_from_system())
-	Settings.known_build = 0
-	var u2 := Updater.new()
-	u2.api_url = "http://127.0.0.1:%d/ok" % port
-	var hits := [0]
-	u2.update_found.connect(func(_b: int) -> void: hits[0] += 1)
-	root.add_child(u2)
-	u2.check()
-	for i in 90:
-		await process_frame
-	check("no repite antes de 6 h", hits[0] == 0)
+	# la comprobación automática no se repite antes de 15 min (antes eran 6 h: quien abría el juego justo antes de salir una build
+	# no la veía en horas y, como todo fallo se callaba, no había forma de saber por qué)
+	var now := int(Time.get_unix_time_from_system())
+	check("no repite antes de 15 min", await _auto_hits(now - 5 * 60) == 0)
+	check("repite pasados 15 min", await _auto_hits(now - 20 * 60) == 1)
+	check("repite si el reloj del móvil retrocedió", await _auto_hits(now + 3600) == 1)
+	await _manual_tests()
 	await _download_tests()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("res://data/build.json"))
+	await _local_build_test()
 	Settings.check_updates = keep[0]
 	Settings.last_update_check = keep[1]
 	Settings.known_build = keep[2]
 	Settings.save()
 	print("DONE fails=", fails)
 	quit()
+
+# ----------------------------------------------------------------------------------------------------------------
+# comprobación automática y botón «Buscar actualizaciones»
+
+## Cuántas veces avisa una comprobación automática (check) cuando la última fue en `last` (segundos Unix).
+func _auto_hits(last: int) -> int:
+	Settings.last_update_check = last
+	Settings.known_build = 0
+	var u := Updater.new()
+	u.api_url = "http://127.0.0.1:%d/ok" % port
+	var hits := [0]
+	u.update_found.connect(func(_b: int) -> void: hits[0] += 1)
+	root.add_child(u)
+	u.check()
+	for i in 120:
+		await process_frame
+	u.queue_free()
+	return hits[0]
+
+const DONE_STATES := [Updater.AVAILABLE, Updater.UPTODATE, Updater.CHECK_FAIL]
+
+## Pulsa «Buscar actualizaciones» contra `url` (ruta del servidor de pruebas o dirección completa) y espera el resultado.
+func _manual_case(url: String, wait_s: float = 6.0) -> Updater:
+	var u := Updater.new()
+	u.api_url = url if url.begins_with("http") else "http://127.0.0.1:%d%s" % [port, url]
+	root.add_child(u)
+	u.activate()
+	await _wait_state(u, DONE_STATES, wait_s)
+	return u
+
+## Espera a que la comprobación termine y dice si lo hizo en el estado `st`.
+func _ends_in(u: Updater, st: int, secs: float = 6.0) -> bool:
+	var done: bool = await _wait_state(u, DONE_STATES, secs)
+	return done and u.state == st
+
+func _manual_tests() -> void:
+	Settings.check_updates = true
+	Settings.known_build = 0
+	Settings.last_update_check = int(Time.get_unix_time_from_system())   # «acabo de comprobar»: el botón manual debe consultar igualmente
+	var u := Updater.new()
+	u.api_url = "http://127.0.0.1:%d/ok" % port
+	root.add_child(u)
+	check("en reposo el botón ofrece buscar", u.state == Updater.IDLE and u.label() == Lang.t("update_check") and u.sub_text().contains("3"))
+	u.activate()
+	check("al tocar dice «Buscando»", u.state == Updater.CHECKING and u.label() == Lang.t("update_checking"))
+	u.activate()
+	check("otro toque mientras busca no hace nada", u.state == Updater.CHECKING)
+	check("encuentra la versión nueva aunque se comprobara hace un momento", await _ends_in(u, Updater.AVAILABLE))
+	check("y anuncia la build correcta", u.target_build == 99999 and u.label().contains("99999"))
+	u.queue_free()
+	Settings.known_build = 0
+
+	u = await _manual_case("/same")
+	check("misma build: «estás al día» con su número", u.state == Updater.UPTODATE and u.label() == Lang.t("update_uptodate") and u.sub_text().contains("3"))
+	u.activate()
+	check("y otro toque vuelve a comprobar", u.state == Updater.CHECKING)
+	check("con el mismo resultado", await _ends_in(u, Updater.UPTODATE))
+	u.queue_free()
+
+	u = await _manual_case("/nada")
+	check("404: dice que falló y con qué código", u.state == Updater.CHECK_FAIL and u.label() == Lang.t("update_check_fail") and u.sub_text().contains("404"))
+	u.queue_free()
+	u = await _manual_case("/limit")
+	check("403: dice que GitHub limita las consultas", u.state == Updater.CHECK_FAIL and u.sub_text() == Lang.t("update_check_limit"))
+	u.queue_free()
+	Settings.last_update_check = 0
+	u = await _manual_case("/html")
+	check("HTML: respuesta no válida", u.state == Updater.CHECK_FAIL and u.sub_text() == Lang.t("update_check_data"))
+	check("una respuesta basura no cuenta como comprobación hecha", Settings.last_update_check == 0)
+	u.queue_free()
+	u = await _manual_case("/evil")
+	check("etiqueta maliciosa: respuesta no válida", u.state == Updater.CHECK_FAIL and u.sub_text() == Lang.t("update_check_data"))
+	u.queue_free()
+	u = await _manual_case("/big", 8.0)
+	check("respuesta enorme: no válida, no avisa", u.state == Updater.CHECK_FAIL)
+	u.queue_free()
+	u = await _manual_case("http://127.0.0.1:1/x")
+	check("sin servidor: sin conexión", u.state == Updater.CHECK_FAIL and u.sub_text() == Lang.t("update_check_net"))
+	u.api_url = "http://127.0.0.1:%d/ok" % port
+	u.activate()
+	check("tras un fallo, tocar reintenta", u.state == Updater.CHECKING)
+	check("y si ahora hay red, avisa", await _ends_in(u, Updater.AVAILABLE))
+	u.queue_free()
+	Settings.known_build = 0
+
+	Settings.check_updates = false
+	u = await _manual_case("/ok")
+	check("con «Actualizaciones: No» el botón manual funciona igual (lo pide el jugador)", u.state == Updater.AVAILABLE)
+	u.queue_free()
+	var u3 := Updater.new()
+	u3.api_url = "http://127.0.0.1:%d/ok" % port
+	root.add_child(u3)
+	Settings.known_build = 0
+	Settings.last_update_check = 0
+	u3.check()
+	for i in 60:
+		await process_frame
+	check("pero la automática sigue apagada con «No»", u3.state == Updater.IDLE)
+	u3.queue_free()
+	Settings.check_updates = true
+
+	# una comprobación automática en vuelo y el jugador toca: se aprovecha la misma consulta y se muestra el resultado
+	Settings.known_build = 0
+	Settings.last_update_check = 0
+	var u4 := Updater.new()
+	u4.api_url = "http://127.0.0.1:%d/same" % port
+	root.add_child(u4)
+	u4.check()
+	u4.activate()
+	check("automática + toque: una sola consulta, termina en «al día»", await _ends_in(u4, Updater.UPTODATE))
+	u4.queue_free()
+
+	# estando en descarga/aviso el botón no es de búsqueda
+	var u5 := Updater.new()
+	root.add_child(u5)
+	u5.offer(7)
+	u5.check_now()
+	check("con un aviso pendiente, check_now no lo pisa", u5.state == Updater.AVAILABLE and u5.target_build == 7)
+	u5.queue_free()
+
+func _local_build_test() -> void:
+	var u := Updater.new()
+	u.api_url = "http://127.0.0.1:%d/ok" % port
+	root.add_child(u)
+	check("compilación local: no hay build instalada", Updater.current_build() == 0)
+	u.activate()
+	check("compilación local: dice por qué no puede comparar", u.state == Updater.CHECK_FAIL and u.sub_text() == Lang.t("update_check_local"))
+	u.queue_free()
 
 # ----------------------------------------------------------------------------------------------------------------
 # descarga + verificación + entrega al instalador (con un instalador de mentira y el servidor de pruebas)
