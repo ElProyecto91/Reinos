@@ -366,7 +366,7 @@ func _on_apk(result: int, code: int, _headers: PackedStringArray, _body: PackedB
 func _deliver() -> void:
 	var inst := _installer()
 	if inst == null:
-		_fail("update_err_inst", true)
+		_install_failed("error:sin instalador")
 		return
 	_install_t0 = Time.get_ticks_msec() / 1000.0
 	_poll_t = _install_t0
@@ -403,7 +403,7 @@ func _install_failed(r: String) -> void:
 		detail = Lang.t("update_cancelled")
 		_set_state(RETRY)
 	else:
-		detail = Lang.t("update_err_inst")
+		detail = Lang.t("update_err_inst") % r.trim_prefix("error:").left(60)   # con el motivo, para poder contarlo
 		_apk_path = ""
 		_set_state(FALLBACK)
 

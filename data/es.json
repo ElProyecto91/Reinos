@@ -274,7 +274,7 @@
  "update_err_hash": "La descarga no coincide con su suma de control.",
  "update_err_disk": "No se pudo guardar la descarga.",
  "update_err_install": "El instalador de Android no respondió.",
- "update_err_inst": "Android no pudo instalar la actualización.",
+ "update_err_inst": "No se pudo instalar: %s",
  "perf_ahorro": "Ahorro",
  "perf_equilibrado": "Normal",
  "perf_alta": "Alta",

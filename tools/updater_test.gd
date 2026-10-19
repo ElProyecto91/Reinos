@@ -258,6 +258,7 @@ func _download_tests() -> void:
 	u = _mk("dl", fk)
 	u.activate()
 	check("error al entregar: ofrece el navegador", await _wait_state(u, [Updater.FALLBACK], 20.0))
+	check("el motivo del instalador se muestra", u.sub_text().contains("SecurityException") and not u.sub_text().contains("%s"))
 	u.queue_free()
 
 	_clean_dir()
