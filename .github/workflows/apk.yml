@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       variant:
-        description: "game = el juego (por defecto); isotest = APK aparte de prueba de rendimiento isométrica"
+        description: "game = el juego (por defecto); isotest = APK aparte de prueba de rendimiento isométrica; isogame = el juego completo en isométrico como aplicación aparte"
         type: choice
-        options: [game, isotest]
+        options: [game, isotest, isogame]
         default: game
   push:
     branches: [main]
@@ -119,7 +119,9 @@ jobs:
           # que se instala al lado del juego sin tocarlo; se pide con "[iso-test]" en el mensaje del commit o con el selector de ejecución manual.
           variant=game
           if [ "$INPUT_VARIANT" = "isotest" ]; then variant=isotest; fi
+          if [ "$INPUT_VARIANT" = "isogame" ]; then variant=isogame; fi
           case "$HEAD_MSG" in *"[iso-test]"*) variant=isotest ;; esac
+          case "$HEAD_MSG" in *"[iso-game]"*) variant=isogame ;; esac
           echo "VARIANT=$variant" >> "$GITHUB_ENV"
           echo "::notice title=Variante::${variant}"
           if [ "$variant" = "isotest" ]; then
@@ -129,6 +131,12 @@ jobs:
             sed -i 's#, isotest/\*"#"#' export_presets.cfg
             grep -n "^run/main_scene" project.godot
             grep -n "^package/\(unique_name\|name\)\|^exclude_filter" export_presets.cfg
+          fi
+          if [ "$variant" = "isogame" ]; then
+            # el juego completo en isométrico, con otro identificador de paquete: se instala al lado de «Reinos» sin tocarlo
+            sed -i 's#^package/unique_name=.*#package/unique_name="com.reinos.iso"#' export_presets.cfg
+            sed -i 's#^package/name=.*#package/name="Reinos ISO"#' export_presets.cfg
+            grep -n "^package/\(unique_name\|name\)" export_presets.cfg
           fi
 
       - name: Número de versión (cada APK sube de versión y lo muestra el menú)
@@ -220,3 +228,15 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "Prueba isométrica ${GITHUB_RUN_NUMBER}" \
             --notes "Prueba de rendimiento del estilo isométrico (no es el juego). Se instala como otra aplicación, 'Reinos ISO'. Huella SHA-256 de la firma: ${{ steps.sig.outputs.fp }}"
+
+      - name: "Publicar el juego isométrico (versión preliminar, nunca la última ni sustituye al juego)"
+        if: steps.key.outputs.fixed == 'true' && github.ref == 'refs/heads/main' && env.VARIANT == 'isogame'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/reinos.apk build/reinos-iso.apk
+          (cd build && sha256sum reinos-iso.apk > reinos-iso.apk.sha256)
+          gh release create "iso-${GITHUB_RUN_NUMBER}" build/reinos-iso.apk build/reinos-iso.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Reinos ISO ${GITHUB_RUN_NUMBER}" \
+            --notes "El juego completo en estilo isométrico (en pruebas). Se instala como otra aplicación, 'Reinos ISO', al lado de Reinos. Huella SHA-256 de la firma: ${{ steps.sig.outputs.fp }}"
