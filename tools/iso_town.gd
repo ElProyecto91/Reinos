@@ -2,6 +2,7 @@ extends Node
 ## Ciudad de pruebas isométrica: construye uno de cada edificio y planta una fila de cada unidad cerca del inicio, y captura.
 ## Uso: xvfb-run -a godot --path . res://tools/iso_town.tscn --rendering-driver opengl3 --resolution 1280x720 -- out=/tmp/t.png mode=blds|units|enemy|walls|all seed=3 zoom=1.0
 ##   mode=blds   edificios; mode=units unidades en fila (propias); mode=enemy las mismas con otro equipo; mode=walls murallas y puerta
+##   civ=<id>    civilización del jugador (por defecto castellanos); civ2=<id> la del rival (por defecto francos)
 ##   secs=N      deja correr N segundos de juego antes de capturar (velocidad x3); sel=1 selecciona las primeras unidades; hud=1 deja el HUD
 var game: Game
 var out := "/tmp/town.png"
@@ -14,6 +15,8 @@ var hud_on := false
 var at_off := Vector2i(0, 0)
 var _started := false
 var tod_v := -1.0
+var civ_v := "castellanos"
+var civ2_v := "francos"
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -24,14 +27,16 @@ func _ready() -> void:
 		elif a.begins_with("secs="): secs = float(a.substr(5))
 		elif a.begins_with("sel="): sel = a.substr(4) == "1"
 		elif a.begins_with("hud="): hud_on = a.substr(4) == "1"
+		elif a.begins_with("civ="): civ_v = a.substr(4)
+		elif a.begins_with("civ2="): civ2_v = a.substr(5)
 		elif a.begins_with("tod="): tod_v = float(a.substr(4))   # hora del día 0..1 (0,85 = noche; 0,5 = mediodía)
 	Settings.ensure_loaded()
 	Settings.profile = 1
 	Settings.auto_pause = false
 	Settings.apply_display(get_window())
 	var cfg := {"size": 128, "seed": seed_v, "events": true, "players": [
-		{"human": true, "team": 0, "diff": 1, "name": "Tú", "civ": "castellanos"},
-		{"human": false, "team": 1, "diff": 0, "name": "Rojo", "civ": "francos"}]}
+		{"human": true, "team": 0, "diff": 1, "name": "Tú", "civ": civ_v},
+		{"human": false, "team": 1, "diff": 0, "name": "Rojo", "civ": civ2_v}]}
 	game = Game.new()
 	add_child(game)
 	game.start(cfg)

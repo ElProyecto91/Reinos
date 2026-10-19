@@ -186,9 +186,8 @@ static func _draw_pier(c: CanvasItem, b: Ent) -> void:
 
 static var _smoke: PackedFloat32Array = PackedFloat32Array()   # x, y, radio, alfa de cada bocanada del fotograma
 
-## Chimeneas (px de pantalla respecto al centro de la huella, calculadas con las medidas de los modelos 3D: ((x − z)·32, (x + z)·16 − y·39,2)).
 ## Las ventanas de noche no se dibujan aquí: brillan en el propio sprite (canal G de la máscara, ver shaders/iso_sprite.gdshader).
-const SMOKE := {"casa": Vector2(-8, -70), "cuartel": Vector2(42, -78), "herreria": Vector2(53, -68)}
+## El humo sale de los puntos «smoke» de cada modelo de civilización (ver IsoArch.smoke_src y tools/iso/civ_meta.gd).
 
 static func draw_overlay(g: Game, c: CanvasItem) -> void:
 	var sim := g.sim
@@ -240,10 +239,11 @@ static func _overlay_building(g: Game, c: CanvasItem, b: Ent, ctr: Vector2, view
 			_bar(c, ctr.x, ctr.y - 40.0, 28.0, clampf(b.hp / b.max_hp, 0.0, 1.0))
 		return
 	if done:
-		if SMOKE.has(b.type):
-			var base: Vector2 = ctr + (SMOKE[b.type] as Vector2)
+		var spts: Array = view.ia.smoke_points(view.civ_of(b.owner), b.type)
+		for si in spts.size():
+			var base: Vector2 = ctr + (spts[si] as Vector2)
 			for k in 3:
-				var ph := fposmod(g.anim_t * 0.30 + float(k) / 3.0 + float(b.id) * 0.137, 1.0)
+				var ph := fposmod(g.anim_t * 0.30 + float(k) / 3.0 + float(b.id) * 0.137 + float(si) * 0.41, 1.0)
 				var p := base + Vector2(ph * 10.0 + sin(ph * 6.0 + float(b.id)) * 2.0, -ph * 32.0)
 				_smoke.append(p.x)
 				_smoke.append(p.y)
@@ -251,7 +251,7 @@ static func _overlay_building(g: Game, c: CanvasItem, b: Ent, ctr: Vector2, view
 				_smoke.append(0.42 * (1.0 - ph) * minf(1.0, ph * 6.0))
 	var show_bar := b.hp < b.max_hp or g.sel_set.has(b.id) or not done
 	if show_bar:
-		var dims := view.building_dims(b.type)
+		var dims := view.building_dims(b.type, view.civ_of(b.owner))
 		var w := clampf(dims.size.x * 0.5, 36.0, 90.0)
 		var y := ctr.y + dims.position.y - 6.0
 		_bar(c, ctr.x, y, w, clampf(b.hp / b.max_hp, 0.0, 1.0), 5.0)

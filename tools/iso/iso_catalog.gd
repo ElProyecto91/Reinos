@@ -10,22 +10,12 @@ const SIEGE_CFG := [680, 600, 340, 470]
 const SHIP_CFG := [720, 620, 360, 440]
 const RIDER_CFG := [920, 780, 460, 620]
 const POLE_CFG := [800, 600, 400, 480]
-const WALL_CFG := [700, 520, 220, 420]     # sombra a la derecha
+const WALL_CFG := [760, 640, 220, 440]     # sombra a la derecha y abajo (la de la puerta se recortaba con 700×520)
+const CASTLE_CFG := [1900, 1500, 640, 880]
 
 static func groups() -> Dictionary:
 	var g: Dictionary = {}
 	var T := IsoModels.TEAM_BASE
-	g["casa"] = _g(DEFAULT_CFG, [["casa", func() -> Node3D: return IsoModels.casa(T), 0.0, true, true]])
-	g["centro"] = _g(DEFAULT_CFG, [["centro", func() -> Node3D: return IsoModels.centro(T), 0.0, true, true]])
-	g["torre"] = _g(DEFAULT_CFG, [["torre", func() -> Node3D: return IsoModels.torre_cuadrada(T), 0.0, true, true]])
-	g["castillo"] = _g([1900, 1500, 640, 880], [["castillo", func() -> Node3D: return IsoModels.castillo(T), 0.0, true, true]])
-	var wall_jobs: Array = [["muralla_poste", func() -> Node3D: return IsoModels.muralla_poste(), 0.0, true, true]]
-	for d in 8:
-		var dd := d
-		wall_jobs.append(["muralla_a%d" % d, func() -> Node3D: return IsoModels.muralla_brazo(dd), 0.0, true, false])
-	wall_jobs.append(["puerta_x", func() -> Node3D: return IsoModels.puerta(true), 0.0, true, true])
-	wall_jobs.append(["puerta_z", func() -> Node3D: return IsoModels.puerta(false), 0.0, true, true])
-	g["muralla"] = _g(WALL_CFG, wall_jobs)
 	var tj: Array = []
 	for v in 4:
 		var vv := v
@@ -67,23 +57,13 @@ static func groups() -> Dictionary:
 	g["roca"] = _g(DEFAULT_CFG, [
 		["roca_0", func() -> Node3D: return IsoModels.roca(0, false), 0.0, true, false],
 		["oro_0", func() -> Node3D: return IsoModels.roca(1, true), 0.0, true, false]])
-	# edificios del juego (IsoBuild)
-	g["almacen"] = _g(DEFAULT_CFG, [["almacen", func() -> Node3D: return IsoBuild.almacen(T), 0.0, true, true]])
-	g["cuartel"] = _g(DEFAULT_CFG, [["cuartel", func() -> Node3D: return IsoBuild.cuartel(T), 0.0, true, true]])
-	g["arqueria"] = _g(DEFAULT_CFG, [["arqueria", func() -> Node3D: return IsoBuild.arqueria(T), 0.0, true, true]])
-	g["establo"] = _g(DEFAULT_CFG, [["establo", func() -> Node3D: return IsoBuild.establo(T), 0.0, true, true]])
-	g["taller"] = _g(DEFAULT_CFG, [["taller", func() -> Node3D: return IsoBuild.taller(T), 0.0, true, true]])
-	g["monasterio"] = _g(DEFAULT_CFG, [["monasterio", func() -> Node3D: return IsoBuild.monasterio(T), 0.0, true, true]])
-	g["herreria"] = _g(DEFAULT_CFG, [["herreria", func() -> Node3D: return IsoBuild.herreria(T), 0.0, true, true]])
-	g["mercado"] = _g(DEFAULT_CFG, [["mercado", func() -> Node3D: return IsoBuild.mercado(T), 0.0, true, true]])
+	# edificios por civilización (IsoCivs): un grupo por civilización y lienzo; la mina (sólo en obra) es común a todas
 	g["mina"] = _g(DEFAULT_CFG, [["mina", func() -> Node3D: return IsoBuild.mina(T), 0.0, true, true]])
-	var pw: Array = []
-	for o in 4:
-		var oo := o
-		# lado del agua: 0 norte (−z), 1 este (+x), 2 sur (+z), 3 oeste (−x); el modelo mira a +z
-		var yaw := [180.0, 90.0, 0.0, 270.0][o] as float
-		pw.append(["puerto_%d" % o, func() -> Node3D: return IsoBuild.puerto(T), yaw, true, true])
-	g["puerto"] = _g(DEFAULT_CFG, pw)
+	for civ in IsoCivs.available():
+		var cj: Dictionary = IsoCivs.jobs(civ)
+		g["civ_" + civ] = _g(DEFAULT_CFG, cj["edificios"])
+		g["civ_" + civ + "_castillo"] = _g(CASTLE_CFG, cj["castillo"])
+		g["civ_" + civ + "_muralla"] = _g(WALL_CFG, cj["muralla"])
 	# infantería, aldeano y monje (IsoPeople): 5 direcciones horneadas (d = 1..5; las demás son espejos), yaw = 90° − 45°·d
 	for kind in ["aldeano", "piquero", "espadachin", "alabardero", "teutonico", "berserker", "arquero", "arquero_largo", "ballestero", "hostigador", "hachero", "monje"]:
 		var kk: String = kind

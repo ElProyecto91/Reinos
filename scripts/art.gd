@@ -34,8 +34,14 @@ func _new_img(w: int, h: int) -> Image:
 func unit_icon(type: String, team: int) -> Texture2D:
 	return _icon("ic_" + type, team)
 
-## Icono cuadrado de un edificio con el color de un equipo.
-func building_icon(type: String, team: int) -> Texture2D:
+## Icono cuadrado de un edificio con el color de un equipo. Los edificios con arquitectura propia (IsoArt.CIV_TYPES, muralla y puerta)
+## usan el icono de la civilización `civ` ("" o sin icono: la de por defecto); la granja y la mina son iguales para todos.
+func building_icon(type: String, team: int, civ: String = "") -> Texture2D:
+	if IsoArt.CIV_TYPES.has(type) or type == "muralla" or type == "puerta":
+		var nm := "ic_%s__%s" % [civ, type]
+		if civ == "" or not iso.has_icon(nm):
+			nm = "ic_%s__%s" % [IsoArt.DEFAULT_CIV, type]
+		return _icon(nm, team)
 	return _icon("ic_" + type, team)
 
 func _icon(name: String, team: int) -> Texture2D:

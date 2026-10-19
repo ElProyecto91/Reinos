@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cvbmd3tht1f0y"
-path="res://.godot/imported/mask_1.png-6322ba7a9e31848049a7c2385a2bb018.ctex"
+uid="uid://dggcr57wdc6mb"
+path="res://.godot/imported/mask_bizantinos_0.png-44978c42bf741822ba014c52bb52c852.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://art/iso/mask_1.png"
-dest_files=["res://.godot/imported/mask_1.png-6322ba7a9e31848049a7c2385a2bb018.ctex"]
+source_file="res://art/iso/mask_bizantinos_0.png"
+dest_files=["res://.godot/imported/mask_bizantinos_0.png-44978c42bf741822ba014c52bb52c852.ctex"]
 
 [params]
 

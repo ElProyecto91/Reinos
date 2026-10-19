@@ -73,8 +73,20 @@ func test_defs() -> void:
 	var art := Art.new()
 	art.build()
 	for bt in Defs.BUILDINGS:
-		if bt != "granja":
-			ok(art.iso.has(bt) or art.iso.has("casa"), "sin arte de edificio: " + bt)
+		if not IsoArt.CIV_TYPES.has(bt) and bt != "granja" and bt != "muralla" and bt != "puerta":
+			ok(art.iso.has(bt), "sin arte de edificio: " + bt)
+	# cada civilización tiene su paquete con TODOS sus edificios (y sus murallas), el icono de cada uno y sus puntos de humo
+	for civ: String in Civs.IDS:
+		ok(art.iso.ensure_civ(civ), "sin paquete de sprites de la civilización " + civ)
+		for bt: String in IsoArt.CIV_TYPES:
+			var names: Array = ["%s__puerto_%d" % [civ, 0], "%s__puerto_3" % civ] if bt == "puerto" else [IsoArt.civ_sprite(civ, bt)]
+			for nm: String in names:
+				ok(art.iso.has(nm), "sin sprite " + nm)
+			ok(art.iso.has_icon("ic_%s__%s" % [civ, bt]), "sin icono de %s en %s" % [bt, civ])
+		for nm in ["muralla_poste", "puerta_x", "puerta_z", "muralla_a0", "muralla_a7"]:
+			ok(art.iso.has(IsoArt.civ_sprite(civ, nm)), "sin sprite %s de %s" % [nm, civ])
+		for bt in ["muralla", "puerta"]:
+			ok(art.iso.has_icon("ic_%s__%s" % [civ, bt]), "sin icono de %s en %s" % [bt, civ])
 
 # --- entrenamiento por edades
 func test_training_and_age_gate() -> void:

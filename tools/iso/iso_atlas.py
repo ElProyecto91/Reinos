@@ -4,6 +4,9 @@ Escribe en <destino> (normalmente art/iso): atlas_N.png (RGBA, con el color de l
 transparentes para que el filtrado bilineal no deje halos oscuros), mask_N.png (RGB, mismo reparto: R = parte que se
 tiñe con el color del jugador, G = cristal de ventana que brilla de noche) y atlas.json ({"sheets": [[atlas, máscara], ...], "sprites": {nombre: [hoja, x, y, w, h, ox, oy]}}).
 Las categorías van seguidas (lo que se dibuja junto comparte hoja: menos cambios de textura al ordenar por profundidad).
+Los edificios de cada civilización (sprites «<civ>__<tipo>», ver tools/iso/iso_civs.gd) no van en el atlas global: cada civilización
+tiene su paquete (atlas_<civ>_N.png, mask_<civ>_N.png y civ_<civ>.json, mismo formato que atlas.json) que el juego carga sólo
+si alguien de la partida juega con ella (IsoArt.ensure_civ). Los edificios genéricos antiguos (sin «__») se descartan.
 Uso: python3 tools/iso/iso_atlas.py /tmp/iso_sprites art/iso"""
 import json, os, re, sys
 import numpy as np
@@ -27,8 +30,25 @@ UNIT_CATS = set(CATS[CATS.index("aldeano"):CATS.index("ariete")])
 ICON = 96
 HIT_CELL = 4          # lado (px de sprite) de las celdas de la máscara de toque de los edificios
 HIT_CATS = set(CATS[CATS.index("casa"):CATS.index("aldeano")])
+# edificios que ahora son propios de cada civilización: los sprites genéricos sin «<civ>__» ya no se usan
+CIV_BASES = {"casa", "centro", "almacen", "cuartel", "arqueria", "establo", "taller", "puerto", "torre", "monasterio", "castillo",
+             "herreria", "mercado", "muralla", "puerta"}
+SHEET_CIV = 2048      # ancho de las hojas de los paquetes de civilización (alto máximo SHEET: caben en una sola hoja más estrecha)
+
+def split_civ(name):
+    """«francos__casa_sh» -> («francos», «casa_sh»); sin prefijo -> («», nombre)."""
+    if "__" in name:
+        c, b = name.split("__", 1)
+        return c, b
+    return "", name
+
+def legacy(name):
+    c, b = split_civ(name)
+    return c == "" and b.split("_")[0] in CIV_BASES
 
 def skip(name):
+    if legacy(name):
+        return True
     m = UNIT_DIR.match(name)
     if not m:
         return False
@@ -36,22 +56,28 @@ def skip(name):
     return base in UNIT_CATS and m.group(1) not in BAKED_DIRS
 
 def make_icons(src, dst):
-    """Iconos de menú de 96x96 (sprite encajado con margen) + máscara de equipo: unidades de cara a la cámara y edificios."""
+    """Iconos de menú de 96x96 (sprite encajado con margen) + máscara de equipo: unidades de cara a la cámara y edificios
+    (los de cada civilización se llaman ic_<civ>__<tipo>)."""
     from PIL import Image as I
     targets = {}
-    for f in sorted(os.listdir(src)):
-        if not f.endswith(".png") or f.endswith("_m.png") or f.endswith("_sh.png"):
-            continue
-        n = f[:-4]
+    files = sorted(f[:-4] for f in os.listdir(src) if f.endswith(".png") and not f.endswith("_m.png") and not f.endswith("_sh.png"))
+    present = set(files)
+    for n in files:
         m = re.match(r"^(.+)_1_idle$", n)
         if m:
             targets["ic_" + m.group(1)] = n
-    for b in ["casa", "centro", "almacen", "cuartel", "arqueria", "establo", "taller", "torre", "monasterio", "castillo", "herreria", "mercado", "mina", "granja"]:
-        if os.path.exists(os.path.join(src, b + ".png")):
+    for b in ["mina", "granja"]:
+        if b in present:
             targets["ic_" + b] = b
-    for k, v in (("muralla", "muralla_poste"), ("puerta", "puerta_x"), ("puerto", "puerto_2")):
-        if os.path.exists(os.path.join(src, v + ".png")):
-            targets["ic_" + k] = v
+    civs = sorted({split_civ(n)[0] for n in files if split_civ(n)[0]})
+    types = ["casa", "centro", "almacen", "cuartel", "arqueria", "establo", "taller", "torre", "monasterio", "castillo", "herreria", "mercado"]
+    for c in civs:
+        for b in types:
+            if "%s__%s" % (c, b) in present:
+                targets["ic_%s__%s" % (c, b)] = "%s__%s" % (c, b)
+        for k, v in (("muralla", "muralla_poste"), ("puerta", "puerta_x"), ("puerto", "puerto_2")):
+            if "%s__%s" % (c, v) in present:
+                targets["ic_%s__%s" % (c, k)] = "%s__%s" % (c, v)
     names = sorted(targets)
     cols = 12
     rows = (len(names) + cols - 1) // cols
@@ -100,7 +126,8 @@ def hit_mask(im):
     return [cw, ch, out.hex()]
 
 def cat_of(name):
-    base = name[:-3] if name.endswith("_sh") else name
+    base = split_civ(name)[1]
+    base = base[:-3] if base.endswith("_sh") else base
     best = len(CATS)
     for i, c in enumerate(CATS):
         if base == c or base.startswith(c + "_"):
@@ -161,16 +188,14 @@ class MaxRects:
         self.free = pruned
         return x, y
 
-def main():
-    src, dst = sys.argv[1], sys.argv[2]
-    anchors = json.load(open(os.path.join(src, "anchors.json")))
-    os.makedirs(dst, exist_ok=True)
-    for f in os.listdir(dst):
-        if (f.startswith("atlas_") or f.startswith("mask_")) and f.endswith(".png"):
-            os.remove(os.path.join(dst, f))
-    names = sorted([n for n in anchors if not skip(n)], key=lambda n: (cat_of(n), -anchors[n][3], n))
-    pages = [(np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET, 3), np.uint8))]
-    packers = [MaxRects(SHEET, SHEET)]
+def pack(src, anchors, names, tag, dst, sheet_size, sheet_h=None):
+    """Empaqueta `names` en hojas de `sheet_size` y las escribe como atlas_<tag>_N.png / mask_<tag>_N.png (tag vacío: atlas_N.png).
+    Devuelve ({"sheets", "sprites", "hit"}, bytes de PNG)."""
+    sfx = (tag + "_") if tag else ""
+    names = sorted(names, key=lambda n: (cat_of(n), -anchors[n][3], n))
+    sheet_h = sheet_h or sheet_size
+    pages = [(np.zeros((sheet_h, sheet_size, 4), np.uint8), np.zeros((sheet_h, sheet_size, 3), np.uint8))]
+    packers = [MaxRects(sheet_size, sheet_h)]
     placed = {}
     hits = {}
     for n in names:
@@ -180,9 +205,11 @@ def main():
         mk = load_mask_rgb(mp) if os.path.exists(mp) else None
         pos = packers[-1].place(w + PAD, h + PAD)
         if pos is None:
-            pages.append((np.zeros((SHEET, SHEET, 4), np.uint8), np.zeros((SHEET, SHEET, 3), np.uint8)))
-            packers.append(MaxRects(SHEET, SHEET))
+            pages.append((np.zeros((sheet_h, sheet_size, 4), np.uint8), np.zeros((sheet_h, sheet_size, 3), np.uint8)))
+            packers.append(MaxRects(sheet_size, sheet_h))
             pos = packers[-1].place(w + PAD, h + PAD)
+            if pos is None:
+                raise SystemExit("el sprite %s (%dx%d) no cabe en una hoja de %d" % (n, w, h, sheet_size))
         x, y = pos
         px, py = x + PAD // 2, y + PAD // 2
         pages[-1][0][py:py + h, px:px + w] = im
@@ -190,22 +217,51 @@ def main():
             pages[-1][1][py:py + h, px:px + w] = mk
         a = anchors[n]
         placed[n] = [len(pages) - 1, px, py, w, h, a[0], a[1]]
-        if not n.endswith("_sh") and n.split("_")[0] in HIT_CATS:
+        if not n.endswith("_sh") and split_civ(n)[1].split("_")[0] in HIT_CATS:
             hits[n] = hit_mask(im)
     sheets = []
+    total = 0
     for i, (col, mk) in enumerate(pages):
         # recorta el alto sobrante de la hoja (la textura no tiene por qué ser cuadrada)
         used = int(np.where(col[..., 3].any(axis=1))[0].max()) + 1 + PAD
-        hh = min(SHEET, used)
+        hh = min(sheet_h, used)
         col = bleed(col[:hh])
-        Image.fromarray(col, "RGBA").save(os.path.join(dst, "atlas_%d.png" % i), optimize=True)
-        Image.fromarray(mk[:hh], "RGB").save(os.path.join(dst, "mask_%d.png" % i), optimize=True)
-        sheets.append(["atlas_%d.png" % i, "mask_%d.png" % i])
-        print("hoja %d: %dx%d" % (i, SHEET, hh))
-    json.dump({"sheets": sheets, "sprites": placed, "hit": hits}, open(os.path.join(dst, "atlas.json"), "w"))
+        fa, fm = "atlas_%s%d.png" % (sfx, i), "mask_%s%d.png" % (sfx, i)
+        Image.fromarray(col, "RGBA").save(os.path.join(dst, fa), optimize=True)
+        Image.fromarray(mk[:hh], "RGB").save(os.path.join(dst, fm), optimize=True)
+        sheets.append([fa, fm])
+        total += os.path.getsize(os.path.join(dst, fa)) + os.path.getsize(os.path.join(dst, fm))
+        print("  hoja %s%d: %dx%d" % (sfx, i, sheet_size, hh))
+    return {"sheets": sheets, "sprites": placed, "hit": hits}, total
+
+def main():
+    src, dst = sys.argv[1], sys.argv[2]
+    anchors = json.load(open(os.path.join(src, "anchors.json")))
+    os.makedirs(dst, exist_ok=True)
+    for f in os.listdir(dst):
+        if ((f.startswith("atlas_") or f.startswith("mask_")) and f.endswith(".png")) or (f.startswith("civ_") and f.endswith(".json") and not f.endswith("_meta.json")):
+            os.remove(os.path.join(dst, f))
+    dropped = [n for n in anchors if legacy(n)]
+    if dropped:
+        print("descartados %d sprites de edificios genéricos antiguos (ahora son por civilización)" % len(dropped))
+    keep = [n for n in anchors if not skip(n)]
+    glob = [n for n in keep if split_civ(n)[0] == ""]
+    by_civ = {}
+    for n in keep:
+        c = split_civ(n)[0]
+        if c:
+            by_civ.setdefault(c, []).append(n)
+    print("paquete global:")
+    gdata, gbytes = pack(src, anchors, glob, "", dst, SHEET)
+    json.dump({"sheets": gdata["sheets"], "sprites": gdata["sprites"], "hit": gdata["hit"]}, open(os.path.join(dst, "atlas.json"), "w"))
+    print("global: %d sprites, %d hojas, %.2f MB" % (len(gdata["sprites"]), len(gdata["sheets"]), gbytes / 1e6))
+    for civ in sorted(by_civ):
+        names = by_civ[civ]
+        print("paquete %s (%d sprites):" % (civ, len(names)))
+        cdata, cbytes = pack(src, anchors, names, civ, dst, SHEET_CIV, SHEET)
+        json.dump(cdata, open(os.path.join(dst, "civ_%s.json" % civ), "w"))
+        print("  %s: %d sprites, %d hojas, %.2f MB PNG" % (civ, len(cdata["sprites"]), len(cdata["sheets"]), cbytes / 1e6))
     make_icons(src, dst)
-    tot = sum(os.path.getsize(os.path.join(dst, f)) for s in sheets for f in s)
-    print("sprites:", len(placed), "hojas:", len(sheets), "peso PNG: %.2f MB" % (tot / 1e6))
 
 if __name__ == "__main__":
     main()

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b61ic8e3sm5jo"
-path="res://.godot/imported/atlas_1.png-d353e80e32b008f023348f052a538977.ctex"
+uid="uid://ctexffkxjg4ak"
+path="res://.godot/imported/mask_vikingos_0.png-8bd1709f26b968dc12c3220137372556.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://art/iso/atlas_1.png"
-dest_files=["res://.godot/imported/atlas_1.png-d353e80e32b008f023348f052a538977.ctex"]
+source_file="res://art/iso/mask_vikingos_0.png"
+dest_files=["res://.godot/imported/mask_vikingos_0.png-8bd1709f26b968dc12c3220137372556.ctex"]
 
 [params]
 

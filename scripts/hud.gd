@@ -635,7 +635,7 @@ func _fill_grid(p: Player) -> int:
 				elif t == "arbol":
 					kind = "sapling"
 				else:
-					tex = g.art.building_icon(t, g.human % 4)
+					tex = g.art.building_icon(t, g.human % 4, g.sim.players[g.human].civ)
 				var sub := "" if okage else Lang.t("needs_age_%d" % int(Defs.BUILDINGS[t]["age"]))
 				if t == "arbol":
 					sub = "%d/%d" % [g.sim.sapling_count(g.human), Defs.PLANT_MAX]
@@ -644,12 +644,12 @@ func _fill_grid(p: Player) -> int:
 				_slot(idx, Lang.t("b_" + t), tex, kind, cost, res, okage, (func() -> void: g.ui_begin_place(t)), false, -1.0, sub)
 				idx += 1
 			if grid_mode == "build":
-				_slot(idx, Lang.t("military"), g.art.building_icon("cuartel", g.human % 4), "", {}, res, true, (func() -> void:
+				_slot(idx, Lang.t("military"), g.art.building_icon("cuartel", g.human % 4, g.sim.players[g.human].civ), "", {}, res, true, (func() -> void:
 					grid_mode = "military"
 					g.sfx("click")
 					refresh_now()))
 				idx += 1
-				_slot(idx, Lang.t("defenses"), g.art.building_icon("muralla", g.human % 4), "", {}, res, p.age >= 1, (func() -> void:
+				_slot(idx, Lang.t("defenses"), g.art.building_icon("muralla", g.human % 4, g.sim.players[g.human].civ), "", {}, res, p.age >= 1, (func() -> void:
 					grid_mode = "defense"
 					g.sfx("click")
 					refresh_now()), false, -1.0, "" if p.age >= 1 else Lang.t("needs_feudal"))
@@ -1011,7 +1011,7 @@ class InfoPanel extends Control:
 		var font := get_theme_default_font()
 		if list.size() == 1:
 			var e: Ent = list[0]
-			var tex: Texture2D = g.art.building_icon(e.type, e.owner % 4) if e.is_building else g.art.unit_icon(e.type, e.owner)
+			var tex: Texture2D = g.art.building_icon(e.type, e.owner % 4, g.sim.players[e.owner].civ) if e.is_building else g.art.unit_icon(e.type, e.owner)
 			draw_texture_rect(tex, Rect2(12, 10, 64, 64), false)
 			var name_txt := Lang.t(("b_" if e.is_building else "u_") + e.type)
 			var oc: Color = Defs.PLAYER_COLORS[e.owner % 4]

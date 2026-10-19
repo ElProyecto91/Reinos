@@ -16,12 +16,14 @@ var ground: MeshInstance3D
 var origins: Dictionary = {}
 var out_dir := "/tmp/iso_raw"
 var only := PackedStringArray()
+var names := PackedStringArray()   # si no está vacío, sólo se hornean los trabajos con estos nombres
 var teams := PackedStringArray(["blue", "red"])   # ya no se usa: los nombres no llevan equipo
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("out="): out_dir = a.substr(4)
 		elif a.begins_with("only="): only = a.substr(5).split(",")
+		elif a.begins_with("names="): names = a.substr(6).split(",")
 		elif a.begins_with("teams="): teams = a.substr(6).split(",")
 		elif a.begins_with("style="): IsoModels.lego = a.substr(6) == "lego"
 	DirAccess.make_dir_recursive_absolute(out_dir)
@@ -170,7 +172,15 @@ func _shot(model: Node3D, yaw: float, name: String, shadow: bool = false, mask: 
 	await get_tree().process_frame
 
 func _want(n: String) -> bool:
-	return only.is_empty() or only.has(n)
+	if only.is_empty() or only.has(n):
+		return true
+	for o in only:       # «civ_castellanos*» = todos los grupos que empiezan así
+		if o.ends_with("*") and n.begins_with(o.trim_suffix("*")):
+			return true
+	return false
+
+func _want_job(n: String) -> bool:
+	return names.is_empty() or names.has(n)
 
 func _run() -> void:
 	var groups := IsoCatalog.groups()
@@ -186,6 +196,8 @@ func _run() -> void:
 		var cfg: Array = g["cfg"]
 		_configure(int(cfg[0]), int(cfg[1]), float(cfg[2]), float(cfg[3]))
 		for j: Array in g["jobs"]:
+			if not _want_job(String(j[0])):
+				continue
 			IsoModels.team_mats.clear()
 			await _shot((j[1] as Callable).call(), float(j[2]), String(j[0]), bool(j[3]), bool(j[4]))
 			done += 1

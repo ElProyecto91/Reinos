@@ -53,7 +53,8 @@ var _fau: Dictionary = {}          # uid de animal -> UNode
 var _fau_uid := 1
 var _stamp := 0
 var _ti: Dictionary = {}           # tipo de unidad -> TInfo
-var _bdim: Dictionary = {}         # tipo de edificio -> Rect2 (sprite relativo al centro de la huella, plano iso)
+var _bdim: Dictionary = {}         # "<civ>/<tipo>" -> Rect2 (sprite relativo al centro de la huella, plano iso)
+var _civ_of: Dictionary = {}       # jugador -> civilización cuyos sprites se usan (con el paquete ya cargado)
 var _ghost: Sprite2D
 var _ghost_name := ""
 var _wall_t := 0.0
@@ -64,6 +65,7 @@ class BNode extends RefCounted:
 	var rev: Sprite2D                 # parte ya construida (revelado de abajo arriba)
 	var arms: Array = []              # muralla: Sprite2D de los brazos (índice de dirección)
 	var kind := 0                     # 0 normal, 1 muralla, 2 puerta
+	var civ := ""                     # civilización del dueño (sus murallas y puertas usan su arquitectura)
 	var name := ""
 	var prog := -1.0
 	var stamp := 0
@@ -97,6 +99,9 @@ func build() -> void:
 	sim = game.sim
 	art = game.art
 	ia = art.iso
+	_civ_of.clear()
+	for p in sim.players:
+		civ_of(p.idx)             # carga el paquete de sprites de cada civilización que juega la partida
 	y_sort_enabled = true
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_ghost = Sprite2D.new()
@@ -479,30 +484,45 @@ func _sweep() -> void:
 
 # ------------------------------------------------------------------ edificios
 
-## Sprite principal de un tipo de edificio (con el sustituto provisional si aún no hay arte)
-func building_sprite(type: String, orient: int = 2) -> String:
-	var nm := type
-	if type == "puerto":
-		nm = "puerto_%d" % orient
+## Civilización cuyos sprites dibujan los edificios de un jugador: la suya si hay paquete de sprites, y si no (partidas antiguas, pruebas,
+## civilizaciones nuevas sin arte) IsoArt.DEFAULT_CIV. Carga el paquete la primera vez.
+func civ_of(owner: int) -> String:
+	var c: String = _civ_of.get(owner, "")
+	if c == "":
+		var want := ""
+		if owner >= 0 and owner < sim.players.size():
+			want = sim.players[owner].civ
+		c = ia.resolve_civ(want)
+		_civ_of[owner] = c
+	return c
+
+## Sprite principal de un tipo de edificio de una civilización (con el sustituto provisional si aún no hay arte)
+func building_sprite(type: String, orient: int = 2, civ: String = "") -> String:
+	if not IsoArt.CIV_TYPES.has(type) and ia.has(type):
+		return type                 # edificios iguales para todos (mina)
+	var cv := ia.resolve_civ(civ if civ != "" else IsoArt.DEFAULT_CIV)
+	var nm := IsoArt.civ_sprite(cv, "puerto_%d" % orient if type == "puerto" else type)
 	if ia.has(nm):
 		return nm
 	var sz: int = int(Defs.BUILDINGS[type]["size"])
 	for alt in (["casa", "centro"] if sz <= 2 else ["centro", "castillo"]):
-		if ia.has(alt):
-			return alt
+		var an := IsoArt.civ_sprite(cv, alt)
+		if ia.has(an):
+			return an
 	return ""
 
 ## Rectángulo del sprite del edificio respecto al centro de su huella (plano isométrico): para tocar y para barras
-func building_dims(type: String) -> Rect2:
-	var r: Rect2 = _bdim.get(type, Rect2())
+func building_dims(type: String, civ: String = "") -> Rect2:
+	var key := civ + "/" + type
+	var r: Rect2 = _bdim.get(key, Rect2())
 	if r.size == Vector2.ZERO:
-		var nm := building_sprite(type)
+		var nm := building_sprite(type, 2, civ)
 		if nm == "":
 			return Rect2(-32, -64, 64, 64)
 		var rr: Rect2 = ia.rects[nm][1]
 		var an: Vector2 = ia.anchors[nm]
 		r = Rect2(-an * S, rr.size * S)
-		_bdim[type] = r
+		_bdim[key] = r
 	return r
 
 func _wall_link(b: Ent, d: Vector2i) -> bool:
@@ -517,12 +537,13 @@ func _wall_link(b: Ent, d: Vector2i) -> bool:
 func _new_building_node(b: Ent) -> BNode:
 	var n := BNode.new()
 	var c := Iso.proj(b.center())
+	n.civ = civ_of(b.owner)
 	if b.def.get("wall", false):
 		n.kind = 2 if b.def.get("gate", false) else 1
-		n.name = "muralla_poste" if n.kind == 1 else "puerta_x"
+		n.name = IsoArt.civ_sprite(n.civ, "muralla_poste" if n.kind == 1 else "puerta_x")
 		n.arms.resize(8)
 	else:
-		n.name = building_sprite(b.type, b.orient)
+		n.name = building_sprite(b.type, b.orient, n.civ)
 	if n.name == "" or not ia.has(n.name):
 		return null
 	var sp := ia.make_sprite(n.name, c)
@@ -617,7 +638,7 @@ func _update_wall(b: Ent, n: BNode, done: bool, relink: bool) -> void:
 		var hz := links[2] or links[6]
 		var vt := links[0] or links[4]
 		horiz = hz or not vt
-		var nm := "puerta_x" if horiz else "puerta_z"
+		var nm := IsoArt.civ_sprite(n.civ, "puerta_x" if horiz else "puerta_z")
 		if nm != n.name and ia.has(nm):
 			n.name = nm
 			ia.set_frame(n.sp, nm)
@@ -632,7 +653,7 @@ func _update_wall(b: Ent, n: BNode, done: bool, relink: bool) -> void:
 				want = false
 		var arm: Sprite2D = n.arms[d]
 		if want and arm == null:
-			var an := "muralla_a%d" % d
+			var an := IsoArt.civ_sprite(n.civ, "muralla_a%d" % d)
 			if ia.has(an):
 				arm = Sprite2D.new()
 				arm.centered = false
@@ -720,7 +741,7 @@ func _update_ghost() -> void:
 	if type == "" or Defs.is_plot(type) or type == "muralla" or g.place_tile.x < 0:
 		_ghost.visible = false
 		return
-	var nm := building_sprite(type, 2)
+	var nm := building_sprite(type, 2, civ_of(g.human))
 	if nm == "":
 		_ghost.visible = false
 		return
@@ -772,7 +793,7 @@ func pick_building(ip: Vector2) -> Ent:
 		var hit := b.rect().grow(4.0).has_point(gp)
 		if not hit and not b.def.get("wall", false):
 			# píxeles del sprite (con un margen de unas celdas para el dedo); los edificios de delante tapan a los de detrás
-			var nm := building_sprite(b.type, b.orient)
+			var nm := building_sprite(b.type, b.orient, civ_of(b.owner))
 			if nm != "":
 				var c := Iso.proj(b.center())
 				hit = ia.hit_test(nm, (ip - c) / S + ia.anchors[nm], 2)
