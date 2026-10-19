@@ -103,18 +103,26 @@ void fragment() {
 			land *= 1.0 - 0.30 * occl * (1.0 - rock);                   // sombra proyectada al sureste
 		}
 		if (rock > 0.0) {
-			// relieve de crestas: ruido en valle invertido, iluminado desde el noroeste
-			float hm = (1.0 - abs(2.0 * texture(nz1, q * 0.03).g - 1.0)) * 0.65 + (1.0 - abs(2.0 * b.b - 1.0)) * 0.35 + (c.r - 0.5) * 0.10;
-			vec2 Lr = L * 1.6;
+			// relieve de montaña: altura = crestas grandes + crestas medias + grano, iluminada desde el noroeste.
+			// La luz sale de la diferencia de altura entre dos puntos cercanos (pendiente), así que las laderas al noroeste
+			// salen claras y las del sureste oscuras; sólo las cumbres más altas llevan nieve.
+			float r1 = 1.0 - abs(2.0 * texture(nz1, q * 0.02).g - 1.0);
+			float r2 = 1.0 - abs(2.0 * b.b - 1.0);
+			float hm = r1 * 0.55 + r2 * 0.30 + a.r * 0.10 + (c.r - 0.5) * 0.05;
 			float hm1 = hm;
 			if (full > 0.5) {
-				hm1 = (1.0 - abs(2.0 * texture(nz1, (q + Lr) * 0.03).g - 1.0)) * 0.65 + (1.0 - abs(2.0 * texture(nz1, (q + Lr) * 0.05).b - 1.0)) * 0.35 + (texture(nz2, (q + Lr) * 0.2).r - 0.5) * 0.10;
+				vec2 Lr = L * 1.6;
+				hm1 = (1.0 - abs(2.0 * texture(nz1, (q + Lr) * 0.02).g - 1.0)) * 0.55 + (1.0 - abs(2.0 * texture(nz1, (q + Lr) * 0.05).b - 1.0)) * 0.30 + texture(nz1, (q + Lr) * 0.0125).r * 0.10 + (texture(nz2, (q + Lr) * 0.2).r - 0.5) * 0.05;
 			}
-			vec3 rc = mix(vec3(0.40, 0.38, 0.36), vec3(0.68, 0.64, 0.59), smoothstep(0.2, 0.9, hm));
+			float lit = clamp(1.0 + (hm - hm1) * 3.4, 0.58, 1.42);
+			float alt = smoothstep(0.20, 0.90, hm);
+			vec3 rc = mix(vec3(0.34, 0.30, 0.27), vec3(0.72, 0.66, 0.58), alt);   // roca parda, más clara en las cumbres
+			rc = mix(rc, vec3(0.47, 0.45, 0.43), smoothstep(0.35, 0.75, a.g) * 0.35); // vetas de otra roca
 			rc *= 0.92 + 0.16 * c.g;
-			rc *= 1.0 + (hm - hm1) * 6.0;
-			float cap = smoothstep(0.68, 0.88, hm + (f.g - 0.5) * 0.10);
-			rc = mix(rc, vec3(0.92, 0.95, 0.99) * (0.92 + 0.08 * c.r), max(cap * 0.75, snow_f * 0.55));
+			rc *= lit;
+			float cap = smoothstep(0.72, 0.90, hm + (f.g - 0.5) * 0.06);
+			float snowy = max(cap * 0.90, snow_f * 0.60);
+			rc = mix(rc, vec3(0.94, 0.96, 1.0) * clamp(lit, 0.80, 1.10) * (0.94 + 0.06 * c.r), snowy);
 			rc *= 1.0 - 0.38 * (1.0 - smoothstep(0.52, 0.74, rh));       // pie de la montaña, más oscuro
 			land = mix(land, rc, rock);
 		}

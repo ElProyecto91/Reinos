@@ -296,6 +296,10 @@ func _build_tilemap() -> void:
 		elif rt == Defs.R_FARM:
 			farm_tiles[idx] = true
 
+## Roble de una de las cinco variantes (color, tamaño y posición distintos en la casilla).
+func _oak_variant(j: int) -> int:
+	return [Art.TREE_OAK_A, Art.TREE_OAK_B, Art.TREE_OAK_C, Art.TREE_OAK_D, Art.TREE_OAK_E][j % 5]
+
 func _atlas_index(rt: int, x: int, y: int) -> int:
 	var h := ((x * 73856093) ^ (y * 19349663)) & 0x7fffffff
 	match rt:
@@ -303,12 +307,19 @@ func _atlas_index(rt: int, x: int, y: int) -> int:
 			# especie según el clima de la casilla
 			var heat := float(sim.heat[y * sim.W + x]) / 255.0
 			var k := (h >> 4) % 100
+			var j := (h >> 11) % 100          # segunda tirada: la variante dentro de la especie
 			if heat < 0.28:
-				return Art.TREE_SNOW if k < 72 else Art.TREE_PINE_B
+				return (Art.TREE_SNOW if j < 55 else Art.TREE_SNOW_B) if k < 72 else Art.TREE_PINE_B
 			elif heat < 0.42:
-				return Art.TREE_PINE if k < 34 else (Art.TREE_PINE_B if k < 58 else (Art.TREE_OAK_A if k < 82 else Art.TREE_OAK_B))
+				if k < 52:
+					return Art.TREE_PINE if j < 34 else (Art.TREE_PINE_B if j < 67 else Art.TREE_PINE_C)
+				return _oak_variant(j)
 			elif heat < 0.66:
-				return Art.TREE_OAK_A if k < 40 else (Art.TREE_OAK_B if k < 72 else (Art.TREE_PINE if k < 85 else (Art.TREE_PINE_B if k < 95 else Art.TREE_AUTUMN)))
+				if k < 62:
+					return _oak_variant(j)
+				if k < 85:
+					return Art.TREE_PINE if j < 34 else (Art.TREE_PINE_B if j < 67 else Art.TREE_PINE_C)
+				return Art.TREE_AUTUMN if k < 92 and j < 50 else (Art.TREE_AUTUMN_B if k < 92 else Art.TREE_PINE_B)
 			return Art.TREE_PALM if k < 52 else (Art.TREE_DRY if k < 88 else Art.TREE_OAK_B)
 		Defs.R_GOLD:
 			return Art.RES_GOLD

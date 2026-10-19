@@ -138,7 +138,13 @@ const RES_DEER1 := 14
 const RES_BOAR0 := 15        # jabalí parado / en marcha
 const RES_BOAR1 := 16
 const RES_SAPLING := 17      # retoño recién plantado (crece a árbol en 90 s)
-const ATLAS_N := 18
+const TREE_OAK_C := 18       # más robles, pinos y nieve: variantes de color, tamaño y posición en la casilla
+const TREE_OAK_D := 19
+const TREE_OAK_E := 20
+const TREE_PINE_C := 21
+const TREE_SNOW_B := 22
+const TREE_AUTUMN_B := 23
+const ATLAS_N := 24
 
 func _build_resources() -> void:
 	var atlas := _new_img(RES_CELL * ATLAS_N, RES_CELL)
@@ -152,6 +158,12 @@ func _build_resources() -> void:
 	put.call(TREE_PINE, func(t: Image) -> void: _paint_pine(t, false, 0))
 	put.call(TREE_PINE_B, func(t: Image) -> void: _paint_pine(t, false, 1))
 	put.call(TREE_SNOW, func(t: Image) -> void: _paint_pine(t, true, 0))
+	put.call(TREE_OAK_C, func(t: Image) -> void: _paint_oak(t, 3))
+	put.call(TREE_OAK_D, func(t: Image) -> void: _paint_oak(t, 4))
+	put.call(TREE_OAK_E, func(t: Image) -> void: _paint_oak(t, 5))
+	put.call(TREE_AUTUMN_B, func(t: Image) -> void: _paint_oak(t, 6))
+	put.call(TREE_PINE_C, func(t: Image) -> void: _paint_pine(t, false, 2))
+	put.call(TREE_SNOW_B, func(t: Image) -> void: _paint_pine(t, true, 3))
 	put.call(TREE_PALM, func(t: Image) -> void: _paint_palm(t))
 	put.call(TREE_DRY, func(t: Image) -> void: _paint_dry(t))
 	put.call(RES_GOLD, func(t: Image) -> void: _paint_gold(t))
@@ -182,61 +194,62 @@ func _trunk(img: Image, x: float, y0: float, y1: float, w: float, col: Color) ->
 	Painter.rect(img, x - w * 0.5, y0, maxf(1.2, w * 0.35), y1 - y0, Painter.shade(col, 1.3))
 	Painter.rect(img, x + w * 0.5 - 1.4, y0, 1.4, y1 - y0, Painter.shade(col, 0.7))
 
+# Variantes de árbol: color, tamaño y desplazamiento dentro de la casilla (rompen la cuadrícula del bosque).
+const OAK_BASES := [Color(0.15, 0.37, 0.14), Color(0.23, 0.44, 0.14), Color(0.58, 0.40, 0.10), Color(0.17, 0.41, 0.17), Color(0.28, 0.46, 0.14), Color(0.11, 0.31, 0.14), Color(0.64, 0.30, 0.10)]
+const OAK_SCALE := [1.0, 0.94, 1.0, 1.08, 0.88, 1.02, 0.96]
+const OAK_OFF := [Vector2(0, 0), Vector2(-3, 1), Vector2(2, 0), Vector2(3, -1), Vector2(-2, 2), Vector2(1, -2), Vector2(-3, 0)]
+const PINE_BASES := [Color(0.10, 0.33, 0.20), Color(0.08, 0.28, 0.17), Color(0.13, 0.36, 0.17), Color(0.09, 0.30, 0.22)]
+const PINE_TIERS := [4, 5, 4, 5]
+const PINE_HW := [1.0, 0.92, 1.08, 1.0]
+const PINE_OFF_X := [0.0, -2.0, 2.0, 1.0]
+const WOOD_PAL := [Color(0.15, 0.09, 0.06), Color(0.40, 0.27, 0.14), Color(0.62, 0.46, 0.27)]
+const SNOW_PAL := [Color(0.58, 0.68, 0.86), Color(0.90, 0.94, 0.99), Color(1.0, 1.0, 1.0)]
+const GOLD_PAL := [Color(0.40, 0.24, 0.02), Color(0.96, 0.76, 0.12), Color(1.0, 0.94, 0.52)]
+
+## Roble: copa de lóbulos esféricos con mechones de hojas, luz del noroeste y sombra suave hacia el sureste.
 func _paint_oak(img: Image, v: int) -> void:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 100 + v
-	var bases := [Color(0.17, 0.42, 0.16), Color(0.25, 0.47, 0.15), Color(0.62, 0.44, 0.13)]
-	var base: Color = bases[v]
-	Painter.ellipse(img, 36, 47, 18, 5.5, Color(0, 0, 0, 0.30))
-	Painter.tri(img, 27, 48, 34, 41, 31, 48, Color(0.30, 0.20, 0.10))
-	_trunk(img, 32, 34, 47, 6.0, Color(0.40, 0.27, 0.14))
+	rng.seed = 100 + v * 37
+	var base: Color = OAK_BASES[v]
+	var s: float = OAK_SCALE[v]
+	var off: Vector2 = OAK_OFF[v]
+	Painter.ellipse(img, 38.0 + off.x, 47.5 + off.y, 21.0 * s, 6.6, Color(0, 0, 0, 0.14))
+	Painter.ellipse(img, 36.0 + off.x, 47.0 + off.y, 15.0 * s, 4.8, Color(0, 0, 0, 0.20))
+	var vol := ArtVolume.new(RES_CELL, RES_CELL)
+	vol.cylinder(32.0 + off.x, 31.0 + off.y, 47.5 + off.y, 2.6, 3.9, -100.0, 1.0, 2)
 	var lobes := [Vector3(32, 22, 14), Vector3(20.5, 28, 10), Vector3(43.5, 28, 10.5), Vector3(26, 13, 9.5), Vector3(38.5, 14, 9.0), Vector3(32, 32, 10.0)]
 	for l: Vector3 in lobes:
-		Painter.disc(img, l.x, l.y, l.z + 1.4, LEAF_OUT)
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x, l.y, l.z, Painter.shade(base, 0.72))
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x - 1.8, l.y - 2.2, l.z * 0.84, base)
-	for l: Vector3 in lobes:
-		Painter.disc(img, l.x - 3.4, l.y - 4.2, l.z * 0.5, Painter.shade(base, 1.32))
-	# follaje: puntos claros y oscuros repartidos por la copa
-	for i in 60:
-		var a := rng.randf() * TAU
-		var d := sqrt(rng.randf()) * 1.0
-		var px := 32.0 + cos(a) * d * 18.0
-		var py := 23.0 + sin(a) * d * 15.0
-		if py > 36.0:
-			continue
-		var k := rng.randf_range(0.65, 1.55)
-		Painter.disc(img, px, py, rng.randf_range(1.0, 2.1), Painter.shade(base, k))
-	# base de la copa más oscura (sombra propia)
-	Painter.ellipse(img, 35, 34.5, 13, 4.5, Color(0.02, 0.07, 0.03, 0.38))
+		var lx: float = 32.0 + (l.x - 32.0) * s + off.x + rng.randf_range(-1.6, 1.6)
+		var ly: float = 26.0 + (l.y - 26.0) * s + off.y + rng.randf_range(-1.4, 1.4)
+		vol.sphere(lx, ly, ly * 0.30, l.z * s * rng.randf_range(0.92, 1.10), 1.0 + rng.randf_range(-0.05, 0.05), 1)
+	vol.clumps(110, rng, 2.0, 3.8, 0.22, 1)
+	vol.grain(rng, 0.07)
+	var top: Image = vol.render([[], ArtVolume.pal(base, 0.26, 1.16), WOOD_PAL], {}, 17.0 + off.y, 44.0 + off.y, 0.46, Color(0.03, 0.09, 0.04), 0.60)
+	img.blend_rect(top, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
 
+## Pino: pisos cónicos de base elíptica; la nieve (si la hay) cubre la parte alta de cada piso.
 func _paint_pine(img: Image, snowy: bool, v: int) -> void:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 300 + v
-	var base := Color(0.10, 0.33, 0.20) if v == 0 else Color(0.08, 0.28, 0.17)
-	Painter.ellipse(img, 36, 47, 14, 5.0, Color(0, 0, 0, 0.30))
-	_trunk(img, 32, 40, 47, 4.0, Color(0.36, 0.24, 0.12))
-	var tiers := 4 if v == 0 else 5
+	rng.seed = 300 + v * 41
+	var base: Color = PINE_BASES[v]
+	var cx: float = 32.0 + float(PINE_OFF_X[v])
+	var hs: float = PINE_HW[v]
+	Painter.ellipse(img, cx + 5.0, 47.5, 17.0 * hs, 5.6, Color(0, 0, 0, 0.14))
+	Painter.ellipse(img, cx + 3.0, 47.0, 12.0 * hs, 4.2, Color(0, 0, 0, 0.20))
+	var vol := ArtVolume.new(RES_CELL, RES_CELL)
+	vol.cylinder(cx, 36.0, 47.5, 1.8, 2.8, -100.0, 1.0, 2)
+	var tiers: int = PINE_TIERS[v]
 	for i in tiers:
-		var bot := 44.0 - i * (30.0 / tiers) * 0.95
-		var top := bot - 17.0
-		var w := (15.0 - i * (11.0 / tiers))
-		Painter.tri(img, 32, top - 1.3, 32 - w - 1.4, bot + 1.1, 32 + w + 1.4, bot + 1.1, LEAF_OUT)
-		Painter.tri(img, 32, top, 32 - w, bot, 32 + w, bot, Painter.shade(base, 0.75))
-		Painter.tri(img, 32, top, 32 - w, bot, 32 - w * 0.05, bot, Painter.shade(base, 1.30))      # mitad iluminada (noroeste)
-		Painter.tri(img, 32, top + 3, 32 - w * 0.55, bot - 1, 32 - w * 0.1, bot - 1, Painter.shade(base, 1.55))
-		for k in 7:
-			var t := rng.randf()
-			var px := 32.0 + (rng.randf() * 2.0 - 1.0) * w * t * 0.85
-			Painter.disc(img, px, top + (bot - top) * t, rng.randf_range(0.8, 1.5), Painter.shade(base, rng.randf_range(0.6, 1.6)))
-		if snowy:
-			var snow := Color(0.95, 0.97, 1.0)
-			Painter.tri(img, 32, top, 32 - w * 0.60, top + (bot - top) * 0.60, 32 + w * 0.60, top + (bot - top) * 0.60, snow)
-			Painter.tri(img, 32, top, 32 - w * 0.60, top + (bot - top) * 0.60, 32 - w * 0.02, top + (bot - top) * 0.60, Color(0.80, 0.88, 0.97, 0.9))
-			for k in 3:
-				Painter.disc(img, 32 - w * 0.55 + k * w * 0.55, top + (bot - top) * 0.62, 2.2, snow)
+		var bot: float = 44.0 - i * (30.0 / tiers) * 0.95
+		var top: float = bot - 17.0
+		var hw: float = (15.0 - i * (11.0 / tiers)) * hs
+		vol.cone(cx, top - 1.0, bot + 2.0, hw + 0.8, float(i) * 10.0, 1.0 + rng.randf_range(-0.05, 0.05), 1, 0.55 if snowy else 0.0, float(i) * 1.7)
+	vol.clumps(60, rng, 1.2, 2.2, 0.20, 1)
+	if snowy:
+		vol.clumps(26, rng, 1.4, 2.4, 0.05, 3)
+	vol.grain(rng, 0.08)
+	var top_img: Image = vol.render([[], ArtVolume.pal(base, 0.34, 1.38), WOOD_PAL, SNOW_PAL], {}, 22.0, 46.0, 0.28, Color(0.02, 0.08, 0.05), 0.60)
+	img.blend_rect(top_img, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
 
 func _paint_palm(img: Image) -> void:
 	Painter.ellipse(img, 37, 47, 14, 4.5, Color(0, 0, 0, 0.28))
@@ -285,51 +298,50 @@ func _paint_dry(img: Image) -> void:
 		Painter.disc(img, p.x, p.y, 2.8, Color(0.55, 0.52, 0.22))
 		Painter.disc(img, p.x - 0.8, p.y - 0.8, 1.6, Color(0.70, 0.66, 0.30))
 
+const ROCK_COL := Color(0.52, 0.53, 0.57)
+
+## Roca grande: lóbulos esféricos con grava encima (material 5).
+func _rock_volume(blobs: Array, rng: RandomNumberGenerator) -> ArtVolume:
+	var vol := ArtVolume.new(RES_CELL, RES_CELL)
+	for b: Vector3 in blobs:
+		vol.sphere(b.x, b.y, b.y * 0.3, b.z, 1.0, 5, 0.92)
+	vol.clumps(60, rng, 2.4, 4.6, 0.0, 5)
+	vol.facets(13, rng, 5, 0.55, 0.55)
+	vol.grain(rng, 0.05)
+	return vol
+
 func _paint_gold(img: Image) -> void:
-	Painter.ellipse(img, 33, 47, 20, 6.0, Color(0, 0, 0, 0.30))
-	var rock := Color(0.46, 0.45, 0.48)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 501
+	Painter.ellipse(img, 36, 47.5, 23, 6.8, Color(0, 0, 0, 0.14))
+	Painter.ellipse(img, 34, 47, 19, 5.4, Color(0, 0, 0, 0.20))
 	var blobs := [Vector3(32, 36, 14), Vector3(20, 40, 9), Vector3(44, 40, 9.5), Vector3(28, 28, 9), Vector3(38, 29, 8)]
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x, b.y, b.z + 1.4, Color(0.07, 0.07, 0.08, 0.9))
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x, b.y, b.z, Painter.shade(rock, 0.72))
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x - 1.6, b.y - 2.2, b.z * 0.82, rock)
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x - 3.2, b.y - 4.0, b.z * 0.42, Painter.shade(rock, 1.3))
-	# vetas y pepitas de oro con brillo
+	var vol := _rock_volume(blobs, rng)
+	# pepitas de oro con brillo: un aro de roca oscura las separa del fondo y la luz especular marca su volumen
 	var nug := [Vector3(26, 31, 4.6), Vector3(37, 27, 5.2), Vector3(33, 38, 4.4), Vector3(44, 38, 3.4), Vector3(19, 41, 3.2), Vector3(31, 22, 3.0)]
 	for n: Vector3 in nug:
-		Painter.disc(img, n.x, n.y, n.z + 1.1, Color(0.38, 0.24, 0.02, 0.9))
-		Painter.disc(img, n.x, n.y, n.z, Color(0.96, 0.76, 0.12))
-		Painter.disc(img, n.x - n.z * 0.28, n.y - n.z * 0.30, n.z * 0.62, Color(1.0, 0.88, 0.28))
-		Painter.disc(img, n.x - n.z * 0.38, n.y - n.z * 0.42, n.z * 0.28, Color(1.0, 0.98, 0.78))
+		vol.sphere(n.x, n.y, 36.0 + n.y * 0.3, n.z + 1.1, 0.40, 5)
+		vol.sphere(n.x, n.y, 41.0 + n.y * 0.3, n.z, 1.0, 4)
+	var top: Image = vol.render([[], [], [], [], GOLD_PAL, ArtVolume.pal(ROCK_COL, 0.34, 1.26)], {4: 0.9}, 30.0, 48.0, 0.30, Color(0.05, 0.05, 0.07), 0.70)
+	img.blend_rect(top, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
 
-## Cantera: peñascos gris azulado con facetas claras, grietas y alguna lasca suelta (se distingue del oro por no tener pepitas).
+## Cantera: peñascos gris azulado con grietas y alguna lasca suelta (se distingue del oro por no tener pepitas).
 func _paint_stone(img: Image) -> void:
-	Painter.ellipse(img, 33, 47, 21, 6.0, Color(0, 0, 0, 0.30))
-	var rock := Color(0.60, 0.63, 0.68)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 502
+	Painter.ellipse(img, 36, 47.5, 24, 6.8, Color(0, 0, 0, 0.14))
+	Painter.ellipse(img, 34, 47, 20, 5.4, Color(0, 0, 0, 0.20))
 	var blobs := [Vector3(32, 36, 14), Vector3(19, 41, 9.5), Vector3(45, 41, 10), Vector3(26, 27, 9.5), Vector3(40, 28, 9)]
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x, b.y, b.z + 1.4, Color(0.06, 0.07, 0.09, 0.9))
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x, b.y, b.z, Painter.shade(rock, 0.68))
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x - 1.6, b.y - 2.2, b.z * 0.82, rock)
-	for b: Vector3 in blobs:
-		Painter.disc(img, b.x - 3.2, b.y - 4.0, b.z * 0.44, Painter.shade(rock, 1.26))
-	# facetas talladas y grietas
-	Painter.tri(img, 24, 30, 33, 22, 36, 34, Painter.shade(rock, 1.12))
-	Painter.tri(img, 36, 34, 33, 22, 46, 30, Painter.shade(rock, 0.84))
-	Painter.line(img, 30, 26, 28, 40, 1.0, Color(0.10, 0.11, 0.14, 0.75))
-	Painter.line(img, 28, 40, 33, 46, 1.0, Color(0.10, 0.11, 0.14, 0.75))
-	Painter.line(img, 41, 33, 44, 44, 0.9, Color(0.10, 0.11, 0.14, 0.7))
-	Painter.line(img, 17, 38, 22, 45, 0.9, Color(0.10, 0.11, 0.14, 0.7))
-	# lascas sueltas y musgo en la base
-	Painter.disc(img, 52, 46, 2.6, Color(0.08, 0.09, 0.11, 0.9))
-	Painter.disc(img, 52, 45.6, 2.1, Painter.shade(rock, 0.9))
-	Painter.disc(img, 12, 47, 2.2, Color(0.08, 0.09, 0.11, 0.9))
-	Painter.disc(img, 12, 46.7, 1.8, Painter.shade(rock, 0.8))
+	var vol := _rock_volume(blobs, rng)
+	vol.sphere(52, 46, 14.0, 2.6, 1.0, 5)
+	vol.sphere(12, 47, 14.0, 2.2, 0.9, 5)
+	var top: Image = vol.render([[], [], [], [], [], ArtVolume.pal(Color(0.54, 0.57, 0.62), 0.34, 1.26)], {}, 30.0, 48.0, 0.30, Color(0.05, 0.06, 0.09), 0.70)
+	img.blend_rect(top, Rect2i(0, 0, RES_CELL, RES_CELL), Vector2i.ZERO)
+	# grietas y musgo en la base
+	Painter.line(img, 30, 26, 28, 40, 1.0, Color(0.10, 0.11, 0.14, 0.70))
+	Painter.line(img, 28, 40, 33, 46, 1.0, Color(0.10, 0.11, 0.14, 0.70))
+	Painter.line(img, 41, 33, 44, 44, 0.9, Color(0.10, 0.11, 0.14, 0.65))
+	Painter.line(img, 17, 38, 22, 45, 0.9, Color(0.10, 0.11, 0.14, 0.65))
 	Painter.ellipse(img, 22, 46, 4, 1.6, Color(0.24, 0.40, 0.20, 0.7))
 
 ## Retoño: montoncito de tierra, tutor de madera y un tallo con hojas tiernas.
