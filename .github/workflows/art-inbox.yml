@@ -1,0 +1,57 @@
+# Puente de arte: descarga imágenes por URL (p. ej. las que genera el conector de FLUX) y las deja en la rama `art-inbox`.
+# Los servidores de GitHub tienen internet; el entorno donde se programa el juego solo alcanza GitHub.
+#
+# Seguridad: se lanza a mano (solo quien tiene permiso de escritura en el repositorio); nunca toca `main` ni compila el APK;
+# la lista de URL llega por variable de entorno (no se interpola en el script); solo https y dominios de una lista cerrada
+# (tools/art_inbox/fetch.py); los archivos se comprueban por sus primeros bytes (PNG/JPEG/WebP) y se limitan a 24 MB.
+name: Art inbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Elementos nombre=https://... separados por espacios o saltos de línea (nombre: a-z 0-9 _ -)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: art-inbox
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write   # solo para empujar a la rama art-inbox
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Descargar y validar
+        env:
+          URLS: ${{ inputs.urls }}
+          ART_INBOX_OUT: ${{ runner.temp }}/inbox
+        run: python3 tools/art_inbox/fetch.py
+
+      - name: Guardar en la rama art-inbox
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin art-inbox > /dev/null; then
+            git fetch --depth=1 origin art-inbox
+            git checkout -B art-inbox FETCH_HEAD
+          else
+            git checkout -b art-inbox
+          fi
+          mkdir -p art/inbox
+          cp "$RUNNER_TEMP"/inbox/* art/inbox/
+          git add art/inbox
+          if git diff --cached --quiet; then
+            echo "Nada nuevo que guardar"; exit 0
+          fi
+          git commit -m "art-inbox: imágenes nuevas [skip ci]"
+          git push origin art-inbox
