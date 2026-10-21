@@ -8,17 +8,31 @@ extends RefCounted
 ## Orientación de arma: [elev, yaw, roll]; elev 0 = apunta hacia arriba, 90 = hacia delante, 180 = hacia abajo.
 
 const M = preload("res://tools/iso/iso_models.gd")
-const BODY_S := 1.12
+const BODY_S := 1.08
 const HIP_Y := 0.46
+const HEAD_Y := 0.935   # centro de la cabeza (marco de la cadera sumando dy); el cuello deja un hueco visible bajo el pecho
 
 # ------------------------------------------------------------------ paleta
 
 static func pal(team: Color) -> Dictionary:
 	return {
-		"skin": M.fmat(Color(0.88, 0.69, 0.53), 0.8, 0.3),
-		"skin_d": M.fmat(Color(0.66, 0.46, 0.32), 0.8, 0.3),
+		"skin": M.fmat(Color(0.80, 0.60, 0.45), 0.8, 0.3),
+		"skin_d": M.fmat(Color(0.60, 0.42, 0.29), 0.8, 0.3),
+		"skin_l": M.fmat(Color(0.86, 0.68, 0.55), 0.8, 0.3),
+		"eye": M.fmat(Color(0.07, 0.05, 0.05), 0.6, 0.2),
 		"hair": M.fmat(Color(0.30, 0.18, 0.10), 0.9, 0.1),
 		"hair_r": M.fmat(Color(0.62, 0.26, 0.10), 0.9, 0.1),
+		"hair_k": M.fmat(Color(0.12, 0.09, 0.08), 0.9, 0.1),
+		"hair_b": M.fmat(Color(0.74, 0.56, 0.27), 0.9, 0.1),
+		"hair_g": M.fmat(Color(0.56, 0.53, 0.49), 0.9, 0.1),
+		"linen": M.fmat(Color(0.72, 0.66, 0.52), 0.95, 0.1),
+		"ochre": M.fmat(Color(0.64, 0.48, 0.25), 0.95, 0.15),
+		"ochre_d": M.fmat(Color(0.52, 0.37, 0.18), 0.95, 0.15),
+		"olive": M.fmat(Color(0.40, 0.45, 0.25), 0.95, 0.15),
+		"olive_d": M.fmat(Color(0.28, 0.32, 0.18), 0.95, 0.15),
+		"russet": M.fmat(Color(0.62, 0.30, 0.18), 0.95, 0.15),
+		"russet_d": M.fmat(Color(0.46, 0.21, 0.13), 0.95, 0.15),
+		"dye_blue": M.fmat(Color(0.26, 0.38, 0.55), 0.95, 0.15),
 		"leather": M.fmat(Color(0.26, 0.17, 0.10), 0.8, 0.3),
 		"leather_l": M.fmat(Color(0.48, 0.33, 0.18), 0.8, 0.3),
 		"steel": M.fmat(Color(0.52, 0.54, 0.60), 0.4, 0.65),
@@ -37,7 +51,7 @@ static func pal(team: Color) -> Dictionary:
 		"black": M.fmat(Color(0.10, 0.09, 0.11), 0.9, 0.15),
 		"fur": M.fmat(Color(0.58, 0.44, 0.30), 1.0, 0.05),
 		"fur_d": M.fmat(Color(0.34, 0.24, 0.16), 1.0, 0.05),
-		"straw": M.fmat(Color(0.80, 0.68, 0.34), 0.95, 0.1),
+		"straw": M.fmat(Color(0.74, 0.62, 0.32), 0.95, 0.1),
 		"white": M.fmat(Color(0.94, 0.92, 0.86), 0.9, 0.15),
 		"gold": M.fmat(Color(0.88, 0.70, 0.22), 0.35, 0.9),
 		"bone": M.fmat(Color(0.86, 0.82, 0.70), 0.8, 0.2),
@@ -49,8 +63,14 @@ static func pal(team: Color) -> Dictionary:
 
 static func spec_of(kind: String) -> Dictionary:
 	match kind:
+		# Tres aspectos de aldeano (el juego elige uno por unidad: IsoView.VILL_LOOKS): hombre con sombrero de paja, hombre con barba
+		# y la cabeza descubierta, y mujer con pañuelo y delantal. El equipo se ve en el cinto, el pañuelo del cuello y la cinta de la cabeza.
 		"aldeano":
-			return {"arch": "villager", "outfit": "tunic", "top": "cloth_t", "skirt": "cloth_d", "legs": "brown", "head": "straw", "belt": "team", "scarf": "team"}
+			return {"arch": "villager", "outfit": "tunic", "top": "ochre", "skirt": "ochre_d", "legs": "brown", "head": "straw", "hair": "hair", "belt": "team", "scarf": "team", "fore": "skin", "hem": "brown"}
+		"aldeano_b":
+			return {"arch": "villager", "outfit": "tunic", "top": "olive", "skirt": "olive_d", "legs": "cloth_d", "head": "bare_short", "hair": "hair_k", "beard": true, "skin": "skin_d", "belt": "team", "scarf": "team", "fore": "skin", "hem": "brown"}
+		"aldeano_c":
+			return {"arch": "villager", "outfit": "dress", "top": "russet", "skirt": "russet_d", "legs": "brown", "head": "kerchief", "hair": "hair_b", "skin": "skin_l", "fem": true, "belt": "team", "collar": "linen", "fore": "skin", "boots": false}
 		"piquero":
 			return {"arch": "polearm", "outfit": "tunic", "top": "team", "skirt": "team_d", "legs": "brown", "armor": "gambeson", "head": "kettle", "weapon": "pike", "off": "buckler", "belt": "leather"}
 		"espadachin":
@@ -106,8 +126,12 @@ static func pose_of(sp: Dictionary, key: String) -> Dictionary:
 	var act := key.begins_with("a") or key.begins_with("t")
 	match String(sp.arch):
 		"villager":
-			p.ra = [8.0 - sw * 26.0, 14.0, 4.0]
-			p.la = [8.0 + sw * 26.0, 14.0, -4.0]
+			# brazos sueltos: el que se adelanta dobla más el codo; en reposo uno cuelga y el otro descansa hacia la cadera
+			p.ra = [6.0 - sw * 24.0, 12.0 + maxf(0.0, -sw) * 14.0, 7.0]
+			p.la = [6.0 + sw * 24.0, 12.0 + maxf(0.0, sw) * 14.0, 7.0]
+			if key == "idle":
+				p.ra = [14.0, 30.0, 8.0]
+				p.la = [2.0, 12.0, 7.0]
 			p.rshow = false
 			if key.begins_with("t"):
 				var trade := int(key.substr(1, 1))
@@ -257,6 +281,19 @@ static func pose_of(sp: Dictionary, key: String) -> Dictionary:
 				p.la = [20.0, 20.0, -8.0]
 				p.rshow = false
 				p.lean = 14.0
+	# postura natural: en reposo el peso va a una pierna, la cabeza se ladea un poco y el torso gira; andando, el torso contrarresta
+	# el paso; en acciones, zancada abierta (así los pies quedan separados y firmes)
+	if ph < 0.0:
+		if key == "idle":
+			p.stance = [-4.0, 6.0]
+			p.head = [2.0, 9.0, -3.0]
+			p.twist = float(p.twist) + 3.0
+			p.roll = -1.5
+		elif act:
+			p.stance = [-9.0, 11.0]
+			p.head = [4.0, 0.0, 0.0]
+	else:
+		p.twist = float(p.twist) - sw * 4.0
 	if act and p.w >= 0.0:
 		p.w = -1.0
 	return p
@@ -408,16 +445,62 @@ static func _bow(g: Node3D, P: Dictionary, long: bool, o: Dictionary) -> void:
 
 # ------------------------------------------------------------------ cabezas
 
-static func head(parent: Node3D, kind: String, P: Dictionary, y: float) -> void:
+static func _hair_m(P: Dictionary, sp: Dictionary) -> Material:
+	return P[String(sp.get("hair", "hair"))]
+
+## Cara: cráneo ovoide, nariz, ojos y orejas. A tamaño de juego casi no se distinguen, pero dan sombra de volumen, dirección de la mirada
+## y un tono de piel distinto del de la ropa (lo que más delata a un muñeco es que cara, manos y ropa sean del mismo color).
+static func _face(parent: Node3D, P: Dictionary, y: float, ears: bool = true) -> void:
 	var skin: Material = P.skin
-	M.ball(parent, 0.088, Vector3(0, y, 0), skin)
+	M.ball(parent, 0.086, Vector3(0, y, 0), skin, Vector3(0.94, 1.07, 1.0)).name = "cabeza"
+	M.ball(parent, 0.019, Vector3(0, y - 0.014, 0.084), skin, Vector3(0.8, 1.15, 1.0))
+	for s in [-1, 1]:
+		M.ball(parent, 0.0105, Vector3(s * 0.033, y + 0.012, 0.078), P.eye)
+		if ears:
+			M.ball(parent, 0.02, Vector3(s * 0.079, y - 0.006, -0.004), skin, Vector3(0.55, 1.0, 0.85))
+
+## Pelo: casquete + nuca (corto), o con melena (largo). La frente y la cara quedan despejadas.
+static func _hair(parent: Node3D, P: Dictionary, sp: Dictionary, y: float, style: String) -> void:
+	var hm := _hair_m(P, sp)
+	M.ball(parent, 0.095, Vector3(0, y + 0.036, -0.012), hm, Vector3(1.0, 0.72, 1.03))
+	M.ball(parent, 0.07, Vector3(0, y - 0.012, -0.05), hm, Vector3(1.08, 1.0, 0.8))
+	if style == "long":
+		M.ball(parent, 0.075, Vector3(0, y - 0.045, -0.062), hm, Vector3(1.05, 1.3, 0.8))
+		M.cyl(parent, 0.052, 0.034, 0.14, Vector3(0, y - 0.105, -0.075), hm, 8)
+	if bool(sp.get("beard", false)):
+		M.ball(parent, 0.052, Vector3(0, y - 0.058, 0.040), hm, Vector3(1.1, 0.85, 0.9))
+		M.ball(parent, 0.03, Vector3(0, y - 0.03, 0.070), hm, Vector3(2.0, 0.5, 0.6))
+
+static func head(parent: Node3D, kind: String, P: Dictionary, y: float, sp: Dictionary = {}) -> void:
+	_face(parent, P, y)
 	match kind:
 		"straw":
-			M.cyl(parent, 0.17, 0.17, 0.012, Vector3(0, y + 0.045, 0), P.straw, 18)
-			M.cyl(parent, 0.065, 0.085, 0.07, Vector3(0, y + 0.075, 0), P.straw, 14)
-			M.cyl(parent, 0.087, 0.087, 0.015, Vector3(0, y + 0.055, 0), P.team, 14)
+			# sombrero de paja pequeño y ladeado: deja ver el pelo, la cara y las orejas
+			var hat := Node3D.new()
+			hat.position = Vector3(0, y + 0.052, -0.004)
+			hat.rotation_degrees = Vector3(-4.0, 0.0, 5.0)
+			parent.add_child(hat)
+			M.cyl(hat, 0.128, 0.128, 0.011, Vector3.ZERO, P.straw, 18)
+			M.cyl(hat, 0.052, 0.072, 0.062, Vector3(0, 0.034, 0), P.straw, 14)
+			M.cyl(hat, 0.073, 0.073, 0.014, Vector3(0, 0.012, 0), P.team, 14)
+			_hair(parent, P, sp, y - 0.012, "short")
+		"bare_short":
+			_hair(parent, P, sp, y, "short")
+		"bare_long":
+			_hair(parent, P, sp, y, "long")
+		"cap_linen":
+			# gorro de lino: casquete claro con vuelta
+			M.ball(parent, 0.096, Vector3(0, y + 0.032, -0.012), P.linen, Vector3(1.0, 0.68, 1.04))
+			M.cyl(parent, 0.092, 0.095, 0.026, Vector3(0, y + 0.03, -0.004), P.team, 16)
+			M.ball(parent, 0.062, Vector3(0, y - 0.01, -0.056), _hair_m(P, sp), Vector3(1.1, 0.9, 0.8))
+		"kerchief":
+			# pañuelo de lino anudado atrás, con cinta del color del equipo
+			M.ball(parent, 0.098, Vector3(0, y + 0.03, -0.014), P.linen, Vector3(1.0, 0.70, 1.06))
+			M.ball(parent, 0.075, Vector3(0, y - 0.02, -0.06), P.linen, Vector3(1.08, 1.25, 0.78))
+			M.cyl(parent, 0.092, 0.092, 0.016, Vector3(0, y + 0.036, -0.004), P.team, 16)
+			M.ball(parent, 0.034, Vector3(0, y - 0.01, -0.108), P.linen, Vector3(1.0, 1.4, 1.0))
 		"kettle":
-			M.cyl(parent, 0.15, 0.15, 0.012, Vector3(0, y + 0.05, 0), P.steel, 18)
+			M.cyl(parent, 0.127, 0.127, 0.012, Vector3(0, y + 0.05, 0), P.steel, 18)
 			M.ball(parent, 0.098, Vector3(0, y + 0.045, 0), P.steel, Vector3(1, 0.85, 1))
 		"nasal":
 			M.ball(parent, 0.102, Vector3(0, y + 0.035, -0.004), P.steel, Vector3(1, 0.80, 1))
@@ -434,8 +517,7 @@ static func head(parent: Node3D, kind: String, P: Dictionary, y: float) -> void:
 			M.box(parent, Vector3(0.022, 0.10, 0.03), Vector3(0, y - 0.03, 0.108), P.black)
 			M.box(parent, Vector3(0.03, 0.10, 0.12), Vector3(0, y + 0.19, -0.01), P.team)
 		"horned":
-			M.ball(parent, 0.098, Vector3(0, y + 0.02, -0.01), P.hair_r, Vector3(1.0, 1.0, 1.05))
-			M.ball(parent, 0.06, Vector3(0, y - 0.07, 0.065), P.hair_r, Vector3(1.3, 0.9, 0.8))
+			_hair(parent, P, sp, y, "long")
 			M.cyl(parent, 0.10, 0.10, 0.04, Vector3(0, y + 0.065, 0), P.steel_d, 14)
 			for s in [-1, 1]:
 				var hn := M.cyl(parent, 0.0, 0.03, 0.16, Vector3(s * 0.13, y + 0.11, 0), P.bone, 6)
@@ -456,10 +538,11 @@ static func head(parent: Node3D, kind: String, P: Dictionary, y: float) -> void:
 			M.cyl(parent, 0.104, 0.104, 0.03, Vector3(0, y + 0.02, 0), P.leather, 14)
 			M.box(parent, Vector3(0.02, 0.06, 0.02), Vector3(0, y + 0.0, 0.1), P.steel)
 		"tonsure":
-			M.cyl(parent, 0.092, 0.092, 0.05, Vector3(0, y + 0.0, 0), P.hair, 14)
-			M.ball(parent, 0.06, Vector3(0, y - 0.07, 0.07), P.hair, Vector3(1.3, 0.8, 0.7))
+			# corona de pelo con la coronilla rapada
+			M.cyl(parent, 0.091, 0.092, 0.05, Vector3(0, y - 0.008, 0), _hair_m(P, sp), 14)
+			M.ball(parent, 0.07, Vector3(0, y - 0.012, -0.05), _hair_m(P, sp), Vector3(1.08, 1.0, 0.8))
 		"morion":
-			M.cyl(parent, 0.16, 0.14, 0.014, Vector3(0, y + 0.05, 0), P.steel, 18)
+			M.cyl(parent, 0.14, 0.12, 0.014, Vector3(0, y + 0.05, 0), P.steel, 18)
 			M.ball(parent, 0.098, Vector3(0, y + 0.07, -0.004), P.steel, Vector3(1, 0.85, 1))
 			M.box(parent, Vector3(0.022, 0.07, 0.17), Vector3(0, y + 0.15, 0), P.steel)
 		"turban":
@@ -473,39 +556,49 @@ static func head(parent: Node3D, kind: String, P: Dictionary, y: float) -> void:
 		"coif":
 			M.ball(parent, 0.101, Vector3(0, y + 0.0, -0.004), P.mail, Vector3(1, 1.02, 1))
 		_:
-			M.ball(parent, 0.092, Vector3(0, y + 0.03, -0.01), P.hair, Vector3(1.0, 0.75, 1.0))
+			_hair(parent, P, sp, y, "short")
 
 # ------------------------------------------------------------------ cuerpo
 
 static func _mat(P: Dictionary, k: String) -> Material:
 	return P[k] if P.has(k) else P.cloth_t
 
+## Altura que alcanza la planta del pie bajo la cadera con esas flexiones (para posar el cuerpo con los pies en el suelo).
+static func _reach(hip_deg: float, knee_deg: float) -> float:
+	return 0.24 * cos(deg_to_rad(hip_deg)) + 0.276 * cos(deg_to_rad(hip_deg + knee_deg))
+
+static func _shoulder(side: float, sp: Dictionary, dy: float) -> Vector3:
+	return Vector3(side * (0.134 if bool(sp.get("fem", false)) else 0.152), 0.765 + dy, 0)
+
 static func human(kind: String, team: Color, key: String, seated: bool = false, ov: Dictionary = {}) -> Node3D:
 	var sp := spec_of(kind)
 	for k in ov:
 		sp[k] = ov[k]
 	var P := pal(team)
-	if sp.get("skin", "") == "skin_d":
-		P.skin = P.skin_d
+	P.skin = P[String(sp.get("skin", "skin"))]
 	var pose := pose_of(sp, key) if not seated else (ov.get("pose") as Dictionary)
 	var root := Node3D.new()
 	var body := Node3D.new()
 	body.scale = Vector3.ONE * BODY_S
-	body.position = Vector3(0, float(pose.drop), 0)
 	root.add_child(body)
 	var top_m: Material = _mat(P, String(sp.top))
 	var skirt_m: Material = _mat(P, String(sp.skirt))
 	var legs_m: Material = _mat(P, String(sp.get("legs", "brown")))
 	var outfit: String = sp.outfit
-	# ---- piernas
+	var armor := String(sp.get("armor", ""))
+	var fem := bool(sp.get("fem", false))
+	# ---- piernas: muslo, rodilla, pantorrilla, caña de bota y zapato redondeado
 	var ph: float = pose.w
 	var spread := float(sp.get("spread", 0.0))
+	var stance: Array = pose.get("stance", [0.0, 0.0])
+	var reach: Array = [0.0, 0.0]
 	for side in [-1, 1]:
 		var hip := Node3D.new()
-		hip.position = Vector3(side * (0.065 + spread), HIP_Y, 0)
+		hip.position = Vector3(side * (0.062 + spread), HIP_Y, 0)
 		body.add_child(hip)
-		var hip_deg := 0.0
-		var knee_deg := 6.0
+		var si := 0 if side < 0 else 1
+		var hip_deg := float(stance[si])
+		var knee_deg := 4.0 + absf(hip_deg) * 0.4
 		if seated:
 			hip_deg = -78.0
 			knee_deg = 70.0
@@ -513,83 +606,119 @@ static func human(kind: String, team: Color, key: String, seated: bool = false, 
 			var a := ph * TAU + (PI if side > 0 else 0.0)
 			hip_deg = sin(a) * 30.0
 			knee_deg = 8.0 + maxf(0.0, cos(a)) * 40.0
+		reach[si] = _reach(hip_deg, knee_deg)
 		hip.rotation_degrees.x = hip_deg
-		var thigh := M.cyl(hip, 0.058, 0.052, 0.24, Vector3(0, -0.12, 0), legs_m, 8)
+		var thigh := M.cyl(hip, 0.060, 0.050, 0.24, Vector3(0, -0.12, 0), legs_m, 10)
 		thigh.name = "muslo"
+		M.ball(hip, 0.051, Vector3(0, -0.24, 0), legs_m)
 		var knee := Node3D.new()
 		knee.position = Vector3(0, -0.24, 0)
 		knee.rotation_degrees.x = knee_deg
 		hip.add_child(knee)
-		M.cyl(knee, 0.050, 0.044, 0.23, Vector3(0, -0.115, 0), legs_m, 8)
-		M.box(knee, Vector3(0.10, 0.08, 0.17), Vector3(0, -0.235, 0.035), P.leather)
-		if String(sp.get("armor", "")) == "plate":
+		M.cyl(knee, 0.050, 0.040, 0.23, Vector3(0, -0.115, 0), legs_m, 10)
+		if bool(sp.get("boots", true)):
+			M.cyl(knee, 0.047, 0.043, 0.11, Vector3(0, -0.172, 0), P.leather, 10)
+			M.cyl(knee, 0.052, 0.052, 0.018, Vector3(0, -0.122, 0), P.leather_l, 10)
+		M.ball(knee, 0.05, Vector3(0, -0.248, 0.042), P.leather, Vector3(0.95, 0.62, 1.95)).name = "pie"
+		if armor == "plate":
 			M.cyl(knee, 0.056, 0.05, 0.14, Vector3(0, -0.10, 0), P.steel, 8)
-	# ---- falda / túnica
+	# pies en el suelo: el cuerpo baja lo que el paso levanta la planta (marcha y posturas abiertas)
+	var snap := 0.0
+	if not seated:
+		snap = (maxf(float(reach[0]), float(reach[1])) - _reach(0.0, 4.0)) * BODY_S
+	body.position = Vector3(0, float(pose.drop) + snap, 0)
+	# ---- falda / túnica / vestido
 	if outfit == "robe":
-		M.cyl(body, 0.150, 0.235, 0.48, Vector3(0, 0.26, 0), skirt_m, 18)
+		var rb := M.cyl(body, 0.140, 0.232, 0.50, Vector3(0, 0.25, 0), skirt_m, 18)
+		rb.scale = Vector3(1.0, 1.0, 0.92)
+		M.cyl(body, 0.234, 0.236, 0.03, Vector3(0, 0.03, 0), P.team_d, 18).scale = Vector3(1.0, 1.0, 0.92)
+	elif outfit == "dress":
+		var dr := M.cyl(body, 0.128, 0.214, 0.36, Vector3(0, 0.30, 0), skirt_m, 18)
+		dr.scale = Vector3(1.0, 1.0, 0.90)
+		M.cyl(body, 0.215, 0.216, 0.025, Vector3(0, 0.125, 0), P.cloth_d, 18).scale = Vector3(1.0, 1.0, 0.90)
+		var ap := M.box(body, Vector3(0.15, 0.25, 0.012), Vector3(0, 0.33, 0.151), P.linen)
+		ap.rotation_degrees.x = -13.0
 	elif outfit == "bare":
-		M.cyl(body, 0.150, 0.195, 0.16, Vector3(0, 0.40, 0), skirt_m, 16)
+		M.cyl(body, 0.145, 0.19, 0.16, Vector3(0, 0.40, 0), skirt_m, 16).scale = Vector3(1.0, 1.0, 0.88)
 		for k in 8:
 			var a2 := TAU * float(k) / 8.0
-			M.box(body, Vector3(0.05, 0.10, 0.03), Vector3(cos(a2) * 0.185, 0.32, sin(a2) * 0.185), skirt_m).rotation.y = -a2
+			M.box(body, Vector3(0.05, 0.10, 0.03), Vector3(cos(a2) * 0.18, 0.32, sin(a2) * 0.165), skirt_m).rotation.y = -a2
 	else:
-		M.cyl(body, 0.150, 0.188, 0.20, Vector3(0, 0.40, 0), skirt_m, 16)
-	# ---- parte alta (inclinable desde la cadera)
+		var sk := M.cyl(body, 0.140, 0.186, 0.21, Vector3(0, 0.395, 0), skirt_m, 16)
+		sk.scale = Vector3(1.0, 1.0, 0.9)
+		if sp.has("hem"):
+			M.cyl(body, 0.188, 0.19, 0.022, Vector3(0, 0.296, 0), _mat(P, String(sp.hem)), 16).scale = Vector3(1.0, 1.0, 0.9)
+	# ---- parte alta (inclinable desde la cadera): vientre, pecho ovalado, cuello
 	var up := Node3D.new()
 	up.position = Vector3(0, HIP_Y, 0)
-	up.rotation_degrees = Vector3(-float(pose.lean), float(pose.twist), 0)
+	up.rotation_degrees = Vector3(-float(pose.lean), float(pose.twist), float(pose.get("roll", 0.0)))
 	body.add_child(up)
 	var dy := -HIP_Y
+	var sw := 0.9 if fem else 1.0
+	var bm: Material = P[String(sp.get("belt", "leather"))] if P.has(String(sp.get("belt", "leather"))) else P.leather
+	var waist := M.cyl(up, 0.108 * sw, 0.120 * sw, 0.17, Vector3(0, 0.545 + dy, 0), top_m, 14)
+	waist.scale = Vector3(1.0, 1.0, 0.84)
+	M.ball(up, 0.125, Vector3(0, 0.685 + dy, 0), top_m, Vector3(1.10 * sw, 0.92, 0.80)).name = "pecho"
 	if outfit == "bare":
-		M.cyl(up, 0.118, 0.150, 0.34, Vector3(0, 0.62 + dy, 0), top_m, 16)
-		M.cyl(up, 0.158, 0.158, 0.045, Vector3(0, 0.47 + dy, 0), P.leather, 16)
-		# bandolera de cuero y pecho con brazaletes
-		var sb := M.box(up, Vector3(0.05, 0.40, 0.03), Vector3(0.0, 0.64 + dy, 0.115), P.leather)
-		sb.rotation_degrees.z = 32.0
-	else:
-		M.cyl(up, 0.118, 0.150, 0.34, Vector3(0, 0.62 + dy, 0), top_m, 16)
-		var bm: Material = P[String(sp.get("belt", "leather"))] if P.has(String(sp.get("belt", "leather"))) else P.leather
-		M.cyl(up, 0.156, 0.156, 0.045, Vector3(0, 0.47 + dy, 0), bm, 16)
-		M.box(up, Vector3(0.04, 0.045, 0.012), Vector3(0, 0.47 + dy, 0.156), P.gold)
-	var armor := String(sp.get("armor", ""))
+		# bandolera de cuero sobre el pecho desnudo
+		var sbd := M.box(up, Vector3(0.05, 0.38, 0.03), Vector3(0.0, 0.655 + dy, 0.092), P.leather)
+		sbd.rotation_degrees.z = 32.0
+	var belt := M.cyl(up, 0.131 * sw, 0.133 * sw, 0.04, Vector3(0, 0.485 + dy, 0), bm, 14)
+	belt.scale = Vector3(1.0, 1.0, 0.84)
+	M.box(up, Vector3(0.04, 0.045, 0.012), Vector3(0, 0.485 + dy, 0.112), P.gold)
+	if sp.get("arch", "") == "villager" and not fem:
+		M.box(up, Vector3(0.07, 0.075, 0.04), Vector3(0.11, 0.44 + dy, 0.045), P.leather_l)   # bolsa al cinto
 	if armor == "mail":
-		M.ball(up, 0.135, Vector3(0, 0.67 + dy, 0.02), P.mail, Vector3(1.0, 0.95, 0.72))
+		M.ball(up, 0.135, Vector3(0, 0.665 + dy, 0.015), P.mail, Vector3(1.08, 0.95, 0.78))
 		for s in [-1, 1]:
-			M.ball(up, 0.068, Vector3(s * 0.15, 0.78 + dy, 0), P.mail)
+			M.ball(up, 0.066, Vector3(s * 0.152, 0.775 + dy, 0), P.mail)
 	elif armor == "plate":
-		M.ball(up, 0.138, Vector3(0, 0.67 + dy, 0.02), P.steel, Vector3(1.0, 0.95, 0.72))
+		M.ball(up, 0.138, Vector3(0, 0.665 + dy, 0.015), P.steel, Vector3(1.10, 0.95, 0.80))
 		for s in [-1, 1]:
-			M.ball(up, 0.075, Vector3(s * 0.155, 0.78 + dy, 0), P.steel)
+			M.ball(up, 0.074, Vector3(s * 0.155, 0.775 + dy, 0), P.steel)
 	elif armor == "gambeson":
-		M.cyl(up, 0.124, 0.152, 0.30, Vector3(0, 0.64 + dy, 0), P.cloth_w, 12)
+		M.cyl(up, 0.118, 0.140, 0.30, Vector3(0, 0.63 + dy, 0), P.cloth_w, 12).scale = Vector3(1.05, 1.0, 0.82)
 		for yy in [0.54, 0.62, 0.70]:
-			M.cyl(up, 0.154, 0.154, 0.012, Vector3(0, yy + dy, 0), top_m, 12)
+			M.cyl(up, 0.143, 0.143, 0.012, Vector3(0, yy + dy, 0), top_m, 12).scale = Vector3(1.0, 1.0, 0.84)
+	# cuello (con piel a la vista) y cuello de la prenda / pañuelo / gorjal
+	M.cyl(up, 0.036, 0.042, 0.085, Vector3(0, 0.815 + dy, 0), P.skin, 10).name = "cuello"
+	if armor == "mail" or armor == "plate":
+		M.cyl(up, 0.066, 0.092, 0.045, Vector3(0, 0.792 + dy, 0), P.mail if armor == "mail" else P.steel, 12)
+	elif sp.has("scarf") and not fem:
+		var sc := _mat(P, String(sp.scarf))
+		M.cyl(up, 0.060, 0.082, 0.036, Vector3(0, 0.790 + dy, 0), sc, 12)
+		var kk := M.box(up, Vector3(0.075, 0.075, 0.012), Vector3(0, 0.745 + dy, 0.096), sc)   # pañuelo en pico sobre el pecho
+		kk.rotation_degrees = Vector3(-14.0, 0.0, 45.0)
 	else:
-		M.cyl(up, 0.105, 0.125, 0.055, Vector3(0, 0.80 + dy, 0), _mat(P, String(sp.get("scarf", "")) if sp.has("scarf") else String(sp.top)), 14)
+		M.cyl(up, 0.058, 0.080, 0.034, Vector3(0, 0.790 + dy, 0), _mat(P, String(sp.get("collar", "cloth_w"))), 12)
 	if bool(sp.get("surcoat", false)):
-		M.box(up, Vector3(0.24, 0.50, 0.02), Vector3(0, 0.58 + dy, 0.145), P.team)
-		M.box(up, Vector3(0.05, 0.28, 0.024), Vector3(0, 0.62 + dy, 0.148), P.black)
-		M.box(up, Vector3(0.16, 0.05, 0.024), Vector3(0, 0.66 + dy, 0.148), P.black)
-		M.box(body, Vector3(0.24, 0.30, 0.02), Vector3(0, 0.30, 0.19), P.team)
+		M.box(up, Vector3(0.23, 0.50, 0.02), Vector3(0, 0.58 + dy, 0.113), P.team)
+		M.box(up, Vector3(0.05, 0.28, 0.024), Vector3(0, 0.62 + dy, 0.117), P.black)
+		M.box(up, Vector3(0.16, 0.05, 0.024), Vector3(0, 0.66 + dy, 0.117), P.black)
+		M.box(body, Vector3(0.23, 0.30, 0.02), Vector3(0, 0.30, 0.172), P.team)
 	if bool(sp.get("quiver", false)):
-		var qv := M.cyl(up, 0.045, 0.04, 0.34, Vector3(0.05, 0.64 + dy, -0.15), P.leather, 8)
+		var qv := M.cyl(up, 0.045, 0.04, 0.34, Vector3(0.05, 0.64 + dy, -0.125), P.leather, 8)
 		qv.rotation_degrees.z = -14.0
 		for k in 4:
-			M.box(up, Vector3(0.012, 0.09, 0.012), Vector3(0.015 + k * 0.022 - 0.01, 0.84 + dy, -0.15), P.cloth_w)
+			M.box(up, Vector3(0.012, 0.09, 0.012), Vector3(0.015 + k * 0.022 - 0.01, 0.84 + dy, -0.125), P.cloth_w)
 	if bool(sp.get("pack", false)):
-		M.box(up, Vector3(0.22, 0.24, 0.10), Vector3(0, 0.62 + dy, -0.16), P.leather_l)
-	# cabeza
-	head(up, String(sp.head), P, 0.88 + dy)
+		M.box(up, Vector3(0.22, 0.24, 0.10), Vector3(0, 0.62 + dy, -0.14), P.leather_l)
+	# cabeza: pivota sobre el cuello (ladeo y giro por postura)
+	var hd: Array = pose.get("head", [0.0, 0.0, 0.0])
+	var hn := Node3D.new()
+	hn.position = Vector3(0, 0.855 + dy, 0)
+	hn.rotation_degrees = Vector3(float(hd[0]), float(hd[1]), float(hd[2]))
+	up.add_child(hn)
+	head(hn, String(sp.head), P, HEAD_Y - 0.855, sp)
 	# ---- brazos y armas
 	var sleeve: Material = P.mail if armor == "mail" else (P.steel if armor == "plate" else (top_m if outfit != "bare" else P.skin))
-	var o_r := {"loaded": pose.loaded}
+	var fore_m: Material = P.skin if String(sp.get("fore", "")) == "skin" else (P.mail if armor == "mail" else sleeve)
 	var r_k: Dictionary = {}
 	var l_k: Dictionary = {}
 	for side in [-1, 1]:
 		var key_a: String = "ra" if side > 0 else "la"
 		var arm_a: Array = pose[key_a]
-		var shoulder := Vector3(side * 0.165, 0.76 + dy, 0)
-		var k := arm_k(float(side), arm_a, shoulder)
+		var k := arm_k(float(side), arm_a, _shoulder(float(side), sp, dy))
 		if side > 0:
 			r_k = k
 		else:
@@ -599,24 +728,21 @@ static func human(kind: String, team: Color, key: String, seated: bool = false, 
 	if float(pose.draw) > 0.05:
 		var dbw := _dbasis(pose.lw)
 		bow_draw = dbw.inverse() * ((r_k.hand as Vector3) - (l_k.hand as Vector3))
-		bow_draw *= 1.0 / 1.0
 	for side in [-1, 1]:
-		var key_a2: String = "ra" if side > 0 else "la"
-		var arm_b: Array = pose[key_a2]
-		var shoulder2 := Vector3(side * 0.165, 0.76 + dy, 0)
 		var sh := Node3D.new()
-		sh.position = shoulder2
+		sh.position = _shoulder(float(side), sp, dy)
 		var k2: Dictionary = r_k if side > 0 else l_k
 		sh.basis = k2.upper
 		up.add_child(sh)
-		M.ball(sh, 0.06, Vector3.ZERO, sleeve)
-		M.cyl(sh, 0.046, 0.042, 0.165, Vector3(0, -0.08, 0), sleeve, 8)
+		M.ball(sh, 0.049, Vector3.ZERO, sleeve)
+		M.cyl(sh, 0.046, 0.041, 0.165, Vector3(0, -0.08, 0), sleeve, 10)
+		M.ball(sh, 0.041, Vector3(0, -0.16, 0), sleeve)
 		var el := Node3D.new()
 		el.position = Vector3(0, -0.16, 0)
 		el.basis = (k2.upper as Basis).inverse() * (k2.fore as Basis)
 		sh.add_child(el)
-		M.cyl(el, 0.042, 0.04, 0.165, Vector3(0, -0.08, 0), (P.mail if armor == "mail" else sleeve), 8)
-		M.ball(el, 0.043, Vector3(0, -0.17, 0), P.skin)
+		M.cyl(el, 0.040, 0.033, 0.165, Vector3(0, -0.08, 0), fore_m, 10)
+		M.ball(el, 0.040, Vector3(0, -0.172, 0), P.skin, Vector3(0.85, 1.15, 0.72)).name = "mano"
 		# arma o escudo en esta mano
 		var wk := ""
 		var wo: Array = pose.rw if side > 0 else pose.lw
@@ -652,6 +778,4 @@ static func human(kind: String, team: Color, key: String, seated: bool = false, 
 			if wk in ["bow", "longbow"]:
 				opts["draw"] = bow_draw
 			weapon(g, wk, P, opts)
-		elif wk == "" and side > 0 and String(sp.arch) == "villager":
-			pass
 	return root

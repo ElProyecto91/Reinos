@@ -273,14 +273,25 @@ func refresh_explored() -> void:
 
 # ------------------------------------------------------------------ información de dibujo de las unidades
 
+## Aspectos del aldeano (hombre con sombrero, hombre con barba, mujer con pañuelo): se reparten por identificador de unidad.
+## Si falta el arte de un aspecto, se usa el primero.
+const VILL_LOOKS := ["aldeano", "aldeano_b", "aldeano_c"]
+
+## Tipo de sprite con el que se dibuja una unidad (el de su tipo, o el aspecto que le toca si es aldeano).
+func look_of(u: Ent) -> String:
+	if u.type != "aldeano":
+		return u.type
+	var lk: String = VILL_LOOKS[u.id % VILL_LOOKS.size()]
+	return lk if tinfo(lk).has_any else "aldeano"
+
 func tinfo(type: String) -> TInfo:
 	var ti: TInfo = _ti.get(type)
 	if ti != null:
 		return ti
 	ti = TInfo.new()
-	var def: Dictionary = Defs.UNITS[type]
+	var def: Dictionary = Defs.UNITS["aldeano" if type.begins_with("aldeano_") else type]
 	ti.naval = bool(def.get("naval", false))
-	ti.vill = type == "aldeano"
+	ti.vill = type.begins_with("aldeano")
 	ti.fisher = bool(def.get("fisher", false))
 	ti.military = bool(def.get("military", false))
 	ti.ranged = type in RANGED
@@ -313,7 +324,7 @@ static func _frame_name(type: String, d: int, f: int) -> String:
 		return "%s_%d_idle" % [type, d]
 	if f < F_ACT:
 		return "%s_%d_w%d" % [type, d, f - F_WALK]
-	if type == "aldeano":
+	if type.begins_with("aldeano"):
 		return "%s_%d_t%d%d" % [type, d, (f - F_ACT) / 2, (f - F_ACT) % 2]
 	return "%s_%d_a%d" % [type, d, f - F_ACT]
 
@@ -435,7 +446,7 @@ func _update_units() -> void:
 					n.sp.visible = false
 					n.vis = false
 			continue
-		var ti := tinfo(u.type)
+		var ti := tinfo(look_of(u))
 		if not ti.has_any:
 			continue
 		if n == null:

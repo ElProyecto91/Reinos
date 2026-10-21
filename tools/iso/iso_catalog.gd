@@ -65,11 +65,12 @@ static func groups() -> Dictionary:
 		g["civ_" + civ + "_castillo"] = _g(CASTLE_CFG, cj["castillo"])
 		g["civ_" + civ + "_muralla"] = _g(WALL_CFG, cj["muralla"])
 	# infantería, aldeano y monje (IsoPeople): 5 direcciones horneadas (d = 1..5; las demás son espejos), yaw = 90° − 45°·d
-	for kind in ["aldeano", "piquero", "espadachin", "alabardero", "teutonico", "berserker", "arquero", "arquero_largo", "ballestero", "hostigador", "hachero", "monje"]:
+	for kind in ["aldeano", "aldeano_b", "aldeano_c", "piquero", "espadachin", "alabardero", "teutonico", "berserker", "arquero", "arquero_largo", "ballestero", "hostigador", "hachero", "monje"]:
 		var kk: String = kind
 		var cfgp: Array = POLE_CFG if kk in ["piquero", "alabardero", "teutonico", "hostigador", "hachero", "monje"] else SMALL_CFG
 		g[kk] = _g(cfgp, _people_jobs(kk, [1, 2, 3, 4, 5], IsoPeople.frames_of(kk)))
-		g["pv_" + kk] = _g(cfgp, _people_jobs(kk, [1, 3], _preview_frames(kk)))
+		if not kk.begins_with("aldeano_"):   # los otros aspectos del aldeano no necesitan vista previa (icono de menú)
+			g["pv_" + kk] = _g(cfgp, _people_jobs(kk, [1, 3], _preview_frames(kk)))
 	# máquinas de asedio, barcos y animales (IsoMachines)
 	for kind in ["ariete", "catapulta", "trabuquete", "ciervo", "jabali", "barco_pesca", "barco_transporte", "galera", "galeon"]:
 		var km: String = kind
