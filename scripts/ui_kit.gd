@@ -73,10 +73,13 @@ func _draw() -> void:
 	var border := accent if (toggled or _down) else Color(0.55, 0.43, 0.22, 0.95)
 	if not enabled:
 		border = Color(0.35, 0.3, 0.25, 0.9)
-	draw_style_box(box(bg, border), Rect2(Vector2.ZERO, size))
+	if UiSkin.ready():
+		UiSkin.button(self, Rect2(Vector2.ZERO, size), _down, toggled, enabled, accent)
+	else:
+		draw_style_box(box(bg, border), Rect2(Vector2.ZERO, size))
 	var font := get_theme_default_font()
 	var fade := 1.0 if enabled else 0.45
-	var tcol := Color(0.97, 0.93, 0.82, fade)
+	var tcol := Color(1.0, 0.89, 0.55, fade) if (toggled and UiSkin.ready()) else Color(0.97, 0.93, 0.82, fade)
 	var scol := Color(0.8, 0.74, 0.6, fade)
 	var cy := size.y * 0.5
 	var has_sub := sub != "" or not cost.is_empty()
@@ -90,10 +93,10 @@ func _draw() -> void:
 			var tx := ir.end.x + 8.0
 			var tw := size.x - tx - 6.0
 			if has_sub:
-				draw_string(font, Vector2(tx, cy - 3.0), text, HORIZONTAL_ALIGNMENT_LEFT, tw, _fit(font, text, tw, font_size), tcol)
+				_ds(font, Vector2(tx, cy - 3.0), text, HORIZONTAL_ALIGNMENT_LEFT, tw, _fit(font, text, tw, font_size), tcol)
 				_draw_sub(font, tx, cy + sub_size + 1.0, tw, false, scol, fade)
 			else:
-				draw_string(font, Vector2(tx, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, tw, _fit(font, text, tw, font_size), tcol)
+				_ds(font, Vector2(tx, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, tw, _fit(font, text, tw, font_size), tcol)
 		elif show_text:
 			# icono arriba, texto abajo
 			var ih := size.y - (sub_size + font_size + 8.0 if has_sub else font_size + 10.0)
@@ -101,26 +104,33 @@ func _draw() -> void:
 			var ir := Rect2((size.x - ih) * 0.5, 4.0, ih, ih)
 			_draw_icon(ir, fade)
 			var y := ir.end.y + font_size - 2.0
-			draw_string(font, Vector2(0, y), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size - 3), tcol)
+			_ds(font, Vector2(0, y), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size - 3), tcol)
 			if has_sub:
 				_draw_sub(font, 0.0, y + sub_size, size.x, true, scol, fade)
 		else:
 			_draw_icon(Rect2((size.x - isz) * 0.5, (size.y - isz) * 0.5, isz, isz), fade)
 	else:
 		if has_sub:
-			draw_string(font, Vector2(0, cy - 2.0), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size), tcol)
+			_ds(font, Vector2(0, cy - 2.0), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size), tcol)
 			_draw_sub(font, 0.0, cy + sub_size + 2.0, size.x, true, scol, fade)
 		else:
-			draw_string(font, Vector2(0, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size), tcol)
+			_ds(font, Vector2(0, cy + font_size * 0.35), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, _fit(font, text, size.x - 4.0, font_size), tcol)
 	if badge != "":
 		var bw := maxf(26.0, 12.0 + badge.length() * 11.0)
 		var br := Rect2(size.x - bw - 3.0, 3.0, bw, 24.0)
 		draw_style_box(box(Color(0.75, 0.2, 0.15, 0.95), Color(1, 1, 1, 0.8), 12, 1), br)
-		draw_string(font, Vector2(br.position.x, br.position.y + 18.0), badge, HORIZONTAL_ALIGNMENT_CENTER, bw, 18, Color.WHITE)
+		_ds(font, Vector2(br.position.x, br.position.y + 18.0), badge, HORIZONTAL_ALIGNMENT_CENTER, bw, 18, Color.WHITE)
 	if progress >= 0.0:
 		var pr := Rect2(5, size.y - 9, size.x - 10, 5)
 		draw_rect(pr, Color(0, 0, 0, 0.6), true)
 		draw_rect(Rect2(pr.position, Vector2(pr.size.x * clampf(progress, 0.0, 1.0), pr.size.y)), Color(0.45, 0.8, 1.0), true)
+
+## Texto del botón: con la piel de madera lleva sombra para leerse sobre la veta.
+func _ds(font: Font, pos: Vector2, s: String, align: int, w: float, fs: int, col: Color) -> void:
+	if UiSkin.ready():
+		UiSkin.text(self, font, pos, s, align, w, fs, col)
+	else:
+		draw_string(font, pos, s, align, w, fs, col)
 
 ## Tamaño de letra reducido hasta que el texto quepa en `w` píxeles (mínimo 11).
 func _fit(font: Font, s: String, w: float, fs: int) -> int:
@@ -131,7 +141,7 @@ func _fit(font: Font, s: String, w: float, fs: int) -> int:
 
 func _draw_sub(font: Font, x: float, y: float, w: float, center: bool, col: Color, fade: float) -> void:
 	if cost.is_empty():
-		draw_string(font, Vector2(x, y), sub, HORIZONTAL_ALIGNMENT_CENTER if center else HORIZONTAL_ALIGNMENT_LEFT, w, sub_size - (2 if center else 0), col)
+		_ds(font, Vector2(x, y), sub, HORIZONTAL_ALIGNMENT_CENTER if center else HORIZONTAL_ALIGNMENT_LEFT, w, sub_size - (2 if center else 0), col)
 		return
 	var fs := 15
 	var items: Array = []
@@ -146,7 +156,7 @@ func _draw_sub(font: Font, x: float, y: float, w: float, center: bool, col: Colo
 	for it in items:
 		UiButton.draw_symbol(self, it[0], Rect2(cx, y - 12.0, 13, 13), fade)
 		var bad := lack.has(it[0])
-		draw_string(font, Vector2(cx + 14.0, y), it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1.0, 0.45, 0.4, fade) if bad else Color(0.95, 0.92, 0.8, fade))
+		_ds(font, Vector2(cx + 14.0, y), it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1.0, 0.45, 0.4, fade) if bad else Color(0.95, 0.92, 0.8, fade))
 		cx += 14.0 + float(it[2]) + 3.0
 
 func _draw_icon(r: Rect2, fade: float) -> void:
@@ -161,26 +171,37 @@ static func draw_symbol(c: CanvasItem, kind: String, r: Rect2, a: float = 1.0) -
 	var s := minf(r.size.x, r.size.y)
 	match kind:
 		"food":
-			c.draw_circle(m + Vector2(0, s * 0.06), s * 0.36, Color(0.82, 0.15, 0.15, a))
-			c.draw_circle(m + Vector2(-s * 0.1, -s * 0.04), s * 0.1, Color(1, 0.7, 0.7, a * 0.7))
-			c.draw_line(m + Vector2(0, -s * 0.28), m + Vector2(s * 0.08, -s * 0.44), Color(0.35, 0.22, 0.1, a), maxf(2.0, s * 0.07))
-			c.draw_colored_polygon(PackedVector2Array([m + Vector2(s * 0.06, -s * 0.4), m + Vector2(s * 0.3, -s * 0.46), m + Vector2(s * 0.16, -s * 0.28)]), Color(0.3, 0.7, 0.25, a))
+			c.draw_circle(m + Vector2(0, s * 0.06), s * 0.36 + maxf(1.2, s * 0.045), Color(0.22, 0.04, 0.03, a))
+			c.draw_circle(m + Vector2(0, s * 0.06), s * 0.36, Color(0.86, 0.17, 0.14, a))
+			c.draw_circle(m + Vector2(s * 0.08, s * 0.14), s * 0.24, Color(0.66, 0.08, 0.08, a * 0.55))
+			c.draw_circle(m + Vector2(-s * 0.1, -s * 0.04), s * 0.1, Color(1, 0.78, 0.74, a * 0.8))
+			c.draw_line(m + Vector2(0, -s * 0.28), m + Vector2(s * 0.08, -s * 0.44), Color(0.30, 0.18, 0.08, a), maxf(2.0, s * 0.07))
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(s * 0.06, -s * 0.4), m + Vector2(s * 0.3, -s * 0.46), m + Vector2(s * 0.16, -s * 0.28)]), Color(0.32, 0.74, 0.26, a))
 		"wood":
 			for i in 3:
 				var y := m.y - s * 0.22 + i * s * 0.2
-				c.draw_rect(Rect2(m.x - s * 0.4, y, s * 0.8, s * 0.17), Color(0.5, 0.3, 0.14, a), true)
-				c.draw_circle(Vector2(m.x + s * 0.4, y + s * 0.085), s * 0.085, Color(0.85, 0.65, 0.38, a))
+				var og := maxf(1.2, s * 0.045)
+				c.draw_rect(Rect2(m.x - s * 0.4 - og, y - og, s * 0.8 + og * 2.0, s * 0.17 + og * 2.0), Color(0.16, 0.08, 0.03, a), true)
+			for i in 3:
+				var y := m.y - s * 0.22 + i * s * 0.2
+				c.draw_rect(Rect2(m.x - s * 0.4, y, s * 0.8, s * 0.17), Color(0.74, 0.47, 0.22, a), true)
+				c.draw_rect(Rect2(m.x - s * 0.4, y, s * 0.8, maxf(1.0, s * 0.04)), Color(0.90, 0.66, 0.38, a), true)
+				c.draw_circle(Vector2(m.x + s * 0.4, y + s * 0.085), s * 0.095 + maxf(1.0, s * 0.03), Color(0.16, 0.08, 0.03, a))
+				c.draw_circle(Vector2(m.x + s * 0.4, y + s * 0.085), s * 0.095, Color(0.95, 0.80, 0.54, a))
+				c.draw_circle(Vector2(m.x + s * 0.4, y + s * 0.085), s * 0.04, Color(0.70, 0.45, 0.22, a))
 		"gold":
-			c.draw_circle(m, s * 0.4, Color(0.95, 0.75, 0.12, a))
-			c.draw_circle(m, s * 0.4, Color(0.7, 0.5, 0.05, a * 0.0))
-			c.draw_arc(m, s * 0.4, 0, TAU, 20, Color(0.65, 0.45, 0.05, a), maxf(2.0, s * 0.07))
-			c.draw_circle(m + Vector2(-s * 0.1, -s * 0.1), s * 0.1, Color(1, 0.95, 0.6, a * 0.8))
+			c.draw_circle(m, s * 0.4 + maxf(1.2, s * 0.045), Color(0.28, 0.17, 0.02, a))
+			c.draw_circle(m, s * 0.4, Color(0.98, 0.78, 0.16, a))
+			c.draw_arc(m, s * 0.31, 0, TAU, 20, Color(0.75, 0.52, 0.06, a), maxf(1.5, s * 0.05))
+			c.draw_circle(m + Vector2(-s * 0.12, -s * 0.12), s * 0.1, Color(1, 0.96, 0.66, a * 0.85))
 		"stone":
 			var sc := Color(0.62, 0.65, 0.70, a)
-			c.draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.42, s * 0.34), m + Vector2(-s * 0.34, -s * 0.06), m + Vector2(-s * 0.08, -s * 0.30), m + Vector2(s * 0.22, -s * 0.22), m + Vector2(s * 0.42, s * 0.08), m + Vector2(s * 0.38, s * 0.34)]), sc)
-			c.draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.34, -s * 0.06), m + Vector2(-s * 0.08, -s * 0.30), m + Vector2(s * 0.04, -s * 0.02), m + Vector2(-s * 0.20, s * 0.10)]), Color(0.82, 0.85, 0.90, a))
+			var pts := PackedVector2Array([m + Vector2(-s * 0.42, s * 0.34), m + Vector2(-s * 0.34, -s * 0.06), m + Vector2(-s * 0.08, -s * 0.30), m + Vector2(s * 0.22, -s * 0.22), m + Vector2(s * 0.42, s * 0.08), m + Vector2(s * 0.38, s * 0.34)])
+			c.draw_colored_polygon(pts, sc)
+			c.draw_colored_polygon(PackedVector2Array([m + Vector2(-s * 0.34, -s * 0.06), m + Vector2(-s * 0.08, -s * 0.30), m + Vector2(s * 0.04, -s * 0.02), m + Vector2(-s * 0.20, s * 0.10)]), Color(0.84, 0.87, 0.92, a))
 			c.draw_colored_polygon(PackedVector2Array([m + Vector2(s * 0.04, -s * 0.02), m + Vector2(s * 0.22, -s * 0.22), m + Vector2(s * 0.42, s * 0.08), m + Vector2(s * 0.38, s * 0.34), m + Vector2(s * 0.10, s * 0.34)]), Color(0.46, 0.49, 0.55, a))
 			c.draw_line(m + Vector2(-s * 0.2, s * 0.1), m + Vector2(-s * 0.1, s * 0.34), Color(0.2, 0.22, 0.26, a * 0.8), maxf(1.5, s * 0.05))
+			c.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[4], pts[5], pts[0]]), Color(0.12, 0.13, 0.16, a), maxf(1.2, s * 0.05))
 		"tech":
 			# pergamino con un yunque: mejoras
 			c.draw_rect(Rect2(m.x - s * 0.30, m.y - s * 0.36, s * 0.60, s * 0.72), Color(0.92, 0.84, 0.62, a), true)

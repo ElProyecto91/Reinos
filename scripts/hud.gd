@@ -169,7 +169,7 @@ func _build_place_bar() -> void:
 	root.add_child(place_bar)
 	place_label = Label.new()
 	place_label.add_theme_font_size_override("font_size", 22)
-	place_label.add_theme_color_override("font_color", Color(0.97, 0.93, 0.82))
+	place_label.add_theme_color_override("font_color", UiSkin.INK)
 	place_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	place_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	place_bar.add_child(place_label)
@@ -185,12 +185,12 @@ func _build_place_bar() -> void:
 
 func _layout_place_bar() -> void:
 	var s := place_bar.size
-	place_label.position = Vector2(12, 8)
-	place_label.size = Vector2(s.x - 24, s.y - 90)
-	place_ok.size = Vector2(s.x * 0.5 - 18, 66)
-	place_ok.position = Vector2(12, s.y - 78)
-	place_cancel.size = Vector2(s.x * 0.5 - 18, 66)
-	place_cancel.position = Vector2(s.x * 0.5 + 6, s.y - 78)
+	place_label.position = Vector2(22, 14)
+	place_label.size = Vector2(s.x - 44, s.y - 96)
+	place_ok.size = Vector2(s.x * 0.5 - 28, 62)
+	place_ok.position = Vector2(20, s.y - 82)
+	place_cancel.size = Vector2(s.x * 0.5 - 28, 62)
+	place_cancel.position = Vector2(s.x * 0.5 + 8, s.y - 82)
 
 func _build_pause() -> void:
 	pause_ui = Control.new()
@@ -741,37 +741,38 @@ class PanelBox extends Control:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 	func _draw() -> void:
-		draw_style_box(UiButton.box(Color(0.10, 0.085, 0.07, 0.92), Color(0.55, 0.43, 0.22, 0.95), 10, 2), Rect2(Vector2.ZERO, size))
+		UiSkin.panel(self, Rect2(Vector2.ZERO, size))
 
 class TopBar extends Control:
 	var hud: Hud
 	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.10, 0.085, 0.07, 0.9), true)
-		draw_line(Vector2(0, size.y - 1), Vector2(size.x, size.y - 1), Color(0.55, 0.43, 0.22, 0.95), 2.0)
+		UiSkin.bar(self, Rect2(Vector2.ZERO, size))
 		var g := hud.game
 		if g == null or g.load_state != 3:
 			return
 		var p: Player = g.sim.players[g.human]
-		var font := get_theme_default_font()
+		var font := UiSkin.bold()
 		var x := 10.0
 		for k in ["food", "wood", "gold", "stone"]:
+			UiSkin.slot(self, Rect2(x - 4.0, 9.0, 108.0, 38.0))
 			UiButton.draw_symbol(self, k, Rect2(x, 10, 36, 36))
 			var v := int(p.res.get(k, 0))
-			draw_string(font, Vector2(x + 42, 38), str(v), HORIZONTAL_ALIGNMENT_LEFT, 70, 26, Color(0.98, 0.94, 0.82))
+			UiSkin.text(self, font, Vector2(x + 42, 37), str(v), HORIZONTAL_ALIGNMENT_LEFT, 62, 24, UiSkin.CREAM)
 			x += 116.0
-		UiButton.draw_symbol(self, "pop", Rect2(x, 10, 36, 36))
 		var full := p.pop >= p.pop_cap
-		draw_string(font, Vector2(x + 40, 38), "%d/%d" % [p.pop, p.pop_cap], HORIZONTAL_ALIGNMENT_LEFT, 110, 26, Color(1, 0.5, 0.45) if full else Color(0.98, 0.94, 0.82))
-		x += 132.0
+		UiSkin.slot(self, Rect2(x - 4.0, 9.0, 128.0, 38.0))
+		UiButton.draw_symbol(self, "pop", Rect2(x, 10, 36, 36))
+		UiSkin.text(self, font, Vector2(x + 40, 37), "%d/%d" % [p.pop, p.pop_cap], HORIZONTAL_ALIGNMENT_LEFT, 84, 24, Color(1, 0.55, 0.48) if full else UiSkin.CREAM)
+		x += 142.0
 		var age_txt := Lang.t("age_%d" % p.age)
 		if p.aging:
-			age_txt = "%s ▸ %ds" % [age_txt, int(ceil(p.age_left))]
-		draw_string(font, Vector2(x, 36), age_txt, HORIZONTAL_ALIGNMENT_LEFT, 260, 22, Color(1, 0.9, 0.55))
+			age_txt = "%s » %ds" % [age_txt, int(ceil(p.age_left))]
+		UiSkin.text(self, font, Vector2(x, 36), age_txt, HORIZONTAL_ALIGNMENT_LEFT, 280, 22, UiSkin.GOLD)
 		if p.civ != "":
-			draw_string(font, Vector2(size.x - 64 - 70 - 100 - 235, 35), Lang.t("civ_" + p.civ), HORIZONTAL_ALIGNMENT_RIGHT, 225, 20, Color(0.85, 0.92, 1.0))
+			UiSkin.text(self, font, Vector2(size.x - 64 - 70 - 100 - 235, 35), Lang.t("civ_" + p.civ), HORIZONTAL_ALIGNMENT_RIGHT, 225, 20, Color(0.88, 0.94, 1.0))
 		var secs := int(g.sim.time)
 		var tt := "%d:%02d" % [secs / 60, secs % 60]
-		draw_string(font, Vector2(size.x - 64 - 70 - 100, 36), tt, HORIZONTAL_ALIGNMENT_RIGHT, 92, 24, Color(0.85, 0.8, 0.7))
+		UiSkin.text(self, font, Vector2(size.x - 64 - 70 - 100, 36), tt, HORIZONTAL_ALIGNMENT_RIGHT, 92, 24, UiSkin.CREAM_DIM)
 
 class Toasts extends Control:
 	var hud: Hud
@@ -796,6 +797,8 @@ class Toasts extends Control:
 			else:
 				i += 1
 	func _draw() -> void:
+		if hud.blocking():
+			return
 		var font := get_theme_default_font()
 		var y := Hud.TOP_H + 14.0
 		var g := hud.game
@@ -814,15 +817,16 @@ class Toasts extends Control:
 		for it in list:
 			var a := clampf((4.2 - float(it["t"])) / 0.8, 0.0, 1.0)
 			var c: Color = it["col"]
-			_pill(font, it["text"], y, Color(0.1, 0.085, 0.07, 0.88 * a), Color(c.r, c.g, c.b, a))
+			_pill(font, it["text"], y, Color(0.13, 0.075, 0.04, 0.90 * a), Color(c.r, c.g, c.b, a))
 			y += 46.0
 	func _pill(font: Font, text: String, y: float, bg: Color, fg: Color) -> void:
 		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x + 40.0
 		var r := Rect2((size.x - w) * 0.5, y, w, 38)
-		draw_style_box(UiButton.box(bg, Color(0.55, 0.43, 0.22, bg.a), 19, 1), r)
-		draw_string(font, Vector2(r.position.x, y + 27), text, HORIZONTAL_ALIGNMENT_CENTER, w, 22, fg)
+		draw_style_box(UiButton.box(bg, Color(0.80, 0.60, 0.27, bg.a), 19, 2), r)
+		UiSkin.text(self, font, Vector2(r.position.x, y + 27), text, HORIZONTAL_ALIGNMENT_CENTER, w, 22, fg)
 
 class Minimap extends Control:
+	const PAD := 10.0                  # el marco de madera tapa los 10 px del borde: el rombo se dibuja dentro
 	var hud: Hud
 	var img_tex: ImageTexture
 	var _built := false
@@ -872,11 +876,11 @@ class Minimap extends Control:
 	## escala de píxeles isométricos del mundo a píxeles del minimapa, y origen (el vértice izquierdo del rombo)
 	func _k() -> float:
 		var sim := hud.game.sim
-		return (size.x - 8.0) / (float(sim.W + sim.H) * Defs.TILE)
+		return (size.x - 2.0 * PAD) / (float(sim.W + sim.H) * Defs.TILE)
 
 	func _origin() -> Vector2:
 		var sim := hud.game.sim
-		return Vector2(4.0 + float(sim.H) * Defs.TILE * _k(), (size.y - float(sim.W + sim.H) * Defs.TILE * 0.5 * _k()) * 0.5)
+		return Vector2(PAD + float(sim.H) * Defs.TILE * _k(), (size.y - float(sim.W + sim.H) * Defs.TILE * 0.5 * _k()) * 0.5)
 
 	## punto lógico del mundo -> punto del control
 	func _tp(p: Vector2) -> Vector2:
@@ -901,8 +905,9 @@ class Minimap extends Control:
 
 	func _draw() -> void:
 		var g := hud.game
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.05, 0.05, 0.95), true)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.04, 0.03, 0.02, 0.96), true)
 		if g == null or g.load_state != 3:
+			UiSkin.inset(self, Rect2(Vector2.ZERO, size))
 			return
 		if not _built:
 			_build()
@@ -933,14 +938,15 @@ class Minimap extends Control:
 		if g.sim.time - g.alarm_time < 6.0 and g.alarm_pos.x >= 0:
 			var ph := fmod(Time.get_ticks_msec() / 400.0, 1.0)
 			draw_arc(_tp(g.alarm_pos), 4.0 + 12.0 * ph, 0.0, TAU, 20, Color(1, 0.2, 0.2, 1.0 - ph), 2.5)
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.55, 0.43, 0.22), false, 3.0)
 		var tp := _tp(Vector2.ZERO)
 		var rp := _tp(Vector2(sim.W * T, 0.0))
 		var bp2 := _tp(Vector2(sim.W * T, sim.H * T))
 		var lp := _tp(Vector2(0.0, sim.H * T))
 		draw_polyline(PackedVector2Array([tp, rp, bp2, lp, tp]), Color(0.55, 0.43, 0.22, 0.9), 1.5)
+		UiSkin.inset(self, Rect2(Vector2.ZERO, size))
 
 class InfoPanel extends Control:
+	const PAD := 8.0
 	var hud: Hud
 	var qbtns: Array[UiButton] = []
 
@@ -959,7 +965,7 @@ class InfoPanel extends Control:
 
 	func layout_queue() -> void:
 		for i in qbtns.size():
-			qbtns[i].position = Vector2(12 + i * 62, size.y - 62)
+			qbtns[i].position = Vector2(PAD + 14 + i * 56, size.y - 62)
 
 	func update_queue() -> void:
 		var g := hud.game
@@ -1001,7 +1007,7 @@ class InfoPanel extends Control:
 		draw_string(font, Vector2(x, y + 12), "%d / %d" % [int(ceil(e.hp)), int(e.max_hp)], HORIZONTAL_ALIGNMENT_CENTER, w, 13, Color.WHITE)
 
 	func _draw() -> void:
-		draw_style_box(UiButton.box(Color(0.10, 0.085, 0.07, 0.92), Color(0.55, 0.43, 0.22, 0.95), 10, 2), Rect2(Vector2.ZERO, size))
+		UiSkin.panel(self, Rect2(Vector2.ZERO, size))
 		var g := hud.game
 		if g == null or g.load_state != 3:
 			return
@@ -1009,25 +1015,28 @@ class InfoPanel extends Control:
 		if list.is_empty():
 			return
 		var font := get_theme_default_font()
+		draw_set_transform(Vector2(PAD, 2.0))   # el marco de madera ocupa ~12 px de cada lado: el contenido se sangra
 		if list.size() == 1:
 			var e: Ent = list[0]
 			var tex: Texture2D = g.art.building_icon(e.type, e.owner % 4, g.sim.players[e.owner].civ) if e.is_building else g.art.unit_icon(e.type, e.owner)
+			draw_rect(Rect2(8, 6, 72, 72), Color(0.25, 0.17, 0.09, 0.55), true)
 			draw_texture_rect(tex, Rect2(12, 10, 64, 64), false)
+			UiSkin.thin(self, Rect2(8, 6, 72, 72))
 			var name_txt := Lang.t(("b_" if e.is_building else "u_") + e.type)
 			var oc: Color = Defs.PLAYER_COLORS[e.owner % 4]
-			draw_string(font, Vector2(88, 36), name_txt, HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 28, Color(0.98, 0.94, 0.82))
+			UiSkin.ink(self, UiSkin.bold(), Vector2(88, 36), name_txt, HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 28, UiSkin.INK)
 			var owner_name: String = g.sim.players[e.owner].name
 			var ocv: String = g.sim.players[e.owner].civ
 			if ocv != "":
 				owner_name += " · " + Lang.t("civ_" + ocv)
 			draw_circle(Vector2(96, 56), 6, oc)
-			draw_string(font, Vector2(108, 62), owner_name, HORIZONTAL_ALIGNMENT_LEFT, 175, 17, oc.lightened(0.3))
+			UiSkin.ink(self, font, Vector2(108, 62), owner_name, HORIZONTAL_ALIGNMENT_LEFT, 175, 17, oc.darkened(0.35))
 			_hp_bar(font, 290, 44, minf(size.x - 310, 200), e)
 			if e.is_building:
 				if e.progress < 1.0:
-					draw_string(font, Vector2(88, 94), Lang.t("under_construction", [int(e.progress * 100.0)]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, Color(0.7, 0.85, 1.0))
+					UiSkin.ink(self, font, Vector2(88, 94), Lang.t("under_construction", [int(e.progress * 100.0)]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, UiSkin.INK_BLUE)
 					if e.builders > 0:
-						draw_string(font, Vector2(88, 118), Lang.t("builders", [e.builders]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 18, Color(0.85, 0.8, 0.7))
+						UiSkin.ink(self, font, Vector2(88, 118), Lang.t("builders", [e.builders]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 18, UiSkin.INK_2)
 				elif e.owner == g.human:
 					if e.queue.size() > 0:
 						var line := Lang.t("queue_label")
@@ -1035,49 +1044,49 @@ class InfoPanel extends Control:
 							line = Lang.t("researching", [Lang.t("t_" + Defs.tech_of_item(String(e.queue[0])))])
 						if e.blocked_pop:
 							line = Lang.t("queue_blocked")
-						draw_string(font, Vector2(12, size.y - 68), line, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, Color(1, 0.6, 0.5) if e.blocked_pop else Color(0.85, 0.8, 0.7))
+						UiSkin.ink(self, font, Vector2(12, size.y - 66), line, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, UiSkin.INK_RED if e.blocked_pop else UiSkin.INK_2)
 					elif e.def.get("pop", 0) > 0:
-						draw_string(font, Vector2(88, 100), Lang.t("gives_pop", [int(e.def["pop"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 19, Color(0.85, 0.8, 0.7))
+						UiSkin.ink(self, font, Vector2(88, 100), Lang.t("gives_pop", [int(e.def["pop"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 19, UiSkin.INK_2)
 					if e.queue.is_empty() and bool(e.def.get("market", false)):
 						var sm := g.sim
-						draw_multiline_string(font, Vector2(88, 86), Lang.t("market_info", [sm.market_price(g.human, "food"), sm.market_price(g.human, "wood"), sm.market_price(g.human, "stone")]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 17, 3, Color(0.85, 0.8, 0.7))
+						draw_multiline_string(font, Vector2(88, 86), Lang.t("market_info", [sm.market_price(g.human, "food"), sm.market_price(g.human, "wood"), sm.market_price(g.human, "stone")]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 17, 3, UiSkin.INK_2)
 					var gcap := g.sim.garrison_cap(e)
 					if gcap > 0:
-						draw_string(font, Vector2(88, 122) if e.queue.is_empty() else Vector2(size.x - 190, 62), Lang.t("garrison_label", [e.cargo.size(), gcap]), HORIZONTAL_ALIGNMENT_LEFT, 180, 18, Color(0.7, 0.95, 0.75))
+						UiSkin.ink(self, font, Vector2(size.x - 190, 62), Lang.t("garrison_label", [e.cargo.size(), gcap]), HORIZONTAL_ALIGNMENT_LEFT, 180, 18, UiSkin.INK_GREEN)
 					if e.queue.is_empty() and (e.def["train"] as Array).size() > 0:
-						draw_string(font, Vector2(12, size.y - 20), Lang.t("tip_train"), HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 17, Color(0.7, 0.66, 0.55))
+						UiSkin.ink(self, font, Vector2(12, size.y - 24), Lang.t("tip_train"), HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 17, UiSkin.INK_3)
 			else:
-				draw_string(font, Vector2(88, 96), _state_text(e), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 21, Color(0.9, 0.85, 0.7))
+				UiSkin.ink(self, font, Vector2(88, 96), _state_text(e), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 21, UiSkin.INK)
 				if e.carry_amt >= 1.0 and (e.type == "aldeano" or e.def.get("fisher", false)):
 					UiButton.draw_symbol(self, e.carry_kind, Rect2(88, 106, 26, 26))
-					draw_string(font, Vector2(120, 126), "%d" % int(e.carry_amt), HORIZONTAL_ALIGNMENT_LEFT, 80, 22, Color(0.95, 0.9, 0.8))
+					UiSkin.ink(self, font, Vector2(120, 126), "%d" % int(e.carry_amt), HORIZONTAL_ALIGNMENT_LEFT, 80, 22, UiSkin.INK)
 				if e.owner == g.human and e.is_military():
-					draw_string(font, Vector2(88, 122), Lang.t("stance_line", [Lang.t("stance_%d" % e.stance)]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 19, Color(0.75, 0.88, 1.0))
+					UiSkin.ink(self, font, Vector2(88, 122), Lang.t("stance_line", [Lang.t("stance_%d" % e.stance)]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 19, UiSkin.INK_BLUE)
 				if int(e.def.get("cargo", 0)) > 0 and e.owner == g.human:
-					draw_string(font, Vector2(88, 122), Lang.t("passengers", [e.cargo.size(), int(e.def["cargo"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, Color(0.7, 0.9, 1.0))
+					UiSkin.ink(self, font, Vector2(88, 122), Lang.t("passengers", [e.cargo.size(), int(e.def["cargo"])]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 100, 20, UiSkin.INK_BLUE)
 				var ud: Dictionary = e.def
 				var stat := Lang.t("unit_stats", [int(ud["atk"] * Defs.AGE_STAT_MULT[g.sim.players[e.owner].age]), (ud["range"] as float), (ud["speed"] as float)])
 				if float(ud.get("heal", 0.0)) > 0.0:
 					stat = Lang.t("unit_stats_heal", [float(ud["heal"]), int(ud.get("heal_n", 1)), (ud["speed"] as float)])
 				elif float(ud["atk"]) <= 0.0:
 					stat = Lang.t("unit_stats_peace", [(ud["speed"] as float)])
-				draw_string(font, Vector2(12, size.y - 14), stat, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, Color(0.75, 0.7, 0.58))
+				UiSkin.ink(self, font, Vector2(12, size.y - 20), stat, HORIZONTAL_ALIGNMENT_LEFT, size.x - 24, 18, UiSkin.INK_2)
 		else:
 			var counts: Dictionary = {}
 			for e: Ent in list:
 				counts[e.type] = int(counts.get(e.type, 0)) + 1
-			draw_string(font, Vector2(14, 34), Lang.t("n_selected", [list.size()]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 28, 26, Color(0.98, 0.94, 0.82))
+			UiSkin.ink(self, font, Vector2(14, 34), Lang.t("n_selected", [list.size()]), HORIZONTAL_ALIGNMENT_LEFT, size.x - 28, 26, UiSkin.INK)
 			var x := 14.0
 			var y := 48.0
 			for t in counts:
 				var ow: int = (list[0] as Ent).owner
-				draw_texture_rect(g.art.unit_icon(t, ow), Rect2(x, y, 52, 52), false)
-				draw_string(font, Vector2(x + 54, y + 34), "×%d" % counts[t], HORIZONTAL_ALIGNMENT_LEFT, 70, 26, Color(0.98, 0.94, 0.82))
-				x += 150.0
-				if x + 140.0 > size.x:
+				draw_texture_rect(g.art.unit_icon(t, ow), Rect2(x, y, 46, 46), false)
+				UiSkin.ink(self, UiSkin.bold(), Vector2(x + 48, y + 31), "×%d" % counts[t], HORIZONTAL_ALIGNMENT_LEFT, 70, 24, UiSkin.INK)
+				x += 126.0
+				if x + 116.0 > size.x - 2.0 * PAD:
 					x = 14.0
-					y += 56.0
-			draw_string(font, Vector2(14, size.y - 12), Lang.t("tip_multi"), HORIZONTAL_ALIGNMENT_LEFT, size.x - 28, 17, Color(0.7, 0.66, 0.55))
+					y += 50.0
+			UiSkin.ink(self, font, Vector2(14, size.y - 18), Lang.t("tip_multi"), HORIZONTAL_ALIGNMENT_LEFT, size.x - 28, 17, UiSkin.INK_3)
 
 class HelpPanel extends Control:
 	## Ayuda con desplazamiento vertical (arrastrar con el dedo o rueda del ratón).
@@ -1103,12 +1112,12 @@ class HelpPanel extends Control:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.85), true)
 		var font := get_theme_default_font()
 		var r := panel_rect()
-		draw_style_box(UiButton.box(Color(0.10, 0.085, 0.07, 0.97), Color(0.55, 0.43, 0.22), 14, 3), r)
-		draw_string(font, Vector2(r.position.x, r.position.y + 42), Lang.t("help_title"), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 32, Color(1, 0.9, 0.55))
+		UiSkin.panel(self, r)
+		UiSkin.ink(self, UiSkin.bold(), Vector2(r.position.x, r.position.y + 46), Lang.t("help_title"), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 32, UiSkin.INK_RED)
 		close_btn.size = Vector2(220, 50)
 		close_btn.position = Vector2(size.x * 0.5 - 110, r.end.y - 60)
-		body.position = Vector2(r.position.x + 12, r.position.y + 58)
-		body.size = Vector2(r.size.x - 24, r.size.y - 58 - 70)
+		body.position = Vector2(r.position.x + 22, r.position.y + 62)
+		body.size = Vector2(r.size.x - 44, r.size.y - 62 - 74)
 
 class HelpBody extends Control:
 	var scroll := 0.0
@@ -1139,8 +1148,8 @@ class HelpBody extends Control:
 			var head := str(pair[0])
 			var body_text := str(pair[1])
 			var sz := font.get_multiline_string_size(body_text, HORIZONTAL_ALIGNMENT_LEFT, bw, fs)
-			draw_string(font, Vector2(12, y + fs), head, HORIZONTAL_ALIGNMENT_LEFT, 150, fs, Color(1, 0.88, 0.5))
-			draw_multiline_string(font, Vector2(168, y + fs), body_text, HORIZONTAL_ALIGNMENT_LEFT, bw, fs, -1, Color(0.93, 0.9, 0.8))
+			UiSkin.ink(self, UiSkin.bold(), Vector2(12, y + fs), head, HORIZONTAL_ALIGNMENT_LEFT, 150, fs, UiSkin.INK_RED)
+			draw_multiline_string(font, Vector2(168, y + fs), body_text, HORIZONTAL_ALIGNMENT_LEFT, bw, fs, -1, UiSkin.INK)
 			y += maxf(sz.y, float(fs) * 1.3) + 10.0
 		_total = y + scroll
 		# indicador de que hay más contenido
@@ -1148,7 +1157,7 @@ class HelpBody extends Control:
 			var frac := size.y / _total
 			var bar_h := maxf(36.0, size.y * frac)
 			var bar_y := (size.y - bar_h) * (scroll / maxf(_total - size.y, 1.0))
-			draw_rect(Rect2(size.x - 6, bar_y, 4, bar_h), Color(0.8, 0.65, 0.35, 0.7), true)
+			draw_rect(Rect2(size.x - 6, bar_y, 4, bar_h), Color(0.35, 0.22, 0.10, 0.65), true)
 
 class EndPanel extends Control:
 	var hud: Hud
@@ -1173,9 +1182,9 @@ class EndPanel extends Control:
 			return
 		var font := get_theme_default_font()
 		var r := Rect2(Vector2(size.x * 0.5 - 300, size.y * 0.5 - 230), Vector2(600, 460))
-		draw_style_box(UiButton.box(Color(0.10, 0.085, 0.07, 0.97), Color(0.55, 0.43, 0.22), 14, 3), r)
+		UiSkin.panel(self, r)
 		var title := Lang.t("victory") if won else Lang.t("defeat")
-		draw_string(font, Vector2(r.position.x, r.position.y + 78), title, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 56, Color(1, 0.9, 0.4) if won else Color(1, 0.5, 0.45))
+		UiSkin.ink(self, UiSkin.bold(), Vector2(r.position.x, r.position.y + 80), title, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 56, UiSkin.INK_GREEN if won else UiSkin.INK_RED)
 		var p: Player = g.sim.players[g.human]
 		var secs := int(g.sim.time)
 		var lines := [
@@ -1186,7 +1195,7 @@ class EndPanel extends Control:
 		]
 		var y := r.position.y + 150.0
 		for l in lines:
-			draw_string(font, Vector2(r.position.x, y), l, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 26, Color(0.93, 0.9, 0.8))
+			UiSkin.ink(self, font, Vector2(r.position.x, y), l, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 26, UiSkin.INK)
 			y += 48.0
 		btn.size = Vector2(300, 66)
 		btn.position = Vector2(size.x * 0.5 - 150, r.end.y - 90)

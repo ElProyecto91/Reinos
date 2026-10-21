@@ -200,7 +200,7 @@ func _refresh_upd() -> void:
 	_upd_btn.queue_redraw()
 
 func _refresh() -> void:
-	_civ_btn.text = "%s  ▸" % _civ_name()
+	_civ_btn.text = "%s  »" % _civ_name()
 	_civ_btn.queue_redraw()
 	for key in _rows:
 		var d: Dictionary = _seg[key]
@@ -209,7 +209,7 @@ func _refresh() -> void:
 		for i in opts.size():
 			(d["btns"][i] as UiButton).toggled = int(opts[i][1]) == cur
 			(d["btns"][i] as UiButton).queue_redraw()
-	_seed_btn.text = "%s  %d   ⟳" % [Lang.t("menu_seed"), seed_val]
+	_seed_btn.text = "%s  %d  »" % [Lang.t("menu_seed"), seed_val]
 	_seed_btn.queue_redraw()
 	root.queue_redraw()
 
